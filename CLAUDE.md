@@ -28,7 +28,7 @@ SurVibeApp (top-level, imports all 7)
 
 **RULES:**
 - NEVER create circular dependencies. If SVCore needs something from SVAudio, use a protocol in SVCore and conform in SVAudio.
-- Every package has `platforms: [.iOS(.v26)]` in Package.swift.
+- Every package has `platforms: [.iOS(.v26)]` in Package.swift. SVCore, SVAI, and SVBilling also include `.macOS(.v15)` for shared logic reuse.
 - Every package has a `Tests/` target with minimum 1 test per public type.
 - New files go in the CORRECT package. Ask if unsure.
 
@@ -48,25 +48,27 @@ SurVibeApp (top-level, imports all 7)
 ## SWIFT RULES (MANDATORY)
 
 ### Deployment Target: iOS 26.0
-- NEVER use `#available(iOS X, *)` checks — everything targets iOS 26+.
-- NEVER use `if #available` — all APIs from iOS 26 and below are available unconditionally.
+- No `#available` or `if #available` checks — everything targets iOS 26+ unconditionally (see Banned Patterns).
 - Use Apple Foundation Models framework directly (no version check needed).
 
 ### SwiftUI
-- **@Observable macro ONLY** — `ObservableObject` and `@Published` are BANNED.
-- **No AppDelegate, No SceneDelegate** — use `@main struct SurVibeApp: App { }`.
 - Use `@Environment(\.modelContext)` for SwiftData access in views.
 - Use `.navigationDestination(for:)` with typed routes, NOT NavigationLink with destination closure.
 - Every view that takes data should use `let` properties, not bindings, unless editing.
+- Use `@State private var model = MyModel()` to own `@Observable` instances in views (NOT `@StateObject`).
+- Use `@Bindable var model` for `@Observable` objects passed to child views that need two-way binding.
+- Inside `@Observable` classes, mark `@AppStorage` and `@SceneStorage` with `@ObservationIgnored`.
+- Use `.glassEffect(.regular)` for cards, tab bars, and navigation surfaces on iOS 26 (Liquid Glass).
 
 ### SwiftData
-- **VersionedSchema is BANNED** — incompatible with CloudKit automatic sync.
+- No `VersionedSchema` — incompatible with CloudKit automatic sync (see Banned Patterns).
 - ALL `@Model` fields MUST have explicit default values: `var name: String = ""`.
 - ALL relationships MUST be optional.
 - Enums stored as `String` rawValue (CloudKit compatibility).
 - Arrays and Dictionaries sync as opaque `Transformable` blobs — cannot be queried server-side.
 - Schema changes: ADD new fields with defaults ONLY. NEVER delete or rename fields.
 - Manual `schemaVersion` integer in UserDefaults (checked on launch).
+- For critical writes (session completion, XP award, achievement unlock), call `try modelContext.save()` explicitly in a `do/catch` block. SwiftData auto-saves, but explicit save ensures data is persisted before the user leaves the screen.
 - ModelContainer configured with: `ModelConfiguration(cloudKitDatabase: .automatic)`.
 
 ### CloudKit
@@ -78,16 +80,17 @@ SurVibeApp (top-level, imports all 7)
 
 ### Concurrency (Swift 6 Strict)
 - Use Swift structured concurrency (`async/await`, `TaskGroup`).
-- NEVER use `DispatchQueue.main.async` — use `@MainActor` instead.
 - NEVER use completion handlers for new code — use async/await.
-- NEVER use `@unchecked Sendable` — use `@MainActor` isolation for mutable shared state.
-- Mark all managers, singletons, and view models as `@MainActor`.
+- Avoid `@unchecked Sendable` — prefer `Mutex<State>` or `@MainActor`. **Allowed:** NSObject delegates (e.g., `MusicXMLParserDelegate`), CoreMIDI interop, test doubles.
+- Mark all managers, singletons, and view models as `@MainActor`. **Exception:** `MIDIInputManager` uses `NSLock` instead of `@MainActor` because CoreMIDI callbacks arrive on arbitrary threads.
 - Use `nonisolated private static func` for pure computation (DSP, math, pitch detection).
+- Use `nonisolated(unsafe)` ONLY with external synchronization (NSLock/Mutex). ALWAYS add a `///` comment explaining the safety invariant. Prefer consolidating mutable state into `Mutex<State>` structs to reduce `nonisolated(unsafe)` count.
 - NotificationCenter closures: extract `Sendable` values from `Notification.userInfo` BEFORE entering `Task { @MainActor in }` (Notification is not Sendable).
 - `@Sendable` annotation on all closures that cross isolation boundaries (mic tap handlers, notification callbacks).
+- Consider `sending` parameter annotation for cross-isolation transfer of non-Sendable values (Swift 6+).
 
 ### Error Handling
-- NEVER use `try!` or `force-unwrap (!)` in production code.
+- No `try!` or `force unwrap (!)` in production code (see Banned Patterns).
 - Use `do/catch` with meaningful error types.
 - Errors that cross package boundaries use protocols defined in SVCore.
 - Log errors via `os.Logger` (subsystem: "com.survibe", category: package name).
@@ -120,7 +123,7 @@ SurVibeApp (top-level, imports all 7)
 ```swift
 // ALWAYS configure before starting engine
 let session = AVAudioSession.sharedInstance()
-try session.setCategory(.playAndRecord, options: [.defaultToSpeaker, .allowBluetooth, .mixWithOthers])
+try session.setCategory(.playAndRecord, options: [.defaultToSpeaker, .allowBluetoothHFP, .mixWithOthers])
 try session.setMode(.measurement) // accurate pitch detection
 try session.setActive(true)
 ```
@@ -470,8 +473,8 @@ Before writing any code, follow this checklist:
 ### 4-Tab Navigation
 | Tab | View | Icon | Purpose |
 |-----|------|------|---------|
+| Home | `HomeTab` | `house.fill` | Dashboard, quick actions, recent activity |
 | Learn | `LearnTab` | `book.fill` | Lessons, sargam notation, guided learning |
-| Practice | `PracticeTab` | `music.note` | Free practice with pitch detection + tanpura |
 | Songs | `SongsTab` | `music.note.list` | Song library, play-along, progress tracking |
 | Profile | `ProfileTab` | `person.fill` | XP, achievements, rang level, settings |
 
