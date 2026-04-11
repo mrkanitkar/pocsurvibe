@@ -14,7 +14,7 @@ import SwiftUI
 /// The behaviour can be disabled via the `autoHideSargamLabels` toggle
 /// (persisted in UserDefaults), which locks opacity at 1.0.
 ///
-/// Transitions are animated with a 0.5-second ease-in-out curve.
+/// Views consuming `labelOpacity` should apply `.animation()` to animate transitions.
 @Observable
 @MainActor
 final class SargamFadeManager {
@@ -49,9 +49,7 @@ final class SargamFadeManager {
         currentAccuracy = clampedAccuracy
 
         guard autoHideSargamLabels else {
-            withAnimation(.easeInOut(duration: 0.5)) {
-                labelOpacity = 1.0
-            }
+            labelOpacity = 1.0
             return
         }
 
@@ -67,9 +65,7 @@ final class SargamFadeManager {
             newOpacity = 1.0
         }
 
-        withAnimation(.easeInOut(duration: 0.5)) {
-            labelOpacity = newOpacity
-        }
+        labelOpacity = newOpacity
     }
 
     /// Resets opacity to full (1.0) without animation.

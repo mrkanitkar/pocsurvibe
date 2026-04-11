@@ -182,6 +182,7 @@ struct SargamNoteView: View {
             .frame(width: noteWidth)
             .lineLimit(1)
             .opacity(labelOpacity)
+            .animation(reduceMotion ? .none : .easeInOut(duration: 0.5), value: labelOpacity)
     }
 
     /// Dot above the note block indicating taar saptak (octave 5).

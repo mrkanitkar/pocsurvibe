@@ -134,94 +134,105 @@ struct Day05SargamFadeManagerTests {
         #expect(manager.labelOpacity == 1.0)
     }
 
-    @Test("Initial accuracy is 1.0")
+    @Test("Initial accuracy is 0.0")
     @MainActor func initialAccuracy() {
         let manager = SargamFadeManager()
-        #expect(manager.currentAccuracy == 1.0)
+        #expect(manager.currentAccuracy == 0.0)
     }
 
-    @Test("High accuracy (>90%) yields full opacity")
-    @MainActor func highAccuracyFullOpacity() {
+    @Test("High accuracy (>=95%) yields zero opacity — mastery, play by ear")
+    @MainActor func highAccuracyZeroOpacity() {
         let manager = SargamFadeManager()
+        manager.autoHideSargamLabels = true
         manager.updateOpacity(accuracy: 0.95)
-        #expect(manager.labelOpacity == 1.0)
+        #expect(manager.labelOpacity == 0.0)
         #expect(manager.currentAccuracy == 0.95)
     }
 
-    @Test("Perfect accuracy (1.0) yields full opacity")
-    @MainActor func perfectAccuracyFullOpacity() {
+    @Test("Perfect accuracy (1.0) yields zero opacity")
+    @MainActor func perfectAccuracyZeroOpacity() {
         let manager = SargamFadeManager()
+        manager.autoHideSargamLabels = true
         manager.updateOpacity(accuracy: 1.0)
-        #expect(manager.labelOpacity == 1.0)
+        #expect(manager.labelOpacity == 0.0)
     }
 
-    @Test("Accuracy at 90% boundary yields full opacity")
+    @Test("Accuracy at 90% boundary yields 0.3 opacity")
     @MainActor func boundaryNinetyPercent() {
         let manager = SargamFadeManager()
+        manager.autoHideSargamLabels = true
         manager.updateOpacity(accuracy: 0.9)
+        #expect(manager.labelOpacity == 0.3)
+    }
+
+    @Test("Accuracy 80-95% yields 0.3 opacity")
+    @MainActor func moderateHighAccuracyOpacity() {
+        let manager = SargamFadeManager()
+        manager.autoHideSargamLabels = true
+        manager.updateOpacity(accuracy: 0.8)
+        #expect(manager.labelOpacity == 0.3)
+    }
+
+    @Test("Accuracy at 70% boundary yields 0.6 opacity")
+    @MainActor func boundarySeventyPercent() {
+        let manager = SargamFadeManager()
+        manager.autoHideSargamLabels = true
+        manager.updateOpacity(accuracy: 0.7)
+        #expect(manager.labelOpacity == 0.6)
+    }
+
+    @Test("Accuracy 60-80% yields 0.6 opacity")
+    @MainActor func moderateAccuracyOpacity() {
+        let manager = SargamFadeManager()
+        manager.autoHideSargamLabels = true
+        manager.updateOpacity(accuracy: 0.6)
+        #expect(manager.labelOpacity == 0.6)
+    }
+
+    @Test("Low accuracy (<60%) yields full opacity — beginner sees all labels")
+    @MainActor func lowAccuracyFullOpacity() {
+        let manager = SargamFadeManager()
+        manager.autoHideSargamLabels = true
+        manager.updateOpacity(accuracy: 0.3)
         #expect(manager.labelOpacity == 1.0)
     }
 
-    @Test("Moderate accuracy (70-90%) yields 0.7 opacity")
-    @MainActor func moderateAccuracyOpacity() {
+    @Test("Zero accuracy yields full opacity")
+    @MainActor func zeroAccuracyFullOpacity() {
         let manager = SargamFadeManager()
-        manager.updateOpacity(accuracy: 0.8)
-        #expect(manager.labelOpacity == 0.7)
-    }
-
-    @Test("Accuracy at 70% boundary yields 0.7 opacity")
-    @MainActor func boundarySeventyPercent() {
-        let manager = SargamFadeManager()
-        manager.updateOpacity(accuracy: 0.7)
-        #expect(manager.labelOpacity == 0.7)
-    }
-
-    @Test("Low accuracy (50-70%) yields 0.5 opacity")
-    @MainActor func lowAccuracyOpacity() {
-        let manager = SargamFadeManager()
-        manager.updateOpacity(accuracy: 0.6)
-        #expect(manager.labelOpacity == 0.5)
-    }
-
-    @Test("Very low accuracy (<50%) yields 0.25 opacity")
-    @MainActor func veryLowAccuracyOpacity() {
-        let manager = SargamFadeManager()
-        manager.updateOpacity(accuracy: 0.3)
-        #expect(manager.labelOpacity == 0.25)
-    }
-
-    @Test("Zero accuracy yields 0.25 opacity")
-    @MainActor func zeroAccuracyOpacity() {
-        let manager = SargamFadeManager()
+        manager.autoHideSargamLabels = true
         manager.updateOpacity(accuracy: 0.0)
-        #expect(manager.labelOpacity == 0.25)
+        #expect(manager.labelOpacity == 1.0)
     }
 
     @Test("Accuracy above 1.0 is clamped to 1.0")
     @MainActor func overflowAccuracyClamped() {
         let manager = SargamFadeManager()
+        manager.autoHideSargamLabels = true
         manager.updateOpacity(accuracy: 1.5)
         #expect(manager.currentAccuracy == 1.0)
-        #expect(manager.labelOpacity == 1.0)
+        #expect(manager.labelOpacity == 0.0)
     }
 
     @Test("Negative accuracy is clamped to 0.0")
     @MainActor func negativeAccuracyClamped() {
         let manager = SargamFadeManager()
+        manager.autoHideSargamLabels = true
         manager.updateOpacity(accuracy: -0.5)
         #expect(manager.currentAccuracy == 0.0)
-        #expect(manager.labelOpacity == 0.25)
+        #expect(manager.labelOpacity == 1.0)
     }
 
     @Test("Reset restores full opacity and accuracy")
     @MainActor func resetRestoresDefaults() {
         let manager = SargamFadeManager()
-        manager.updateOpacity(accuracy: 0.3)
-        #expect(manager.labelOpacity == 0.25)
+        manager.autoHideSargamLabels = true
+        manager.updateOpacity(accuracy: 1.0)
+        #expect(manager.labelOpacity == 0.0)
 
         manager.reset()
         #expect(manager.labelOpacity == 1.0)
-        #expect(manager.currentAccuracy == 1.0)
+        #expect(manager.currentAccuracy == 0.0)
     }
 }
 
