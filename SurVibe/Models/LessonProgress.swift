@@ -1,5 +1,8 @@
 import Foundation
+import os
 import SwiftData
+
+private let lpLogger = Logger(subsystem: "com.survibe", category: "LessonProgress")
 
 /// Tracks lesson completion progress. One-way flag: once completed, stays completed.
 ///
@@ -74,7 +77,12 @@ final class LessonProgress {
     /// Returns an empty array if `stepCompletions` is `nil` or cannot be decoded.
     var stepCompletionFlags: [Bool] {
         guard let data = stepCompletions else { return [] }
-        return (try? JSONDecoder().decode([Bool].self, from: data)) ?? []
+        do {
+            return try JSONDecoder().decode([Bool].self, from: data)
+        } catch {
+            lpLogger.warning("Failed to decode stepCompletions for lesson \(self.lessonId): \(error.localizedDescription)")
+            return []
+        }
     }
 
     // MARK: - Initialization

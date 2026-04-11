@@ -1,4 +1,7 @@
 import Foundation
+import os
+
+private let pipelineLogger = Logger(subsystem: "com.survibe", category: "ImportPipeline")
 
 /// Orchestrates the full 5-stage song import pipeline.
 ///
@@ -235,7 +238,12 @@ public struct ImportPipeline: ImportPipelineProtocol {
             if let modifier = note.modifier { dict["modifier"] = modifier }
             return dict
         }
-        return try? JSONSerialization.data(withJSONObject: dicts)
+        do {
+            return try JSONSerialization.data(withJSONObject: dicts)
+        } catch {
+            pipelineLogger.error("Failed to encode sargam notes: \(error.localizedDescription)")
+            return nil
+        }
     }
 
     /// Encodes parsed western notes into the `[WesternNote]` JSON format expected by `Song.decodedWesternNotes`.
@@ -250,7 +258,12 @@ public struct ImportPipeline: ImportPipelineProtocol {
                 "midiNumber": Self.midiNumber(for: note.name, octave: note.octave),
             ] as [String: Any]
         }
-        return try? JSONSerialization.data(withJSONObject: dicts)
+        do {
+            return try JSONSerialization.data(withJSONObject: dicts)
+        } catch {
+            pipelineLogger.error("Failed to encode western notes: \(error.localizedDescription)")
+            return nil
+        }
     }
 
     /// Derives a MIDI note number from a western note name and optional octave.

@@ -151,7 +151,12 @@ public final class AudioEngineManager: AudioEngineProviding {
         AudioSessionManager.shared.onInterruptionEnded = { [weak self] shouldResume in
             Task { @MainActor in
                 if shouldResume {
-                    try? self?.engine.start()
+                    do {
+                        try self?.engine.start()
+                        Self.logger.info("Engine restarted after interruption")
+                    } catch {
+                        Self.logger.error("Engine restart after interruption failed: \(error.localizedDescription)")
+                    }
                 }
             }
         }

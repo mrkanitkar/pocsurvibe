@@ -123,7 +123,11 @@ final class PitchDetectionViewModel {
         detectionCount = 0
 
         // Connect visualization adapter to mainMixerNode (coexists with mic tap on inputNode)
-        try? AudioNodeAdapter.shared.connect()
+        do {
+            try AudioNodeAdapter.shared.connect()
+        } catch {
+            vmLogger.error("AudioNodeAdapter connection failed: \(error.localizedDescription)")
+        }
 
         let context = prepareTapContext()
         let tapInstalled = AudioEngineManager.shared.installMicTap(

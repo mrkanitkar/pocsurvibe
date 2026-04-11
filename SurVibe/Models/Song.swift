@@ -1,5 +1,8 @@
 import Foundation
+import os
 import SwiftData
+
+private let songLogger = Logger(subsystem: "com.survibe", category: "Song")
 
 // MARK: - Supporting Types
 
@@ -188,13 +191,23 @@ final class Song {
     /// Decodes Sargam notes from the JSON blob.
     var decodedSargamNotes: [SargamNote]? {
         guard let data = sargamNotation else { return nil }
-        return try? JSONDecoder().decode([SargamNote].self, from: data)
+        do {
+            return try JSONDecoder().decode([SargamNote].self, from: data)
+        } catch {
+            songLogger.debug("Failed to decode sargam notes for song \(self.slug): \(error.localizedDescription)")
+            return nil
+        }
     }
 
     /// Decodes Western notes from the JSON blob.
     var decodedWesternNotes: [WesternNote]? {
         guard let data = westernNotation else { return nil }
-        return try? JSONDecoder().decode([WesternNote].self, from: data)
+        do {
+            return try JSONDecoder().decode([WesternNote].self, from: data)
+        } catch {
+            songLogger.debug("Failed to decode western notes for song \(self.slug): \(error.localizedDescription)")
+            return nil
+        }
     }
 
     // MARK: - Initialization

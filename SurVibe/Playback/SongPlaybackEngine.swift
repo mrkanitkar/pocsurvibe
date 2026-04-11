@@ -307,6 +307,7 @@ final class SongPlaybackEngine {
         stopDisplayLink()
         displayLinkTask = Task { [weak self] in
             while !Task.isCancelled {
+                // try? is intentional — Task.sleep throws CancellationError on task cancel, which is expected control flow.
                 try? await Task.sleep(for: .milliseconds(33))
                 guard !Task.isCancelled else { return }
                 self?.updatePlaybackPosition()

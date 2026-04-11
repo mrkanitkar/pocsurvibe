@@ -121,8 +121,12 @@ final class PracticeSessionRecorder {
             predicate: #Predicate { $0.songId == songId }
         )
 
-        if let existing = try? modelContext.fetch(descriptor).first {
-            return existing
+        do {
+            if let existing = try modelContext.fetch(descriptor).first {
+                return existing
+            }
+        } catch {
+            Self.logger.error("Failed to fetch SongProgress for \(songId): \(error.localizedDescription)")
         }
 
         let progress = SongProgress(songId: songId, songTitle: songTitle)
