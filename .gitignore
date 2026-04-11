@@ -1,33 +1,78 @@
-# Xcode
+# ── Xcode ────────────────────────────────────────────────────────────
 build/
 DerivedData/
 *.xcodeproj/xcuserdata/
 *.xcworkspace/xcuserdata/
 *.xcodeproj/project.xcworkspace/xcshareddata/swiftpm/
 xcuserdata/
+*.pbxuser
+!default.pbxuser
+*.mode1v3
+!default.mode1v3
+*.mode2v3
+!default.mode2v3
+*.perspectivev3
+!default.perspectivev3
+*.hmap
+*.ipa
+*.dSYM.zip
+*.dSYM
+*.xcresult
+*.xccheckout
 
-# macOS
+# ── macOS ────────────────────────────────────────────────────────────
 .DS_Store
+._*
 *.swp
 *~
+.Spotlight-V100
+.Trashes
 
-# Swift Package Manager
+# ── Swift Package Manager ────────────────────────────────────────────
 .build/
 Packages/*/.build/
+Packages/*/Package.resolved
+Package.pins
+.swiftpm/
 
-# CI Scripts
+# ── CocoaPods (not used, but guard against accidental inclusion) ─────
+Pods/
+
+# ── CI Scripts ───────────────────────────────────────────────────────
 ci_scripts/*.log
 
-# SwiftLint
+# ── Linting & Formatting backups ─────────────────────────────────────
 .swiftlint.yml.bak
-
-# Swift Format
 .swift-format.bak
 
-# Secrets — NEVER commit credentials, keys, or certificates
+# ── Docs — architecture, sprint specs, app data exports, reviews ─────
+docs/
+
+# ── Claude Code / AI — machine-specific config and plans ─────────────
+.mcp.json
+PLAN.md
+SurVibe_Code_Review.md
+
+# ── Secrets — NEVER commit credentials, keys, or certificates ───────
 .env*
 Secrets.xcconfig
 GoogleService-Info.plist
 *.pem
 *.p8
+*.p12
 *.key
+*.cer
+*.mobileprovision
+*.provisionprofile
+
+# ── Misc ─────────────────────────────────────────────────────────────
+*.playground/timeline.xctimeline
+*.playground/playground.xcworkspace
+Carthage/Build/
+fastlane/report.xml
+fastlane/Preview.html
+fastlane/screenshots/**/*.png
+fastlane/test_output
+iOSInjectionProject/
+.idea/
+*.moved-aside
