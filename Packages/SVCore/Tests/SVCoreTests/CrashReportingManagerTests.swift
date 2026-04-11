@@ -6,6 +6,7 @@ import Testing
 /// MetricKit delivers payloads asynchronously once per day, so these tests
 /// verify the manager's lifecycle and state management rather than actual
 /// diagnostic payloads (which require real device + 24-hour collection).
+@MainActor
 struct CrashReportingManagerTests {
 
     // MARK: - Singleton

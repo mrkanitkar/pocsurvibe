@@ -2,7 +2,7 @@ import Foundation
 
 /// Factory that builds `RagaContext` instances from raga names.
 ///
-/// Uses the Erv Wilson Persian-North Indian 17-tone master set (just-intonation
+/// Uses the Erv Wilson Persian-North Indian 17-tone reference set (just-intonation
 /// frequency ratios) to construct raga scale degrees. Each raga selects 7
 /// indices from the 17-tone set, producing a 7-note JI scale.
 ///
@@ -12,13 +12,12 @@ import Foundation
 ///
 /// Reference: Erv Wilson, http://anaphoria.com/genus.pdf
 public enum RagaTuningProvider {
-    // MARK: - Persian-North Indian 17-Tone Master Set
+    // MARK: - Persian-North Indian 17-Tone Reference Set
 
-    /// Erv Wilson's 17-tone just-intonation master set for North Indian ragas.
+    /// Erv Wilson's 17-tone just-intonation reference set for North Indian ragas.
     /// Each value is a frequency ratio relative to Sa (1/1).
     /// Source: AudioKit Microtonality `TuningTable+NorthIndianRaga.swift`.
-    // swiftlint:disable:next large_tuple
-    private static let masterSet: [(ratio: Double, index: Int)] = [
+    private static let referenceSet: [(ratio: Double, index: Int)] = [
         (1.0 / 1.0, 0),            // 0:  Sa              (0¢)
         (135.0 / 128.0, 1),        // 1:  Komal Re (JI)   (~92¢)
         (10.0 / 9.0, 2),           // 2:  Komal Re (alt)  (~182¢) — used in some ragas as Re variant
@@ -38,9 +37,9 @@ public enum RagaTuningProvider {
         (243.0 / 128.0, 16),       // 16: Ni (Pyth)       (~1110¢)
     ]
 
-    // MARK: - Master-Set Index to Swar Mapping
+    // MARK: - Reference-Set Index to Swar Mapping
 
-    /// Map each of the 17 Persian master-set indices to a Swar case.
+    /// Map each of the 17 Persian reference-set indices to a Swar case.
     /// Uses cents zones to unambiguously assign each ratio to a swar.
     private static let indexToSwar: [Int: Swar] = [
         0: .sa,
@@ -121,9 +120,9 @@ public enum RagaTuningProvider {
         guard let indices = ragaPresets[trimmed] else { return nil }
 
         let degrees = indices.compactMap { index -> RagaScaleDegree? in
-            guard index < masterSet.count,
+            guard index < referenceSet.count,
                   let swar = indexToSwar[index] else { return nil }
-            return RagaScaleDegree(swar: swar, ratio: masterSet[index].ratio)
+            return RagaScaleDegree(swar: swar, ratio: referenceSet[index].ratio)
         }
 
         guard !degrees.isEmpty else { return nil }

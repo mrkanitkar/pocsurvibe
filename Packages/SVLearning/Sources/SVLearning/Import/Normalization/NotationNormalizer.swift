@@ -91,6 +91,6 @@ public struct NotationNormalizer: Sendable {
     private func inferOctave(for note: ParsedNotation.Note, format: NotationInput.Format) -> Int {
         // For sargam Pa–Ni, some teachers use octave 3 in the lower register,
         // but middle octave 4 is the safest universal default.
-        return Self.defaultOctave
+        Self.defaultOctave
     }
 }

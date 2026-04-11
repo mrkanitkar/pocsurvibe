@@ -6,8 +6,14 @@ struct ImportMIDISynthesizerTests {
 
     let synthesizer = ImportMIDISynthesizer()
 
-    func makeNote(name: String, octave: Int = 4, duration: Double = 1.0, modifier: String? = nil, index: Int = 0) -> ParsedNotation.Note {
-        ParsedNotation.Note(name: name, octave: octave, durationBeats: duration, modifier: modifier, index: index)
+    func makeNote(
+        name: String, octave: Int = 4, duration: Double = 1.0,
+        modifier: String? = nil, index: Int = 0
+    ) -> ParsedNotation.Note {
+        ParsedNotation.Note(
+            name: name, octave: octave, durationBeats: duration,
+            modifier: modifier, index: index
+        )
     }
 
     @Test func returnsNilForEmptyNotation() async throws {
@@ -54,8 +60,12 @@ struct ImportMIDISynthesizerTests {
         let singleNote = [makeNote(name: "Sa")]
         let multiNote = (0..<7).map { makeNote(name: "Sa", index: $0) }
 
-        let single = try await synthesizer.synthesise(from: ParsedNotation(format: .sargam, notes: singleNote), tempo: 120)
-        let multi = try await synthesizer.synthesise(from: ParsedNotation(format: .sargam, notes: multiNote), tempo: 120)
+        let single = try await synthesizer.synthesise(
+            from: ParsedNotation(format: .sargam, notes: singleNote), tempo: 120
+        )
+        let multi = try await synthesizer.synthesise(
+            from: ParsedNotation(format: .sargam, notes: multiNote), tempo: 120
+        )
 
         #expect((single?.count ?? 0) < (multi?.count ?? 0))
     }

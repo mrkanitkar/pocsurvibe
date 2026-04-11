@@ -1,4 +1,4 @@
-// swiftlint:disable file_length type_body_length
+// swiftlint:disable file_length
 // PlayAlongViewModel is intentionally large: @Observable requires all stored
 // properties in the primary class declaration; private methods cannot be
 // extracted to separate files without losing @Observable synthesis.
@@ -35,6 +35,7 @@ import os.log
 /// until the user plays the correct pitch.
 @Observable
 @MainActor
+// swiftlint:disable:next type_body_length
 final class PlayAlongViewModel {
     // MARK: - Published State
 
@@ -591,7 +592,7 @@ final class PlayAlongViewModel {
     /// - Parameter midiNote: MIDI note number of the detected pitch.
     func handleNoteDetected(midiNote: Int) {
         guard playbackState == .playing else { return }
-        processNoteInput(midiNote: midiNote)
+        Task { await processNoteInput(midiNote: midiNote) }
     }
 
     /// Handle a keyboard touch (virtual piano input).
@@ -607,7 +608,7 @@ final class PlayAlongViewModel {
         detectedMidiNotes.insert(midiNote)
         updateDetectedSwarInfo(from: detectedMidiNotes)
         if playbackState == .playing {
-            processNoteInput(midiNote: midiNote)
+            Task { await processNoteInput(midiNote: midiNote) }
         } else if playbackState == .idle || playbackState == .paused {
             handleGuidedNoteDetected(midiNote: midiNote)
         }
@@ -626,12 +627,21 @@ final class PlayAlongViewModel {
 
     /// Handle an on-screen keyboard touch (legacy entry point used by tests).
     ///
-    /// Delegates to `handleKeyboardNoteOn`. Kept for backwards compatibility
-    /// with existing test call sites.
+    /// Awaitable keyboard touch handler for test call sites.
+    ///
+    /// Unlike `handleKeyboardNoteOn` (which fires scoring in a detached Task),
+    /// this method awaits `processNoteInput` so callers can observe state
+    /// changes immediately after the call returns.
     ///
     /// - Parameter midiNote: MIDI note number of the touched key.
-    func handleKeyboardTouch(midiNote: Int) {
-        handleKeyboardNoteOn(midiNote: midiNote)
+    func handleKeyboardTouch(midiNote: Int) async {
+        detectedMidiNotes.insert(midiNote)
+        updateDetectedSwarInfo(from: detectedMidiNotes)
+        if playbackState == .playing {
+            await processNoteInput(midiNote: midiNote)
+        } else if playbackState == .idle || playbackState == .paused {
+            handleGuidedNoteDetected(midiNote: midiNote)
+        }
     }
 
     /// Handle an on-screen keyboard touch in guided free-play mode.
@@ -1361,7 +1371,7 @@ final class PlayAlongViewModel {
     /// is then passed as a `Sendable` value to the actor.
     ///
     /// - Parameter midiNote: MIDI note number of the input.
-    private func processNoteInput(midiNote: Int) {
+    private func processNoteInput(midiNote: Int) async {
         guard let index = currentNoteIndex,
               index < noteEvents.count else { return }
 
@@ -1380,38 +1390,30 @@ final class PlayAlongViewModel {
         // Snapshot Sendable values before crossing actor boundary.
         let pitch = currentPitch
         let ragaContext = ragaScoringContext
-        let actor = noteMatchingActor
 
-        // Launch a detached task so the scoring hop to NoteMatchingActor does not
-        // extend @MainActor's busy interval while the actor evaluates.
-        Task { [weak self] in
-            let diff = await actor.evaluate(
-                midiNote: midiNote,
-                expectedEvent: expectedEvent,
-                currentPitch: pitch,
-                ragaScoringContext: ragaContext,
-                waitModeMatch: waitModeMatch
-            )
+        let diff = await noteMatchingActor.evaluate(
+            midiNote: midiNote,
+            expectedEvent: expectedEvent,
+            currentPitch: pitch,
+            ragaScoringContext: ragaContext,
+            waitModeMatch: waitModeMatch
+        )
 
-            // Apply the diff back on @MainActor — only three writes, no re-render
-            // of the full note list.
-            await MainActor.run { [weak self] in
-                guard let self else { return }
-                self.noteStates[diff.noteEventID] = diff.newState
-                if let score = diff.score {
-                    self.appendScore(score)
-                }
-                switch diff.streakOutcome {
-                case .hit(let grade):
-                    self.updateStreakForHit(grade: grade)
-                case .miss:
-                    self.updateStreakForMiss()
-                case .noChange:
-                    break
-                }
-                self.accuracy = self.noteScores.isEmpty ? 0 : self.accuracySum / Double(self.noteScores.count)
-            }
+        // Apply the diff back on @MainActor — only three writes, no re-render
+        // of the full note list.
+        noteStates[diff.noteEventID] = diff.newState
+        if let score = diff.score {
+            appendScore(score)
         }
+        switch diff.streakOutcome {
+        case .hit(let grade):
+            updateStreakForHit(grade: grade)
+        case .miss:
+            updateStreakForMiss()
+        case .noChange:
+            break
+        }
+        accuracy = noteScores.isEmpty ? 0 : accuracySum / Double(noteScores.count)
     }
 
     /// Derive the full swar name from a MIDI note number.

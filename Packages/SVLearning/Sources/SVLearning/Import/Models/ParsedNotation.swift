@@ -21,7 +21,10 @@ public struct ParsedNotation: Sendable {
         public let index: Int
 
         /// Creates a parsed note.
-        public init(name: String, octave: Int? = nil, durationBeats: Double? = nil, modifier: String? = nil, index: Int) {
+        public init(
+            name: String, octave: Int? = nil, durationBeats: Double? = nil,
+            modifier: String? = nil, index: Int
+        ) {
             self.name = name
             self.octave = octave
             self.durationBeats = durationBeats

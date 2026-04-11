@@ -48,8 +48,14 @@ public struct ImportMIDISynthesizer: ImportMIDISynthesisProtocol {
             let durationBeats = note.durationBeats ?? 1.0
             let durationTicks = UInt32(durationBeats * Double(ticksPerBeat))
 
-            events.append(MIDIEvent(tick: currentTick, type: .noteOn, note: UInt8(midiNote), velocity: Self.defaultVelocity))
-            events.append(MIDIEvent(tick: currentTick + durationTicks, type: .noteOff, note: UInt8(midiNote), velocity: 0))
+            events.append(MIDIEvent(
+                tick: currentTick, type: .noteOn,
+                note: UInt8(midiNote), velocity: Self.defaultVelocity
+            ))
+            events.append(MIDIEvent(
+                tick: currentTick + durationTicks, type: .noteOff,
+                note: UInt8(midiNote), velocity: 0
+            ))
 
             currentTick += durationTicks
         }

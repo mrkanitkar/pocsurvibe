@@ -92,14 +92,14 @@ public enum ChromagramDSP {
     ///
     /// `OpaquePointer` is not `Sendable`, so we store raw `Int` (bit-cast) and
     /// access under a `Mutex` for compiler-verified thread safety.
-    private nonisolated(unsafe) static let fftCache = Mutex<[vDSP_Length: Int]>([:])
+    nonisolated(unsafe) private static let fftCache = Mutex<[vDSP_Length: Int]>([:])
 
     /// Cache for Hann window arrays keyed by sample count.
     ///
     /// AUD-032: At ultraFast (1024-sample window, 44Hz detection rate), recomputing
     /// the Hann window on every call allocates a 4KB array 44 times/second = 176KB/s.
     /// Cached once per preset size, reused for all subsequent calls.
-    private nonisolated(unsafe) static let hannCache = Mutex<[Int: [Float]]>([:])
+    nonisolated(unsafe) private static let hannCache = Mutex<[Int: [Float]]>([:])
 
     /// Return a cached `FFTSetup` for the given log2(n), creating it if needed.
     ///

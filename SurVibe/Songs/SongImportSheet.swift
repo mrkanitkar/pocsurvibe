@@ -393,7 +393,9 @@ private struct MySongsListView: View {
         }
         .padding(.vertical, 2)
         .accessibilityElement(children: .combine)
-        .accessibilityLabel(Text("\(song.title)\(song.artist.isEmpty ? "" : " by \(song.artist)"), difficulty \(song.difficulty)"))
+        .accessibilityLabel(
+            Text("\(song.title)\(song.artist.isEmpty ? "" : " by \(song.artist)"), difficulty \(song.difficulty)")
+        )
         .accessibilityHint(Text("Swipe left to edit or delete"))
     }
 

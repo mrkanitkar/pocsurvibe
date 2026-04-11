@@ -5,7 +5,7 @@ import PackageDescription
 let package = Package(
     name: "SVAI",
     defaultLocalization: "en",
-    platforms: [.iOS(.v26)],
+    platforms: [.iOS(.v26), .macOS(.v15)],
     products: [
         .library(name: "SVAI", targets: ["SVAI"]),
     ],

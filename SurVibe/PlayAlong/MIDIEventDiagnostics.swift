@@ -24,14 +24,15 @@ import SVAudio
 /// - `[LAG] ` — MainActor queue delay > 10 ms
 /// - `IOI=XXms` — inter-onset: 107 ms ≈ 140 BPM 16th notes
 /// - Summary `Pending=N` > 0 — Tasks still queued at session end
-// `nonisolated` opts this class out of the project-wide @MainActor default
-// (SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor). All methods use OSAllocatedUnfairLock
-// and are safe to call from any thread, including CoreMIDI's real-time thread.
+///
+/// `nonisolated` opts this class out of the project-wide @MainActor default
+/// (`SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor`). All methods use `OSAllocatedUnfairLock`
+/// and are safe to call from any thread, including CoreMIDI's real-time thread.
 nonisolated final class MIDIEventDiagnostics: Sendable {
 
     static let shared = MIDIEventDiagnostics()
 
-    private nonisolated static let logger = Logger(subsystem: "com.survibe", category: "MIDIDiagnostics")
+    nonisolated private static let logger = Logger(subsystem: "com.survibe", category: "MIDIDiagnostics")
 
     /// Set to false to disable all logging with zero overhead.
     nonisolated(unsafe) var isEnabled: Bool = false
@@ -47,14 +48,13 @@ nonisolated final class MIDIEventDiagnostics: Sendable {
         var totalLagNs: UInt64 = 0
         var maxLagNs: UInt64 = 0
         var dropCount: Int = 0
-        nonisolated init() {}
     }
 
     private let stateLock = OSAllocatedUnfairLock(initialState: DiagState())
 
     // File handle for the current session log — written from any thread via fileLock.
     private let fileLock = OSAllocatedUnfairLock(initialState: false) // just used as a mutex
-    private nonisolated(unsafe) var fileHandle: FileHandle?
+    nonisolated(unsafe) private var fileHandle: FileHandle?
 
     private init() {}
 
@@ -114,7 +114,6 @@ nonisolated final class MIDIEventDiagnostics: Sendable {
             let msg = "[MIDI] ON  note=\(note) vel=\(event.velocity) IOI=\(ioi)ms bpm≈\(bpm) seq=\(d.seq)"
             Self.logger.info("\(msg)")
             appendLine(msg)
-
         } else {
             let d: NoteOffLog = stateLock.withLock { state in
                 state.isOn[note] = false
@@ -215,7 +214,7 @@ nonisolated final class MIDIEventDiagnostics: Sendable {
         return URL(fileURLWithPath: docs).appendingPathComponent("midi_diag.log")
     }
 
-    private nonisolated func openLogFile() {
+    nonisolated private func openLogFile() {
         let url = Self.logFileURL
         // Ensure the Documents directory exists
         let dir = url.deletingLastPathComponent()
@@ -231,13 +230,13 @@ nonisolated final class MIDIEventDiagnostics: Sendable {
         }
     }
 
-    private nonisolated func closeLogFile() {
+    nonisolated private func closeLogFile() {
         try? fileHandle?.close()
         fileHandle = nil
     }
 
     /// Append a line to the log file. Thread-safe via fileLock.
-    private nonisolated func appendLine(_ line: String) {
+    nonisolated private func appendLine(_ line: String) {
         guard let data = (line + "\n").data(using: .utf8) else { return }
         fileLock.withLock { _ in
             fileHandle?.write(data)
@@ -246,11 +245,11 @@ nonisolated final class MIDIEventDiagnostics: Sendable {
 
     // MARK: - Timing helpers
 
-    private nonisolated func wallClockNs() -> UInt64 {
+    nonisolated private func wallClockNs() -> UInt64 {
         UInt64(Date().timeIntervalSince1970 * 1_000_000_000)
     }
 
-    private nonisolated func hardwareNs(from midiTimestamp: MIDITimeStamp?) -> UInt64? {
+    nonisolated private func hardwareNs(from midiTimestamp: MIDITimeStamp?) -> UInt64? {
         guard let ts = midiTimestamp, ts > 0 else { return nil }
         var tb = mach_timebase_info_data_t()
         mach_timebase_info(&tb)

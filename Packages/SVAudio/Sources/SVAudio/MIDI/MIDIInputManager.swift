@@ -1,7 +1,6 @@
 import CoreMIDI
 import Foundation
 import os
-import os.lock
 
 /// Thread-safe box holding an `AsyncStream` continuation of any type.
 ///
@@ -181,12 +180,12 @@ public final class MIDIInputManager: MIDIInputProviding {
 
     // All mutable state is protected by `lock`. `nonisolated(unsafe)` tells Swift 6
     // that we take manual responsibility for synchronization (via NSLock).
-    private nonisolated(unsafe) var _midiClient: MIDIClientRef = 0
-    private nonisolated(unsafe) var _inputPort: MIDIPortRef = 0
-    private nonisolated(unsafe) var _connectedSources: [MIDIEndpointRef] = []
-    private nonisolated(unsafe) var _isStarted = false
-    private nonisolated(unsafe) var _noteOnStream: AsyncStream<MIDIInputEvent>?
-    private nonisolated(unsafe) var _connectionStateStream: AsyncStream<Bool>?
+    nonisolated(unsafe) private var _midiClient: MIDIClientRef = 0
+    nonisolated(unsafe) private var _inputPort: MIDIPortRef = 0
+    nonisolated(unsafe) private var _connectedSources: [MIDIEndpointRef] = []
+    nonisolated(unsafe) private var _isStarted = false
+    nonisolated(unsafe) private var _noteOnStream: AsyncStream<MIDIInputEvent>?
+    nonisolated(unsafe) private var _connectionStateStream: AsyncStream<Bool>?
 
     /// Sendable box shared with the CoreMIDI read callback.
     ///

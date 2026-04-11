@@ -81,6 +81,26 @@ private func makeKomalTivraSong() -> Song {
     return song
 }
 
+// MARK: - Helpers
+
+/// Poll until the playback loop has set `currentNoteIndex`, or give up after `maxIterations`.
+///
+/// The playback loop runs in a `Task` on `@MainActor`. A single `Task.yield()` inside
+/// `TestClock.advance()` is not guaranteed to schedule that Task. This helper retries
+/// with small clock advances + real yields until the playback Task has processed.
+@MainActor
+private func waitForActiveNote(
+    _ vm: PlayAlongViewModel,
+    clock: TestClock,
+    maxIterations: Int = 20
+) async {
+    for _ in 0..<maxIterations {
+        if vm.currentNoteIndex != nil { return }
+        await clock.advance(by: .milliseconds(10))
+        try? await Task.sleep(for: .milliseconds(10))
+    }
+}
+
 // MARK: - PlayAlongFullFlowTests
 
 /// Integration tests for the complete play-along lifecycle.
@@ -252,17 +272,15 @@ struct PlayAlongFullFlowTests {
         await vm.loadSong(song)
         await vm.startSession()
 
-        // Advance to first note (Sa, MIDI 60)
-        await clock.advance(by: .milliseconds(100))
-        try? await Task.sleep(for: .milliseconds(50))
+        // Wait for playback loop to activate first note
+        await waitForActiveNote(vm, clock: clock)
 
         guard vm.currentNoteIndex != nil else {
-            // Playback loop hasn't started yet, skip
             return
         }
 
         // Play the correct note for the first event
-        vm.handleKeyboardTouch(midiNote: 60) // Sa = MIDI 60
+        await vm.handleKeyboardTouch(midiNote: 60) // Sa = MIDI 60
 
         #expect(vm.noteScores.count >= 1)
         #expect(vm.accuracy > 0)
@@ -280,14 +298,13 @@ struct PlayAlongFullFlowTests {
         vm.isWaitModeEnabled = true
         await vm.startSession()
 
-        // Advance so first note becomes active
-        await clock.advance(by: .milliseconds(100))
-        try? await Task.sleep(for: .milliseconds(100))
+        // Wait for playback loop to activate first note
+        await waitForActiveNote(vm, clock: clock)
 
         guard vm.currentNoteIndex != nil else { return }
 
         // Play the correct note (Sa = MIDI 60)
-        vm.handleKeyboardTouch(midiNote: 60)
+        await vm.handleKeyboardTouch(midiNote: 60)
 
         let firstEvent = vm.noteEvents[0]
         #expect(vm.noteStates[firstEvent.id] == .correct)
@@ -304,14 +321,13 @@ struct PlayAlongFullFlowTests {
         vm.isWaitModeEnabled = true
         await vm.startSession()
 
-        // Advance so first note becomes active
-        await clock.advance(by: .milliseconds(100))
-        try? await Task.sleep(for: .milliseconds(100))
+        // Wait for playback loop to activate first note
+        await waitForActiveNote(vm, clock: clock)
 
         guard vm.currentNoteIndex != nil else { return }
 
         // Play wrong note (Re = MIDI 62 instead of Sa = MIDI 60)
-        vm.handleKeyboardTouch(midiNote: 62)
+        await vm.handleKeyboardTouch(midiNote: 62)
 
         let firstEvent = vm.noteEvents[0]
         #expect(vm.noteStates[firstEvent.id] == .wrong)
@@ -465,18 +481,17 @@ struct PlayAlongScoringIntegrationTests {
 
         for (index, midi) in expectedMIDI.enumerated() {
             if index == 0 {
-                // Advance just past the first note's timestamp (0.0s)
-                await clock.advance(by: .milliseconds(10))
+                // Wait for playback loop to activate the first note
+                await waitForActiveNote(vm, clock: clock)
             } else {
                 // Advance to just past the next note's timestamp
                 await clock.advance(by: .milliseconds(500))
+                try? await Task.sleep(for: .milliseconds(50))
             }
-            // Yield to the playback loop so it can process the note
-            try? await Task.sleep(for: .milliseconds(100))
 
             // Play the correct note while it is active
             if vm.currentNoteIndex == index {
-                vm.handleKeyboardTouch(midiNote: midi)
+                await vm.handleKeyboardTouch(midiNote: midi)
             }
         }
 
@@ -530,7 +545,7 @@ struct PlayAlongScoringIntegrationTests {
         await clock.advance(by: .milliseconds(50))
         try? await Task.sleep(for: .milliseconds(80))
         if vm.currentNoteIndex != nil {
-            vm.handleKeyboardTouch(midiNote: 60) // Sa correct
+            await vm.handleKeyboardTouch(midiNote: 60) // Sa correct
         }
 
         // Let remaining notes be missed via step-by-step advancement
@@ -553,10 +568,9 @@ struct PlayAlongScoringIntegrationTests {
         await vm.startSession()
 
         // Play first note correctly
-        await clock.advance(by: .milliseconds(50))
-        try? await Task.sleep(for: .milliseconds(80))
+        await waitForActiveNote(vm, clock: clock)
         if vm.currentNoteIndex != nil {
-            vm.handleKeyboardTouch(midiNote: 60) // Sa correct
+            await vm.handleKeyboardTouch(midiNote: 60) // Sa correct
             #expect(vm.streak >= 1)
         }
 
@@ -564,7 +578,7 @@ struct PlayAlongScoringIntegrationTests {
         await clock.advance(by: .milliseconds(500))
         try? await Task.sleep(for: .milliseconds(80))
         if vm.currentNoteIndex != nil {
-            vm.handleKeyboardTouch(midiNote: 62) // Re correct
+            await vm.handleKeyboardTouch(midiNote: 62) // Re correct
             #expect(vm.streak >= 1)
             #expect(vm.longestStreak >= 1)
         }

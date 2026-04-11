@@ -104,7 +104,10 @@ public struct ImportPipeline: ImportPipelineProtocol {
         let detectedFormat = formatDetector.detect(input)
         let resolvedInput: NotationInput
         if detectedFormat != .unknown && input.declaredFormat == .unknown {
-            resolvedInput = NotationInput(text: input.text, filenameHint: input.filenameHint, declaredFormat: detectedFormat)
+            resolvedInput = NotationInput(
+                text: input.text, filenameHint: input.filenameHint,
+                declaredFormat: detectedFormat
+            )
         } else {
             resolvedInput = input
         }
@@ -269,8 +272,9 @@ public struct ImportPipeline: ImportPipelineProtocol {
 
         // Extract accidental
         var offset = 0
-        if chars.hasPrefix("#") { offset = 1; chars = String(chars.dropFirst()) }
-        else if chars.hasPrefix("B") { offset = -1; chars = String(chars.dropFirst()) }
+        if chars.hasPrefix("#") { offset = 1; chars = String(chars.dropFirst()) } else if chars.hasPrefix("B") {
+            offset = -1; chars = String(chars.dropFirst())
+        }
 
         // Extract octave from the remaining string, or use the parameter
         let oct: Int

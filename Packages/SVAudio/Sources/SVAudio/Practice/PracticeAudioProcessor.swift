@@ -258,8 +258,9 @@ public final class PracticeAudioProcessor {
                 processedCount += 1
                 if processedCount == 1 || processedCount % 20 == 0 {
                     let rms = Self.calculateRMS(workBuf)
+                    let rmsStr = String(format: "%.4f", rms)
                     Self.logger.info(
-                        "MicDiag DSP: processed=\(processedCount) detected=\(detectedCount) rms=\(String(format: "%.4f", rms)) frames=\(bufferSize)"
+                        "MicDiag DSP: processed=\(processedCount) detected=\(detectedCount) rms=\(rmsStr) frames=\(bufferSize)"
                     )
                 }
                 #endif

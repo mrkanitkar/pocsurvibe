@@ -13,6 +13,19 @@ import SVLearning
 /// MockAudioEngineProvider, MockMetronomePlayer, TestClock) to enable
 /// deterministic, hardware-free testing.
 @MainActor
+private func waitForActiveNote(
+    _ vm: PlayAlongViewModel,
+    clock: TestClock,
+    maxIterations: Int = 20
+) async {
+    for _ in 0..<maxIterations {
+        if vm.currentNoteIndex != nil { return }
+        await clock.advance(by: .milliseconds(10))
+        try? await Task.sleep(for: .milliseconds(10))
+    }
+}
+
+@MainActor
 struct PlayAlongViewModelTests {
 
     // MARK: - Helpers
@@ -339,15 +352,13 @@ struct PlayAlongViewModelTests {
         await vm.loadSong(song)
         await vm.startSession()
 
-        // Advance clock so the first note becomes active
-        await clock.advance(by: .milliseconds(100))
-        // Allow the playback loop to process
-        try? await Task.sleep(for: .milliseconds(50))
+        // Wait for the playback loop to set currentNoteIndex
+        await waitForActiveNote(vm, clock: clock)
 
         // The first note is Sa (MIDI 60)
         if let index = vm.currentNoteIndex {
             let event = vm.noteEvents[index]
-            vm.handleKeyboardTouch(midiNote: Int(event.midiNote))
+            await vm.handleKeyboardTouch(midiNote: Int(event.midiNote))
 
             #expect(vm.noteStates[event.id] == .correct)
             #expect(vm.noteScores.count >= 1)
@@ -361,7 +372,7 @@ struct PlayAlongViewModelTests {
         // No loadSong — playbackState is .idle with no noteEvents.
         // handleGuidedNoteDetected guards on currentNoteIndex != nil,
         // which is nil when no song is loaded, so no score is recorded.
-        vm.handleKeyboardTouch(midiNote: 60)
+        await vm.handleKeyboardTouch(midiNote: 60)
 
         #expect(vm.noteScores.isEmpty)
     }

@@ -87,7 +87,8 @@ public struct ImportValidator: ImportValidatorProtocol {
         for note in notation.notes {
             if let octave = note.octave, octave < 1 || octave > 7 {
                 warnings.append(ParseWarning(
-                    message: "Note '\(note.name)' has octave \(octave), which is outside the standard piano range (1–7).",
+                    message: "Note '\(note.name)' has octave \(octave), "
+                        + "which is outside the standard piano range (1–7).",
                     severity: .warning,
                     noteIndex: note.index
                 ))
@@ -113,7 +114,8 @@ public struct ImportValidator: ImportValidatorProtocol {
         for note in notation.notes {
             if let duration = note.durationBeats, duration < 0.125 {
                 warnings.append(ParseWarning(
-                    message: "Note '\(note.name)' at position \(note.index + 1) has a very short duration (\(duration) beats).",
+                    message: "Note '\(note.name)' at position \(note.index + 1) "
+                        + "has a very short duration (\(duration) beats).",
                     severity: .info,
                     noteIndex: note.index
                 ))

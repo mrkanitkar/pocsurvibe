@@ -29,14 +29,14 @@ struct InteractivePianoView: View {
     /// so that CADisplayLink-driven key highlights (60–120 Hz) only re-render
     /// `InteractivePianoView` — NOT the parent `SongPlayAlongView` hierarchy.
     /// When `nil` (practice mode), falls back to `activeMidiNotes` alone.
-    var highlightState: HighlightState? = nil
+    var highlightState: HighlightState?
 
     /// Cents offset for tuning accuracy color on detected notes.
     let activeCentsOffset: Double
 
     /// The expected next note to play, highlighted in amber/orange for guidance.
     /// Shown in guided free-play mode so the user knows which key to press.
-    var expectedMidiNote: Int? = nil
+    var expectedMidiNote: Int?
 
     /// Whether latching mode is enabled (keys stay held until retapped).
     var isLatchingEnabled: Bool = false

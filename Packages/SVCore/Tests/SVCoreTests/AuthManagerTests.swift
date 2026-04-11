@@ -19,13 +19,19 @@ struct AuthManagerTests {
         #expect(manager.isAuthenticated == false)
     }
 
-    @Test("signIn is a no-op in Sprint 0")
+    @Test("signIn throws in test environment without Apple ID context")
     @MainActor
-    func signInNoOp() async throws {
+    func signInThrowsInTestEnv() async {
         let manager = AuthManager.shared
-        // signIn is not implemented — should not throw or crash
-        try await manager.signIn()
-        // State should remain unchanged (still false in Sprint 0)
-        #expect(manager.isAuthenticated == false)
+        // Sign in with Apple requires a real device/simulator context;
+        // in the test runner it throws an AuthorizationError.
+        do {
+            try await manager.signIn()
+            // If it somehow succeeds, state should be authenticated
+            #expect(manager.isAuthenticated == true)
+        } catch {
+            // Expected: ASAuthorizationError in test sandbox
+            #expect(manager.isAuthenticated == false)
+        }
     }
 }

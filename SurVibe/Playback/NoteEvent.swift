@@ -126,13 +126,13 @@ struct NoteEvent: Identifiable, Equatable, Sendable {
     /// - Returns: Array of NoteEvents preserving MIDI timing.
     static func fromMIDI(events: [MIDIEvent]) -> [NoteEvent] {
         events.map { midi in
-            let (swarName, westernName, octave) = Self.noteNames(fromMIDI: midi.noteNumber)
+            let info = Self.noteNames(fromMIDI: midi.noteNumber)
             return NoteEvent(
                 id: UUID(),
                 midiNote: midi.noteNumber,
-                swarName: swarName,
-                westernName: westernName,
-                octave: octave,
+                swarName: info.swarName,
+                westernName: info.westernName,
+                octave: info.octave,
                 timestamp: midi.timestamp,
                 duration: midi.duration,
                 velocity: midi.velocity
@@ -161,14 +161,21 @@ struct NoteEvent: Identifiable, Equatable, Sendable {
         return "\(modifier.capitalized) \(note)"
     }
 
+    /// Result of mapping a MIDI note number to Swar/Western names and octave.
+    private struct NoteNameInfo {
+        let swarName: String
+        let westernName: String
+        let octave: Int
+    }
+
     /// Derive Swar name, Western name, and octave from a MIDI note number.
     ///
     /// MIDI 60 = C4 = Sa (octave 4). The semitone offset within the octave
     /// maps to a `Swar` case via `midiOffset`.
     ///
     /// - Parameter midiNote: MIDI note number (0–127).
-    /// - Returns: Tuple of (swarName, westernName, octave).
-    private static func noteNames(fromMIDI midiNote: UInt8) -> (String, String, Int) {
+    /// - Returns: A `NoteNameInfo` with swarName, westernName, and octave.
+    private static func noteNames(fromMIDI midiNote: UInt8) -> NoteNameInfo {
         let noteNumber = Int(midiNote)
         let octave = (noteNumber / 12) - 1
         let semitone = noteNumber % 12
@@ -182,6 +189,6 @@ struct NoteEvent: Identifiable, Equatable, Sendable {
         let westernBase = westernNames[semitone]
         let westernName = "\(westernBase)\(octave)"
 
-        return (swarName, westernName, octave)
+        return NoteNameInfo(swarName: swarName, westernName: westernName, octave: octave)
     }
 }

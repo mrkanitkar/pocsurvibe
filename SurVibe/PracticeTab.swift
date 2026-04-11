@@ -418,9 +418,12 @@ private extension PracticeTab {
             Image(systemName: keyboardLayout.systemImage)
                 .font(.title3)
         }
-        .accessibilityLabel(
-            "Switch to \(keyboardLayout == .piano ? KeyboardLayoutMode.isomorphic.displayName : KeyboardLayoutMode.piano.displayName) layout"
-        )
+        .accessibilityLabel({
+            let target = keyboardLayout == .piano
+                ? KeyboardLayoutMode.isomorphic.displayName
+                : KeyboardLayoutMode.piano.displayName
+            return "Switch to \(target) layout"
+        }())
         .accessibilityHint("Toggles between piano and sargam keyboard layouts")
     }
 
