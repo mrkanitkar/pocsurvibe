@@ -126,6 +126,11 @@ struct SurVibeApp: App {
                 .warning("PostHog API key not configured. Analytics disabled.")
         }
         #endif
+        #if !DEBUG
+        if apiKey.isEmpty || apiKey.contains("PLACEHOLDER") {
+            preconditionFailure("PostHog API key is not configured. Set POSTHOG_API_KEY in PostHogConfig.xcconfig before building for Release.")
+        }
+        #endif
         if !apiKey.isEmpty, !apiKey.contains("PLACEHOLDER") {
             AnalyticsManager.shared.configure(apiKey: apiKey)
         }

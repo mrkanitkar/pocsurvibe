@@ -9,27 +9,14 @@ private let pitchLogger = Logger(
     category: "PitchDetector"
 )
 
-/// Thread-safe counter for buffer diagnostics.
-/// Uses Mutex from Swift Synchronization module for compiler-verified Sendable.
-private final class AtomicCounter: Sendable {
-    private let value = Mutex<Int>(0)
-
-    var currentValue: Int {
-        value.withLock { $0 }
-    }
-
-    @discardableResult
-    func increment() -> Int {
-        value.withLock { val in
-            val += 1
-            return val
-        }
-    }
-}
-
 /// Autocorrelation-based pitch detector using Accelerate/vDSP.
-/// Uses direct AVAudioEngine installTap for buffer access.
-/// DSP runs on a dedicated queue to avoid blocking the real-time audio thread.
+///
+/// Uses direct AVAudioEngine installTap for buffer access. The audio render
+/// callback writes raw samples into a lock-free `SPSCRingBuffer` with zero
+/// heap allocation and zero lock acquisition (AUD-001/002/003). A dedicated
+/// DSP task reads from the ring buffer via signal-driven wakeup (AUD-007),
+/// performs autocorrelation pitch detection, and yields results to an
+/// `AsyncStream<PitchResult>`.
 @MainActor
 public final class AudioKitPitchDetector: PitchDetectorProtocol {
     private var continuation: AsyncStream<PitchResult>.Continuation?
@@ -63,11 +50,24 @@ public final class AudioKitPitchDetector: PitchDetectorProtocol {
     /// Current detector status for UI feedback.
     public private(set) var status: String = "Idle"
 
-    /// Dedicated queue for DSP processing — keeps audio render thread clear.
-    private let processingQueue = DispatchQueue(
-        label: "com.survibe.pitch-detection",
-        qos: .userInteractive
-    )
+    /// Lock-free SPSC ring buffer shared between the audio callback and DSP task.
+    ///
+    /// Producer: audio render thread via `write()` — lock-free atomic write.
+    /// Consumer: DSP task via `readLatest()` — lock-free atomic read.
+    /// Capacity: 4096 samples (power-of-two, 2x the 2048-frame tap buffer size).
+    private let spscBuffer = SPSCRingBuffer(capacity: 4096)
+
+    /// AUD-007: Signal stream to wake the DSP task when new audio data arrives.
+    ///
+    /// The tap callback yields `()` after each `spscBuffer.write(ptr)`.
+    /// The DSP loop does `for await _ in tapSignal { process() }` instead of
+    /// polling with sleep. Buffer policy `bufferingNewest(1)` coalesces signals
+    /// so the DSP task gets one wakeup per accumulated batch, not N wakeups.
+    private var tapSignalContinuation: AsyncStream<Void>.Continuation?
+    private var tapSignal: AsyncStream<Void> = AsyncStream { _ in }
+
+    /// DSP processing task — runs autocorrelation on ring buffer contents.
+    private var dspTask: Task<Void, Never>?
 
     public init() {}
 
@@ -82,6 +82,8 @@ public final class AudioKitPitchDetector: PitchDetectorProtocol {
             assertionFailure("AudioKitPitchDetector deallocated while still detecting. Call stop() first.")
             #endif
             continuation?.finish()
+            tapSignalContinuation?.finish()
+            dspTask?.cancel()
             Task { @MainActor in
                 AudioEngineManager.shared.removeMicTap()
             }
@@ -102,33 +104,66 @@ public final class AudioKitPitchDetector: PitchDetectorProtocol {
         // AUD-023: bufferingNewest(3) instead of (1) so a brief main-thread
         // stall does not silently drop pitch results — consumers see up to 3
         // queued results before older ones are evicted.
-        let stream = AsyncStream<PitchResult>(
+        let (stream, continuation) = AsyncStream<PitchResult>.makeStream(
             bufferingPolicy: .bufferingNewest(3)
-        ) { continuation in
-            self.continuation = continuation
-            self.isDetecting = true
-            self.status = "Installing mic tap..."
+        )
+        self.continuation = continuation
+        self.isDetecting = true
+        self.status = "Installing mic tap..."
 
-            let queue = self.processingQueue
-            let counter = AtomicCounter()
+        // AUD-007: Create the signal stream before installing the tap so the
+        // DSP task can begin awaiting it immediately.
+        let (signal, signalCont) = AsyncStream<Void>.makeStream(
+            bufferingPolicy: .bufferingNewest(1)
+        )
+        tapSignal = signal
+        tapSignalContinuation = signalCont
 
-            AudioEngineManager.shared.installMicTap { buffer, _ in
-                Self.handleMicBuffer(
-                    buffer, counter: counter, queue: queue,
-                    continuation: continuation, refPitch: refPitch,
-                    minFreq: minFreq, maxFreq: maxFreq
+        // Install mic tap — audio callback writes raw samples into SPSCRingBuffer.
+        // AUD-001/002/003: zero heap allocation, zero lock acquisition on audio thread.
+        let spsc = spscBuffer
+        // AUD-011: tap callback counter uses Atomic<Int> — truly lock-free on audio thread.
+        let tapCount = Atomic<Int>(0)
+
+        AudioEngineManager.shared.installMicTap { [signalCont] buffer, _ in
+            guard let channelData = buffer.floatChannelData?[0] else { return }
+            let frameLength = Int(buffer.frameLength)
+            guard frameLength > 0 else { return }
+
+            // AUD-001: write raw pointer directly — no Array construction on audio thread.
+            let ptr = UnsafeBufferPointer(start: channelData, count: frameLength)
+            spsc.write(ptr)
+
+            // AUD-007: Signal the DSP task that new data is available.
+            signalCont.yield(())
+
+            // AUD-011: diagnostic logging — debug builds only.
+            #if DEBUG
+            let count = tapCount.wrappingAdd(1, ordering: .relaxed).newValue
+            if count == 1 || count % 50 == 0 {
+                let rate = buffer.format.sampleRate
+                pitchLogger.info(
+                    "Tap buffer #\(count): frames=\(frameLength) rate=\(String(format: "%.0f", rate))Hz"
                 )
             }
+            #endif
+        }
 
-            self.status = "Listening"
-            pitchLogger.info("Pitch detector started, mic tap installed")
+        self.status = "Listening"
+        pitchLogger.info("Pitch detector started, mic tap installed")
 
-            continuation.onTermination = { [weak self] _ in
-                Task { @MainActor [weak self] in
-                    self?.stopInternal()
-                }
+        // Start the signal-driven DSP loop.
+        startDSPLoop(
+            refPitch: refPitch, minFreq: minFreq, maxFreq: maxFreq,
+            continuation: continuation
+        )
+
+        continuation.onTermination = { [weak self] _ in
+            Task { @MainActor [weak self] in
+                self?.stopInternal()
             }
         }
+
         return stream
     }
 
@@ -136,121 +171,138 @@ public final class AudioKitPitchDetector: PitchDetectorProtocol {
         stopInternal()
     }
 
-    /// Internal cleanup — removes tap and finishes stream.
+    /// Internal cleanup — removes tap, cancels DSP task, and finishes streams.
     private func stopInternal() {
         guard isDetecting else { return }
         isDetecting = false
         status = "Stopped"
+        dspTask?.cancel()
+        dspTask = nil
         AudioEngineManager.shared.removeMicTap()
+        // AUD-007: Finish the tap signal stream so the DSP task's `for await` loop exits.
+        tapSignalContinuation?.finish()
+        tapSignalContinuation = nil
         continuation?.finish()
         continuation = nil
         pitchLogger.info("Pitch detector stopped")
     }
 
-    // MARK: - Mic Buffer Handling (nonisolated static)
+    // MARK: - DSP Loop (signal-driven)
 
-    /// Handle a mic buffer from the audio tap on a background queue.
-    nonisolated private static func handleMicBuffer(
-        _ buffer: AVAudioPCMBuffer,
-        counter: AtomicCounter,
-        queue: DispatchQueue,
-        continuation: AsyncStream<PitchResult>.Continuation,
+    /// Start the signal-driven DSP processing loop.
+    ///
+    /// AUD-007: Event-driven via `tapSignal` AsyncStream. The loop wakes
+    /// immediately each time the mic tap delivers a new buffer, eliminating
+    /// polling. Reads the latest 2048 audio samples from the SPSC ring buffer
+    /// into a pre-allocated working buffer, performs autocorrelation-based pitch
+    /// detection via vDSP, and yields results to the async stream.
+    private func startDSPLoop(
         refPitch: Double,
         minFreq: Double,
-        maxFreq: Double
+        maxFreq: Double,
+        continuation: AsyncStream<PitchResult>.Continuation
     ) {
-        guard let channelData = buffer.floatChannelData?[0] else { return }
-        let frameLength = Int(buffer.frameLength)
-        guard frameLength > 0 else { return }
-        let sampleRate = buffer.format.sampleRate
+        let spsc = spscBuffer
+        let bufferSize = 2048
+        let signal = tapSignal
 
-        // AUD-001: copy samples synchronously (Array() construction) inside the callback
-        // so the pointer remains valid. The copy is small (2048 floats = 8KB) and
-        // immediately dispatched to the DSP queue. The audio thread does the copy here
-        // rather than deferring an unsafe pointer across thread boundaries.
-        let samples = Array(UnsafeBufferPointer(start: channelData, count: frameLength))
-        let count = counter.increment()
+        // Allocate the DSP work buffer once — reused on every iteration.
+        let workBuf = UnsafeMutableBufferPointer<Float>.allocate(capacity: bufferSize)
+        workBuf.initialize(repeating: 0.0)
 
-        #if DEBUG
-        // AUD-011: diagnostic log — debug builds only.
-        if count % 50 == 1 {
-            pitchLogger.info(
-                "Tap buffer #\(count): frames=\(frameLength) rate=\(sampleRate)"
-            )
-        }
-        #endif
+        dspTask = Task { [weak self] in
+            defer { workBuf.deallocate() }
 
-        queue.async {
-            processBuffer(
-                samples: samples, sampleRate: sampleRate,
-                bufferCount: count, continuation: continuation,
-                refPitch: refPitch, minFreq: minFreq, maxFreq: maxFreq
-            )
+            #if DEBUG
+            var processedCount = 0
+            #endif
+
+            // AUD-007: Wait for tap signals instead of polling.
+            for await _ in signal {
+                guard !Task.isCancelled else { break }
+
+                // AUD-002: read latest samples into pre-allocated buffer — zero allocation.
+                let hasData = spsc.readLatest(count: bufferSize, into: workBuf)
+                guard hasData else { continue }
+
+                #if DEBUG
+                processedCount += 1
+                #endif
+
+                let result = Self.processWorkBuffer(
+                    workBuf, bufferSize: bufferSize,
+                    refPitch: refPitch, minFreq: minFreq, maxFreq: maxFreq
+                )
+
+                #if DEBUG
+                if processedCount % 50 == 1 {
+                    let ampStr = String(format: "%.6f", result?.amplitude ?? 0)
+                    pitchLogger.info(
+                        "DSP buffer #\(processedCount) amp=\(ampStr)"
+                    )
+                }
+                #endif
+
+                if let result {
+                    continuation.yield(result)
+                    await MainActor.run { [weak self] in
+                        self?.lastAmplitude = result.amplitude
+                        self?.bufferCount += 1
+                    }
+                } else {
+                    // Yield silence result so consumers know the detector is alive.
+                    let rms = Self.calculateRMSFromMutable(workBuf)
+                    continuation.yield(Self.silenceResult(amplitude: rms))
+                }
+            }
         }
     }
 
-    /// Process audio samples on the DSP queue and yield pitch results.
-    nonisolated private static func processBuffer(
-        samples: [Float],
-        sampleRate: Double,
-        bufferCount: Int,
-        continuation: AsyncStream<PitchResult>.Continuation,
+    // MARK: - DSP Processing (nonisolated static — safe to call from any thread)
+
+    /// Process audio samples from a pre-allocated work buffer and return a pitch result.
+    ///
+    /// Runs autocorrelation-based pitch detection with spectral confidence.
+    /// Returns `nil` if the buffer is silent or no pitch is detected above threshold.
+    ///
+    /// - Parameters:
+    ///   - workBuf: Pre-allocated buffer containing audio samples from `readLatest`.
+    ///   - bufferSize: Number of valid samples in the work buffer.
+    ///   - refPitch: Reference pitch for frequency-to-note conversion (Hz).
+    ///   - minFreq: AUD-022: Lower frequency bound (Hz).
+    ///   - maxFreq: AUD-022: Upper frequency bound (Hz).
+    /// - Returns: A `PitchResult` if a pitch was detected, or `nil` for silence/no detection.
+    nonisolated private static func processWorkBuffer(
+        _ workBuf: UnsafeMutableBufferPointer<Float>,
+        bufferSize: Int,
         refPitch: Double,
         minFreq: Double,
         maxFreq: Double
-    ) {
+    ) -> PitchResult? {
+        guard let base = workBuf.baseAddress, bufferSize > 0 else { return nil }
+
+        let samples = UnsafeBufferPointer(start: base, count: bufferSize)
         let amplitude = calculateRMS(samples)
 
-        #if DEBUG
-        // AUD-011: diagnostic log — debug builds only.
-        if bufferCount % 50 == 1 {
-            pitchLogger.info(
-                "Buffer #\(bufferCount) amp=\(String(format: "%.6f", amplitude))"
-            )
-        }
-        #endif
+        guard amplitude > 0.002 else { return nil }
 
-        guard amplitude > 0.002 else {
-            continuation.yield(silenceResult(amplitude: amplitude))
-            return
-        }
-
+        let samplesArray = Array(samples)
         let detection = detectPitchWithConfidence(
-            samples: samples, sampleRate: sampleRate,
+            samples: samplesArray, sampleRate: 44100.0,
             minFreq: minFreq, maxFreq: maxFreq
         )
-
-        #if DEBUG
-        if bufferCount % 20 == 1 {
-            let ampStr = String(format: "%.4f", amplitude)
-            let freqStr = String(format: "%.1f", detection.frequency)
-            pitchLogger.info("DSP: amp=\(ampStr) freq=\(freqStr)")
-        }
-        #endif
 
         guard detection.frequency > 0,
               let (noteName, octave, cents) = try? SwarUtility.frequencyToNote(
                   detection.frequency, referencePitch: refPitch
               )
-        else {
-            continuation.yield(silenceResult(amplitude: amplitude))
-            return
-        }
+        else { return nil }
 
-        let confidence = detection.confidence
-        let result = PitchResult(
+        return PitchResult(
             frequency: detection.frequency, amplitude: amplitude,
             noteName: noteName, octave: octave,
-            centsOffset: cents, confidence: confidence
+            centsOffset: cents, confidence: detection.confidence
         )
-        #if DEBUG
-        let ampStr = String(format: "%.4f", amplitude)
-        let freqStr = String(format: "%.1f", detection.frequency)
-        pitchLogger.info(
-            "DETECTED: \(noteName)\(octave) \(freqStr)Hz amp=\(ampStr)"
-        )
-        #endif
-        continuation.yield(result)
     }
 
     /// Create a silent/no-pitch result for the given amplitude.
@@ -266,7 +318,25 @@ public final class AudioKitPitchDetector: PitchDetectorProtocol {
 
     // MARK: - DSP (nonisolated static — safe to call from any thread)
 
-    /// Calculate RMS amplitude from audio samples.
+    /// Calculate RMS amplitude from an `UnsafeBufferPointer` of audio samples.
+    nonisolated private static func calculateRMS(_ samples: UnsafeBufferPointer<Float>) -> Double {
+        var rms: Float = 0
+        guard let base = samples.baseAddress else { return 0 }
+        vDSP_rmsqv(base, 1, &rms, vDSP_Length(samples.count))
+        return Double(rms)
+    }
+
+    /// Calculate RMS amplitude from a mutable work buffer (DSP loop variant).
+    nonisolated private static func calculateRMSFromMutable(
+        _ buffer: UnsafeMutableBufferPointer<Float>
+    ) -> Double {
+        var rms: Float = 0
+        guard let base = buffer.baseAddress else { return 0 }
+        vDSP_rmsqv(base, 1, &rms, vDSP_Length(buffer.count))
+        return Double(rms)
+    }
+
+    /// Calculate RMS amplitude from an `Array` of audio samples.
     nonisolated private static func calculateRMS(_ samples: [Float]) -> Double {
         var rms: Float = 0
         samples.withUnsafeBufferPointer { ptr in

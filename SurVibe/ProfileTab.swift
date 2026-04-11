@@ -114,7 +114,10 @@ struct ProfileTab: View {
         }
     }
 
-    /// Settings section — language selector and redo onboarding.
+    /// User preference for auto-hiding sargam labels as accuracy improves.
+    @AppStorage("autoHideSargamLabels") private var autoHideSargamLabels: Bool = true
+
+    /// Settings section — language selector, sargam label toggle, and redo onboarding.
     private var settingsSection: some View {
         Section(header: Text("Settings")) {
             NavigationLink(value: "languages") {
@@ -129,6 +132,11 @@ struct ProfileTab: View {
             .accessibilityHint(
                 Text("Current language: \(languageManager.currentLanguageDisplayName). Double tap to change.")
             )
+
+            // Auto-hide sargam labels toggle
+            Toggle("Auto-hide sargam labels", isOn: $autoHideSargamLabels)
+                .accessibilityLabel("Auto-hide sargam labels")
+                .accessibilityHint("When enabled, sargam labels fade as your accuracy improves")
 
             // Redo Onboarding
             Button {
