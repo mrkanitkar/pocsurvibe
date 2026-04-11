@@ -194,7 +194,7 @@ final class Song {
         do {
             return try JSONDecoder().decode([SargamNote].self, from: data)
         } catch {
-            songLogger.debug("Failed to decode sargam notes for song \(self.slug): \(error.localizedDescription)")
+            songLogger.debug("Failed to decode sargam notes for song \(self.slugId): \(error.localizedDescription)")
             return nil
         }
     }
@@ -205,7 +205,7 @@ final class Song {
         do {
             return try JSONDecoder().decode([WesternNote].self, from: data)
         } catch {
-            songLogger.debug("Failed to decode western notes for song \(self.slug): \(error.localizedDescription)")
+            songLogger.debug("Failed to decode western notes for song \(self.slugId): \(error.localizedDescription)")
             return nil
         }
     }
