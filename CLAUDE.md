@@ -539,6 +539,66 @@ When generating UI text, use these Hindi/Urdu music terms naturally. The app's p
 
 ---
 
+## SKILLS & SLASH COMMANDS
+
+### Project Slash Commands (`.claude/commands/`)
+
+These are SurVibe-specific skills. **Invoke the relevant command after every code change.**
+
+| Command | When to Use | File |
+|---------|------------|------|
+| `/review` | After ANY `.swift` file change — checks architecture, concurrency, data model rules | `review.md` |
+| `/audio-review` | After ANY change to `SVAudio/`, `Playback/`, `Practice/` — audio thread safety, latency budget, single engine rule | `audio-review.md` |
+| `/latency-check` | Before release or after audio config changes — verifies all 6 audio paths vs 3-10ms target | `latency-check.md` |
+| `/audio-test` | After audio code changes — audits test coverage for engine lifecycle, buffers, pitch, MIDI, metronome | `audio-test.md` |
+| `/check` | Before every commit — runs lint + format + build + test | `check.md` |
+| `/test` | After code changes — builds and runs full test suite | `test.md` |
+| `/lint` | Quick lint pass — SwiftLint on changed files | `lint.md` |
+| `/format` | Quick format pass — swift-format on changed files | `format.md` |
+
+### Installed Plugin Skills (Auto-Available)
+
+**xclaude-plugin (iOS development):**
+- `xclaude-plugin:accessibility-testing` — WCAG compliance, VoiceOver testing, contrast ratios. **Use after ANY UI change** (CLAUDE.md mandates accessibility on all elements)
+- `xclaude-plugin:performance-profiling` — Instruments profiling: Time Profiler, Allocations, Leaks, Energy. **Use for audio latency measurement + pre-release**
+- `xclaude-plugin:ios-testing-patterns` — XCTest/XCUITest patterns, flaky test detection, CI integration. **Use when writing tests**
+- `xclaude-plugin:xcode-workflows` — Build system, scheme config, xcodebuild operations. **Use for build/test**
+- `xclaude-plugin:crash-debugging` — Crash log analysis, symbolication, stack traces. **Use when debugging crashes**
+- `xclaude-plugin:simulator-workflows` — Simulator management, device lifecycle. **Use for testing**
+- `xclaude-plugin:ui-automation-workflows` — Accessibility-first UI automation via IDB. **Use for E2E tests**
+- `xclaude-plugin:state-management` — Cache management, token optimization. **Use for large operations**
+
+**superpowers (workflow):**
+- `superpowers:test-driven-development` — Write tests BEFORE implementation. **Use for all new features**
+- `superpowers:systematic-debugging` — Root cause analysis before fixing. **Use for all bug fixes**
+- `superpowers:verification-before-completion` — Verify with evidence before claiming done. **Use before every completion claim**
+- `superpowers:brainstorming` — Explore intent and requirements before building. **Use before new features**
+- `superpowers:writing-plans` — Create implementation plans from specs. **Use for multi-step tasks**
+- `superpowers:executing-plans` — Execute written plans with review checkpoints. **Use for remediation phases**
+- `superpowers:requesting-code-review` — Review work against requirements. **Use after major features**
+- `superpowers:dispatching-parallel-agents` — Run independent tasks concurrently. **Use for parallel work**
+- `superpowers:finishing-a-development-branch` — Guide merge/PR decisions. **Use after completing features**
+
+**Other:**
+- `context7` (MCP) — Fetch current documentation for any library/framework. **Use instead of web search for docs**
+- `sourcekit-lsp` — Swift LSP for code intelligence (autocomplete, go-to-definition)
+- `feature-dev` agents — `code-explorer`, `code-reviewer`, `code-architect` for deep codebase analysis
+
+### Mandatory Skill Usage
+
+| Trigger | Required Skill |
+|---------|---------------|
+| Changing ANY `.swift` file | `/review` |
+| Changing audio/playback/practice code | `/audio-review` + `/audio-test` |
+| Before ANY release build | `/latency-check` + `/check` |
+| Before claiming task complete | `superpowers:verification-before-completion` |
+| Implementing new feature | `superpowers:brainstorming` → `superpowers:test-driven-development` |
+| Fixing a bug | `superpowers:systematic-debugging` |
+| After UI changes | `xclaude-plugin:accessibility-testing` |
+| Building E2E tests | `xclaude-plugin:ios-testing-patterns` + `xclaude-plugin:ui-automation-workflows` |
+
+---
+
 ## REFERENCE DOCUMENTS
 
 These documents in `docs/` contain the full architectural decisions. Consult them when making significant changes:
@@ -549,6 +609,7 @@ These documents in `docs/` contain the full architectural decisions. Consult the
 - `SurVibe_Sprint0_Implementation.docx` — Sprint 0 day-by-day plan with quality gates
 - `Sprint0_Gap_Report.md` — architect review: all fixes applied, deferred items listed
 - `SurVibe_Dependencies_Report.docx` — external dependencies and costs
+- `missinglink.md` — **full audit gap report** (207 gaps, 43-item remediation plan, skills mapping)
 
 ### Architecture Decision Records
 - `SurVibe_Hostile_Review_Round2.docx` — adversarial architecture review
@@ -560,5 +621,5 @@ These documents in `docs/` contain the full architectural decisions. Consult the
 
 ---
 
-*Last updated: March 2026 | Version 3.1 (Audit Pass)*
-*Covers: 25 architecture decisions, 21 architect review fixes, enforcement pipeline, app structure, deferred items*
+*Last updated: April 2026 | Version 3.2 (Skills Audit)*
+*Covers: 25 architecture decisions, 21 architect review fixes, enforcement pipeline, app structure, deferred items, skills mapping*
