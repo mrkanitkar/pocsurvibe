@@ -41,6 +41,12 @@ struct SargamNoteView: View {
     /// Whether the user has enabled reduced motion in accessibility settings.
     let reduceMotion: Bool
 
+    /// Scoring match state of the current note for a correctness overlay border.
+    ///
+    /// When `.correct`, the block border turns green. When `.wrong`, it turns red.
+    /// `nil` means no match state applies (upcoming/past/active notes).
+    var matchState: FallingNotesLayoutEngine.NoteState?
+
     /// Base width in points for a quarter note (duration 1.0) at 1.0x zoom.
     private let baseWidth: CGFloat = 44.0
 
@@ -113,7 +119,11 @@ struct SargamNoteView: View {
     }
 
     /// Stroke color for the note block border.
+    ///
+    /// Priority: match state (green/red) > detected pitch accuracy > current/past note default.
     private var noteStrokeColor: Color {
+        if matchState == .correct { return .green }
+        if matchState == .wrong { return .red }
         if isDetectedNote {
             return detectionAccuracyColor
         }
@@ -122,6 +132,7 @@ struct SargamNoteView: View {
 
     /// Stroke width for the note block border.
     private var noteStrokeWidth: CGFloat {
+        if matchState == .correct || matchState == .wrong { return 3 }
         if isDetectedNote { return 3 }
         return isCurrentNote ? 2 : 0.5
     }

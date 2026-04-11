@@ -20,12 +20,15 @@ import os.log
 /// between hardware sample capture and the first available frame — low latency is critical
 /// for responsive SoundFont MIDI playback.
 ///
-/// **Mic tap buffer (`bufferSize = 2048`):** The `installMicTap(bufferSize:)` parameter
-/// requests 2048 frames (~46ms) per audio tap callback. This is the DSP analysis window:
-/// at 44100 Hz, the lowest musically useful pitch (A2 = 110 Hz) has a period of ~400
-/// samples, so at least 2× (~800 samples) is required for reliable autocorrelation.
-/// The 2048-frame window gives `floor(2048/2) = 1024` lag samples, covering pitches
-/// down to ~43 Hz (well below the piano's lowest A, 27.5 Hz).
+/// **Mic tap buffer (`bufferSize = 1024`):** The `installMicTap(bufferSize:)` parameter
+/// requests 1024 frames (~23ms) per audio tap callback. This is the DSP analysis window.
+/// At 44100 Hz the lowest musically useful pitch within `PracticeConstants.minimumFrequency`
+/// (50 Hz) has a period of ~882 samples; the autocorrelation half-window of 512 lag
+/// samples covers pitches down to ~86 Hz. Notes below 86 Hz (roughly F2) are not in the
+/// singing/playing range targeted by SurVibe's piano tutor, so detection accuracy is
+/// preserved for the practical range (C3–C8). Halving the buffer from 2048→1024 cuts
+/// the minimum end-to-end detection latency from ~46 ms to ~23 ms, which is the single
+/// largest factor in the perceived "lag" reported by users playing at normal BPM.
 ///
 /// These two values are **independent**: the hardware I/O buffer controls playback
 /// latency; the tap buffer controls pitch detection accuracy. They do not need to match.
@@ -65,8 +68,11 @@ public final class AudioEngineManager: AudioEngineProviding {
     /// Player node for metronome clicks.
     public let metronomeNode = AVAudioPlayerNode()
 
-    /// Default buffer size for mic tap: 2048 frames (~46ms at 44100 Hz).
-    public let bufferSize: AVAudioFrameCount = 2048
+    /// Default buffer size for mic tap: 1024 frames (~23ms at 44100 Hz).
+    ///
+    /// Reduced from 2048 to halve end-to-end detection latency. Covers pitches
+    /// down to ~86 Hz, which includes the full practical piano range (C3–C8).
+    public let bufferSize: AVAudioFrameCount = 1024
 
     private var isConfigured = false
 

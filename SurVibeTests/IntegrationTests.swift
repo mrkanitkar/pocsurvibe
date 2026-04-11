@@ -51,7 +51,7 @@ struct IntegrationTests {
         let manager = AudioEngineManager.shared
         // Verify structural properties only — do NOT assert isRunning because
         // other tests or the host app may have started the engine.
-        #expect(manager.bufferSize == 2048)
+        #expect(manager.bufferSize == 1024)
         // Access nodes to verify they exist (all non-optional)
         _ = manager.engine
         _ = manager.sampler
@@ -123,7 +123,7 @@ struct IntegrationTests {
     @MainActor func testAudioLatency() {
         let config = AudioConfig.pitchDetection
         #expect(config.latencyMs < 50.0, "Latency must be under 50ms target")
-        #expect(config.bufferSize == 2048)
+        #expect(config.bufferSize == 1024)
         #expect(config.sampleRate == 44100)
     }
 

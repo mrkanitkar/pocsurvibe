@@ -32,4 +32,13 @@ struct AnalyticsEventTests {
         #expect(AnalyticsEvent.songImportSynced.rawValue == "song_import_synced")
         #expect(AnalyticsEvent.songImportWarningDisplayed.rawValue == "song_import_warning_displayed")
     }
+
+    @Test("Play-Along toolbar interaction events have correct raw values")
+    func playAlongToolbarEventsHaveCorrectRawValues() {
+        #expect(AnalyticsEvent.playAlongTempoChanged.rawValue == "play_along_tempo_changed")
+        #expect(AnalyticsEvent.playAlongViewModeChanged.rawValue == "play_along_view_mode_changed")
+        #expect(AnalyticsEvent.playAlongNotationToggled.rawValue == "play_along_notation_toggled")
+        #expect(AnalyticsEvent.playAlongSoundToggled.rawValue == "play_along_sound_toggled")
+        #expect(AnalyticsEvent.playAlongRestarted.rawValue == "play_along_restarted")
+    }
 }

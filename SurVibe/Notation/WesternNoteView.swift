@@ -26,6 +26,12 @@ struct WesternNoteView: View {
     /// Whether to suppress animations for accessibility.
     let reduceMotion: Bool
 
+    /// Scoring match state of the current note for a correctness overlay border.
+    ///
+    /// When `.correct`, the block border turns green. When `.wrong`, it turns red.
+    /// `nil` means no match state applies (upcoming/past/active notes).
+    var matchState: FallingNotesLayoutEngine.NoteState?
+
     /// Base width in points for a quarter note (duration 1.0) at 1.0x zoom.
     private let baseWidth: CGFloat = 44.0
 
@@ -69,8 +75,11 @@ struct WesternNoteView: View {
             .overlay(
                 RoundedRectangle(cornerRadius: 8)
                     .stroke(
+                        matchState == .correct ? Color.green :
+                        matchState == .wrong ? Color.red :
                         isDetected ? Color.green : Color.primary.opacity(isCurrentNote ? 1 : 0.15),
-                        lineWidth: isDetected ? 2 : (isCurrentNote ? 2 : 0.5)
+                        lineWidth: (matchState == .correct || matchState == .wrong) ? 3 :
+                                   isDetected ? 2 : (isCurrentNote ? 2 : 0.5)
                     )
             )
             .if(isCurrentNote) { view in

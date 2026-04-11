@@ -5,7 +5,11 @@ public struct AudioConfig: Sendable {
     /// Sample rate in Hz (default: 44100).
     public let sampleRate: Double
 
-    /// Buffer size in frames (default: 2048 for ~46ms latency at 44100 Hz).
+    /// Buffer size in frames (default: 1024 for ~23ms latency at 44100 Hz).
+    ///
+    /// Reduced from 2048 to halve end-to-end detection latency. Matches
+    /// `AudioEngineManager.bufferSize`. Covers pitches down to ~86 Hz,
+    /// which includes the full practical piano range (C3–C8).
     public let bufferSize: UInt32
 
     /// Number of audio channels (default: 1 for mono mic input).
@@ -13,7 +17,7 @@ public struct AudioConfig: Sendable {
 
     public init(
         sampleRate: Double = 44100,
-        bufferSize: UInt32 = 2048,
+        bufferSize: UInt32 = 1024,
         channelCount: UInt32 = 1
     ) {
         self.sampleRate = sampleRate

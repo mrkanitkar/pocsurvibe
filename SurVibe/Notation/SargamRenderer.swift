@@ -38,6 +38,11 @@ struct SargamRenderer: View {
     /// Cents offset of the currently detected pitch from the nearest note.
     var detectedCents: Double = 0
 
+    /// Scoring match state of the note at `currentNoteIndex`, for a correctness overlay border.
+    ///
+    /// Passed to `SargamNoteView` for the active note so it can display a green or red border.
+    var currentNoteMatchState: FallingNotesLayoutEngine.NoteState?
+
     @Environment(\.accessibilityReduceMotion)
     private var reduceMotion
 
@@ -93,7 +98,8 @@ struct SargamRenderer: View {
                             isDetectedNote: isNoteDetected(at: index),
                             detectedCents: isNoteDetected(at: index) ? detectedCents : 0,
                             labelOpacity: labelOpacity,
-                            reduceMotion: reduceMotion
+                            reduceMotion: reduceMotion,
+                            matchState: index == currentNoteIndex ? currentNoteMatchState : nil
                         )
                         .id(index)
                     }

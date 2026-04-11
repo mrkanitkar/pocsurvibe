@@ -37,7 +37,13 @@ struct StaffNotationRenderer: View {
     ///
     /// When set, all noteheads matching this MIDI number are highlighted green
     /// so the user can see which staff positions correspond to the pressed key.
-    var detectedMidiNote: Int? = nil
+    var detectedMidiNote: Int?
+
+    /// Scoring match state of the note at `currentNoteIndex`, for a correctness overlay border.
+    ///
+    /// When `.correct`, the highlight rect is drawn in green; when `.wrong`, in red.
+    /// Overrides the default accent-color highlight when set.
+    var currentNoteMatchState: FallingNotesLayoutEngine.NoteState?
 
     // MARK: - Environment
 
@@ -105,7 +111,8 @@ struct StaffNotationRenderer: View {
                         drawNote(
                             context: &context, noteInfo: noteInfo,
                             staffTop: staffTop, isHighlighted: isHighlighted,
-                            isDetected: isDetected
+                            isDetected: isDetected,
+                            matchState: index == currentNoteIndex ? currentNoteMatchState : nil
                         )
                     }
                 }
@@ -204,12 +211,13 @@ struct StaffNotationRenderer: View {
         noteInfo: StaffNoteInfo,
         staffTop: CGFloat,
         isHighlighted: Bool,
-        isDetected: Bool = false
+        isDetected: Bool = false,
+        matchState: FallingNotesLayoutEngine.NoteState? = nil
     ) {
         let centerX = noteInfo.xPosition
         let centerY = yForStaffPosition(noteInfo.staffYOffset, staffTop: staffTop)
 
-        // Playback highlight rectangle (accent color)
+        // Playback highlight rectangle — green for correct, red for wrong, accent otherwise.
         if isHighlighted {
             let highlightRect = CGRect(
                 x: centerX - noteheadWidth,
@@ -217,7 +225,12 @@ struct StaffNotationRenderer: View {
                 width: noteheadWidth * 2,
                 height: noteheadHeight * 4
             )
-            let highlightColor: Color = .accentColor.opacity(0.2)
+            let highlightColor: Color
+            switch matchState {
+            case .correct: highlightColor = .green.opacity(0.35)
+            case .wrong: highlightColor = .red.opacity(0.35)
+            default: highlightColor = .accentColor.opacity(0.2)
+            }
             context.fill(Path(roundedRect: highlightRect, cornerRadius: 4), with: .color(highlightColor))
         }
 

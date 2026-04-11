@@ -17,9 +17,11 @@ public enum PracticeConstants {
 
     /// Minimum confidence threshold for a pitch detection result to be scored.
     ///
-    /// Set to 0.3 to accommodate piano's complex harmonic structure where
+    /// Set to 0.15 to accommodate piano's complex harmonic structure where
     /// the fundamental autocorrelation peak is often weaker than harmonic peaks.
-    public static let confidenceThreshold: Double = 0.3
+    /// At 0.3 the threshold was too strict for fast-attack piano notes whose
+    /// fundamental peak decays before a full 2048-frame window completes.
+    public static let confidenceThreshold: Double = 0.15
 
     // MARK: - Pitch Tolerance
 

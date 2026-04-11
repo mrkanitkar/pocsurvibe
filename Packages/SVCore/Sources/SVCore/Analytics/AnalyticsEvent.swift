@@ -50,10 +50,25 @@ public enum AnalyticsEvent: String, Sendable {
     case waitModeNoteAttempted = "wait_mode_note_attempted"
     case waitModeCompleted = "wait_mode_completed"
 
-    // Play-Along events
+    // Play-Along session events — DEPRECATED: ViewModel fires songPlaybackStarted/Completed instead.
+    // Cases kept to avoid breaking existing PostHog dashboard queries.
+    // Do not fire these from new code; use songPlaybackStarted/songPlaybackCompleted.
+    @available(*, deprecated, renamed: "songPlaybackStarted",
+               message: "Use songPlaybackStarted with enriched properties instead.")
     case playAlongStarted = "play_along_started"
+    @available(*, deprecated, renamed: "songPlaybackCompleted",
+               message: "Use songPlaybackCompleted with enriched properties instead.")
     case playAlongCompleted = "play_along_completed"
+    @available(*, deprecated,
+               message: "Not fired — retained for PostHog dashboard compatibility only.")
     case playAlongAbandoned = "play_along_abandoned"
+
+    // Play-Along toolbar interaction events
+    case playAlongTempoChanged = "play_along_tempo_changed"
+    case playAlongViewModeChanged = "play_along_view_mode_changed"
+    case playAlongNotationToggled = "play_along_notation_toggled"
+    case playAlongSoundToggled = "play_along_sound_toggled"
+    case playAlongRestarted = "play_along_restarted"
 
     // Song Import events
     case songImportStarted = "song_import_started"

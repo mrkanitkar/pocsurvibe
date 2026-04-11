@@ -70,11 +70,14 @@ struct FallingNotesView: View {
     /// Corner radius of note rectangles.
     private let noteCornerRadius: CGFloat = 6
 
-    /// Height of the hit line indicator at the bottom.
+    /// Height of the hit line indicator.
     private let hitLineHeight: CGFloat = 3
 
-    /// Distance from the bottom of the viewport to the hit line.
-    private let hitLineBottomInset: CGFloat = 0
+    /// Fractional Y position of the hit line within the viewport (0 = top, 1 = bottom).
+    ///
+    /// 0.85 places the hit line 85% down from the top, leaving 15% below
+    /// for the piano keyboard transition zone. Notes fall toward this line.
+    private let hitLineFraction: CGFloat = 0.85
 
     /// Minimum font size for note labels.
     private let labelFontSize: CGFloat = 13
@@ -114,9 +117,9 @@ struct FallingNotesView: View {
 
     // MARK: - Drawing Methods
 
-    /// Draw the horizontal hit line near the bottom of the viewport.
+    /// Draw the horizontal hit line at `hitLineFraction` of the viewport height.
     private func drawHitLine(context: inout GraphicsContext, size: CGSize) {
-        let hitLineY = size.height - hitLineBottomInset
+        let hitLineY = size.height * hitLineFraction
         let hitLineRect = CGRect(
             x: 0,
             y: hitLineY - hitLineHeight / 2,
@@ -136,8 +139,11 @@ struct FallingNotesView: View {
         viewportHeight: CGFloat,
         currentTime: TimeInterval
     ) {
+        // Use hitLineY as the effective viewport height so notes fall toward
+        // the hit line at 85% rather than the absolute bottom edge.
+        let hitLineY = size.height * hitLineFraction
         let pps = FallingNotesLayoutEngine.pixelsPerSecond(
-            viewportHeight: viewportHeight,
+            viewportHeight: hitLineY,
             visibleDuration: visibleDuration
         )
 
@@ -146,14 +152,15 @@ struct FallingNotesView: View {
                 noteTimestamp: event.timestamp,
                 currentTime: currentTime,
                 pixelsPerSecond: pps,
-                viewportHeight: viewportHeight
+                viewportHeight: hitLineY
             )
             let height = FallingNotesLayoutEngine.noteHeight(
                 duration: event.duration,
                 pixelsPerSecond: pps
             )
 
-            // Viewport culling — skip off-screen notes.
+            // Viewport culling — skip off-screen notes (use full viewportHeight so
+            // notes above the hit line but below the canvas bottom are still culled).
             guard FallingNotesLayoutEngine.isNoteVisible(
                 noteY: y,
                 noteHeight: height,

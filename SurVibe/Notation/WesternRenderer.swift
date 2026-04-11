@@ -20,7 +20,12 @@ struct WesternRenderer: View {
     ///
     /// When set, the matching note block is highlighted with a green border
     /// so the user can see which notation block corresponds to the key they pressed.
-    var detectedMidiNote: Int? = nil
+    var detectedMidiNote: Int?
+
+    /// Scoring match state of the note at `currentNoteIndex`, for a correctness overlay border.
+    ///
+    /// Passed to `WesternNoteView` for the active note so it can display a green or red border.
+    var currentNoteMatchState: FallingNotesLayoutEngine.NoteState?
 
     @Environment(\.accessibilityReduceMotion)
     private var reduceMotion
@@ -73,7 +78,8 @@ struct WesternRenderer: View {
                             isCurrentNote: index == currentNoteIndex,
                             isPastNote: isPastNote(at: index),
                             isDetected: notes[index].midiNumber == detectedMidiNote,
-                            reduceMotion: reduceMotion
+                            reduceMotion: reduceMotion,
+                            matchState: index == currentNoteIndex ? currentNoteMatchState : nil
                         )
                         .id(index)
                     }

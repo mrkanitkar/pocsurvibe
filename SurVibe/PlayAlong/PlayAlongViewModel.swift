@@ -276,6 +276,11 @@ final class PlayAlongViewModel {
     /// Used for onset debouncing: only score when the note changes, not on every frame.
     private var lastGuidedMidiNote: Int? = nil
 
+    /// Timestamp of the most recent pitch result that passed both amplitude and confidence
+    /// thresholds in the melody detection loop. Used by the chord detection task to avoid
+    /// double-scoring a note that the faster autocorrelation path already handled.
+    private var lastMelodyDetectionDate: Date = .distantPast
+
     /// Patience timeout before marking user as "stuck" (from WaitModeSettingsStore).
     private var patienceSeconds: Double {
         let value = UserDefaults.standard.double(forKey: "com.survibe.waitMode.patience")
@@ -501,7 +506,13 @@ final class PlayAlongViewModel {
 
         AnalyticsManager.shared.track(
             .songPlaybackStarted,
-            properties: ["song_title": song?.title ?? ""]
+            properties: [
+                "song_title": song?.title ?? "",
+                "tempo_scale": tempoScale,
+                "view_mode": viewMode.rawValue,
+                "notation_mode": notationMode.rawValue,
+                "wait_mode": isWaitModeEnabled,
+            ]
         )
 
         Self.logger.info("Play-along session started")
@@ -906,12 +917,39 @@ final class PlayAlongViewModel {
                     referencePitch: refPitch
                 )
                 guard !result.detectedPitches.isEmpty else { continue }
-                // Only update keyboard highlights from chord data when MIDI is not connected
-                // and there are multiple distinct pitches (i.e., actual chord playing).
-                if !self.isMIDIConnected, result.detectedPitches.count > 1 {
-                    let midiNotes = Set(result.detectedPitches.map { $0.midiNote })
-                    self.detectedMidiNotes = midiNotes
-                    self.updateDetectedSwarInfo(from: midiNotes)
+
+                guard !self.isMIDIConnected else { continue }
+
+                // Update keyboard highlights with all detected pitches (polyphonic display).
+                let midiNotes = Set(result.detectedPitches.map { $0.midiNote })
+                self.detectedMidiNotes = midiNotes
+                self.updateDetectedSwarInfo(from: midiNotes)
+
+                // --- Chord-path scoring fallback ---
+                // The autocorrelation melody path runs every ~23ms but can fail when
+                // both hands play simultaneously (polyphonic signal confuses the
+                // monophonic peak-picker). The chromagram FFT is more robust to
+                // polyphonic input because it sums energy per pitch class.
+                //
+                // Strategy: pick the single highest-confidence pitch from the chromagram
+                // result and route it to scoring — but ONLY if the melody path has not
+                // already scored a note in the last 80ms (two chord polling cycles).
+                // This prevents double-scoring on notes the autocorrelation caught.
+                //
+                // 80ms window = slightly more than one chord polling interval (50ms),
+                // giving the melody path priority without missing notes it dropped.
+                let melodyAge = Date().timeIntervalSince(self.lastMelodyDetectionDate)
+                guard melodyAge > 0.080 else { continue }
+
+                // Pick the highest-confidence pitch as the dominant melody note.
+                guard let dominant = result.detectedPitches.max(by: { $0.confidence < $1.confidence }) else {
+                    continue
+                }
+                let dominantMidi = dominant.midiNote
+                if self.playbackState == .playing {
+                    self.handleNoteDetected(midiNote: dominantMidi)
+                } else if self.playbackState == .idle || self.playbackState == .paused {
+                    self.handleGuidedNoteDetected(midiNote: dominantMidi)
                 }
             }
         }
@@ -951,6 +989,9 @@ final class PlayAlongViewModel {
             if enriched.amplitude >= PracticeConstants.silenceThreshold,
                enriched.confidence >= PracticeConstants.confidenceThreshold {
                 self.currentPitch = enriched
+                // Mark that the melody path handled this frame so the chord fallback
+                // (50ms polling) can skip scoring to avoid double-counting.
+                self.lastMelodyDetectionDate = Date()
                 let midiNote = Self.midiNoteFromFrequency(enriched.frequency)
                 if !self.isMIDIConnected {
                     Self.logger.info("MicDiag: highlight note=\(midiNote) (\(enriched.noteName)\(enriched.octave))")
@@ -1490,6 +1531,8 @@ final class PlayAlongViewModel {
                 "accuracy": accuracy,
                 "star_rating": starRating,
                 "xp_earned": xpEarned,
+                "tempo_scale": tempoScale,
+                "view_mode": viewMode.rawValue,
             ]
         )
 

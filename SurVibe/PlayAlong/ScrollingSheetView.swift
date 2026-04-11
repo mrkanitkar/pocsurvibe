@@ -56,6 +56,12 @@ struct ScrollingSheetView: View {
     /// `highlightState`; it is passed directly to this view.
     var highlightState: HighlightState?
 
+    /// Scoring match state of the note at `currentNoteIndex`.
+    ///
+    /// When `.correct`, notation renders a green border on the active note;
+    /// when `.wrong`, a red border. Nil during playback before any user input.
+    var currentNoteMatchState: FallingNotesLayoutEngine.NoteState?
+
     // MARK: - Private Helpers
 
     /// The effective note name to highlight in the notation, from any input source.
@@ -98,7 +104,8 @@ struct ScrollingSheetView: View {
                     labelOpacity: 1.0,
                     detectedNoteName: activeDetectedName,
                     detectedOctave: activeDetectedOctave,
-                    detectedCents: activeDetectedCents
+                    detectedCents: activeDetectedCents,
+                    currentNoteMatchState: currentNoteMatchState
                 )
 
             case .western:
@@ -106,7 +113,8 @@ struct ScrollingSheetView: View {
                     notes: westernNotes,
                     currentNoteIndex: currentNoteIndex,
                     zoomScale: 1.0,
-                    detectedMidiNote: activeDetectedMidiNote
+                    detectedMidiNote: activeDetectedMidiNote,
+                    currentNoteMatchState: currentNoteMatchState
                 )
 
             case .dual:
@@ -118,14 +126,16 @@ struct ScrollingSheetView: View {
                         labelOpacity: 1.0,
                         detectedNoteName: activeDetectedName,
                         detectedOctave: activeDetectedOctave,
-                        detectedCents: activeDetectedCents
+                        detectedCents: activeDetectedCents,
+                        currentNoteMatchState: currentNoteMatchState
                     )
                     Divider().padding(.horizontal, 16)
                     WesternRenderer(
                         notes: westernNotes,
                         currentNoteIndex: currentNoteIndex,
                         zoomScale: 1.0,
-                        detectedMidiNote: activeDetectedMidiNote
+                        detectedMidiNote: activeDetectedMidiNote,
+                        currentNoteMatchState: currentNoteMatchState
                     )
                 }
 
@@ -136,7 +146,8 @@ struct ScrollingSheetView: View {
                     keySignature: song.keySignatureEnum,
                     timeSignature: song.timeSignatureEnum,
                     zoomScale: 1.0,
-                    detectedMidiNote: activeDetectedMidiNote
+                    detectedMidiNote: activeDetectedMidiNote,
+                    currentNoteMatchState: currentNoteMatchState
                 )
 
             case .sargamPlusSheet:
@@ -148,7 +159,8 @@ struct ScrollingSheetView: View {
                         labelOpacity: 1.0,
                         detectedNoteName: activeDetectedName,
                         detectedOctave: activeDetectedOctave,
-                        detectedCents: activeDetectedCents
+                        detectedCents: activeDetectedCents,
+                        currentNoteMatchState: currentNoteMatchState
                     )
                     Divider().padding(.horizontal, 16)
                     StaffNotationRenderer(
@@ -157,7 +169,8 @@ struct ScrollingSheetView: View {
                         keySignature: song.keySignatureEnum,
                         timeSignature: song.timeSignatureEnum,
                         zoomScale: 1.0,
-                        detectedMidiNote: activeDetectedMidiNote
+                        detectedMidiNote: activeDetectedMidiNote,
+                        currentNoteMatchState: currentNoteMatchState
                     )
                 }
             }

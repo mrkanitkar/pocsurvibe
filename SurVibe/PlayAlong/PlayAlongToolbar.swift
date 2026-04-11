@@ -42,6 +42,12 @@ struct PlayAlongToolbar: View {
     /// Current latency preset for mic pitch detection.
     let latencyPreset: LatencyPreset
 
+    /// Base tempo in BPM from the loaded song, used to compute effective BPM display.
+    ///
+    /// Combined with `tempoScale` to show the effective BPM as "♩ = 72 BPM (60%)",
+    /// giving the player a concrete sense of the actual playback speed.
+    var baseBPM: Int = 120
+
     // MARK: - Callbacks
 
     /// Called when the user taps Play or Pause.
@@ -145,10 +151,10 @@ struct PlayAlongToolbar: View {
             }
             // Slider
             HStack(spacing: 4) {
-                Text(PlayAlongToolbar.formatTempoLabel(tempoScale))
+                Text(PlayAlongToolbar.formatTempoBPM(scale: tempoScale, baseBPM: baseBPM))
                     .font(.caption)
                     .monospacedDigit()
-                    .frame(width: 52, alignment: .trailing)
+                    .frame(width: 120, alignment: .trailing)
                     .accessibilityHidden(true)
                 Slider(
                     value: Binding(
@@ -159,7 +165,7 @@ struct PlayAlongToolbar: View {
                     step: 0.1
                 )
                 .accessibilityLabel("Tempo speed")
-                .accessibilityValue(PlayAlongToolbar.formatTempoLabel(tempoScale))
+                .accessibilityValue(PlayAlongToolbar.formatTempoBPM(scale: tempoScale, baseBPM: baseBPM))
                 .accessibilityHint("Adjust playback speed from 40 percent to 100 percent")
             }
         }
@@ -410,6 +416,7 @@ struct PlayAlongToolbar: View {
         isMIDIConnected: false,
         midiDeviceName: nil,
         latencyPreset: .fast,
+        baseBPM: 120,
         onPlayPause: {},
         onStop: {},
         onTempoChange: { _ in },
@@ -432,6 +439,7 @@ struct PlayAlongToolbar: View {
         isMIDIConnected: true,
         midiDeviceName: "Yamaha PSR-400",
         latencyPreset: .balanced,
+        baseBPM: 100,
         onPlayPause: {},
         onStop: {},
         onTempoChange: { _ in },

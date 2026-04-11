@@ -70,21 +70,42 @@ struct SongPlayAlongView: View {
                 isMIDIConnected: viewModel.isMIDIConnected,
                 midiDeviceName: viewModel.midiDeviceName,
                 latencyPreset: viewModel.latencyPreset,
+                baseBPM: song.tempo,
                 onPlayPause: handlePlayPause,
                 onStop: handleStop,
-                onTempoChange: { viewModel.tempoScale = $0 },
+                onTempoChange: {
+                    viewModel.tempoScale = $0
+                    AnalyticsManager.shared.track(
+                        .playAlongTempoChanged,
+                        properties: ["tempo_scale": $0, "song_title": song.title]
+                    )
+                },
                 onWaitModeToggle: {
                     viewModel.toggleWaitMode()
                     storedWaitMode = viewModel.isWaitModeEnabled
                 },
-                onSoundToggle: { viewModel.isSoundEnabled.toggle() },
+                onSoundToggle: {
+                    viewModel.isSoundEnabled.toggle()
+                    AnalyticsManager.shared.track(
+                        .playAlongSoundToggled,
+                        properties: ["enabled": viewModel.isSoundEnabled, "song_title": song.title]
+                    )
+                },
                 onViewModeChange: {
                     viewModel.viewMode = $0
                     storedViewMode = $0.rawValue
+                    AnalyticsManager.shared.track(
+                        .playAlongViewModeChanged,
+                        properties: ["view_mode": $0.rawValue, "song_title": song.title]
+                    )
                 },
                 onNotationModeChange: {
                     viewModel.notationMode = $0
                     storedNotationMode = $0.rawValue
+                    AnalyticsManager.shared.track(
+                        .playAlongNotationToggled,
+                        properties: ["notation_mode": $0.rawValue, "song_title": song.title]
+                    )
                 },
                 onLatencyPresetChange: { viewModel.latencyPreset = $0 }
             )
@@ -180,6 +201,22 @@ struct SongPlayAlongView: View {
         .onChange(of: viewModel.guidedPlayState) { _, newState in
             handleGuidedPlayStateChange(newState)
         }
+        .onChange(of: viewModel.currentNoteIndex) { _, newIndex in
+            // AUD-VO: Announce current note to VoiceOver users.
+            // Only announces when VoiceOver is running to avoid unnecessary overhead.
+            guard UIAccessibility.isVoiceOverRunning,
+                  let index = newIndex,
+                  index < viewModel.noteEvents.count else { return }
+            let event = viewModel.noteEvents[index]
+            // Post queued announcement so it doesn't cut off prior speech.
+            UIAccessibility.post(
+                notification: .announcement,
+                argument: NSAttributedString(
+                    string: event.swarName,
+                    attributes: [.accessibilitySpeechQueueAnnouncement: true]
+                )
+            )
+        }
         .fullScreenCover(isPresented: $showResults) {
             PlayAlongResultsOverlay(
                 songTitle: song.title,
@@ -191,6 +228,10 @@ struct SongPlayAlongView: View {
                 xpEarned: viewModel.xpEarned,
                 onReplay: {
                     showResults = false
+                    AnalyticsManager.shared.track(
+                        .playAlongRestarted,
+                        properties: ["song_title": song.title]
+                    )
                     Task {
                         await viewModel.startSession()
                     }
@@ -206,6 +247,17 @@ struct SongPlayAlongView: View {
     }
 
     // MARK: - Content Area
+
+    /// Match state of the note at the current playback index, for notation overlays.
+    ///
+    /// Returns the `FallingNotesLayoutEngine.NoteState` for the note currently at
+    /// `viewModel.currentNoteIndex`, enabling the scrolling-sheet renderers to show
+    /// a green border (`.correct`) or red border (`.wrong`) on the active note.
+    private var currentNoteMatchState: FallingNotesLayoutEngine.NoteState? {
+        guard let index = viewModel.currentNoteIndex,
+              index < viewModel.noteEvents.count else { return nil }
+        return viewModel.noteStates[viewModel.noteEvents[index].id]
+    }
 
     /// The main visual content area, switching between falling notes and sheet.
     @ViewBuilder
@@ -234,7 +286,8 @@ struct SongPlayAlongView: View {
                     currentNoteIndex: viewModel.currentNoteIndex,
                     notationMode: viewModel.notationMode,
                     currentPitch: viewModel.currentPitch,
-                    highlightState: viewModel.highlightState
+                    highlightState: viewModel.highlightState,
+                    currentNoteMatchState: currentNoteMatchState
                 )
                 .accessibilityLabel("Scrolling sheet notation")
                 .accessibilityHint("Sheet notation scrolls to follow the current note")
@@ -463,7 +516,6 @@ struct SongPlayAlongView: View {
             withAnimation { showCorrectnessBanner = false }
         }
     }
-
 }
 
 // MARK: - Preview
