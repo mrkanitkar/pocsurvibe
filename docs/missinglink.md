@@ -1310,10 +1310,10 @@ The learning experience is currently non-functional.
 
 | # | Task | Gaps Resolved | Files | Status |
 |---|------|--------------|-------|--------|
-| 6 | **Wire ListenStepView** to SongPlaybackEngine for audio playback | GAP-D12-001 | `SurVibe/Learn/Steps/ListenStepView.swift`, `+StepContent.swift` | TODO |
-| 7 | **Wire SingStepView** to PitchDetectionViewModel for real accuracy | GAP-D12-002 | `SurVibe/Learn/Steps/SingStepView.swift` | TODO |
-| 8 | **Wire ExerciseStepView** to WaitModeEngine for guided drill | GAP-D12-003 | `SurVibe/Learn/Steps/ExerciseStepView.swift` | TODO |
-| 9 | **Wire QuizStepView** to main lesson flow (already functional standalone) | — | `+StepContent.swift` | TODO |
+| 6 | **Wire ListenStepView** to SongPlaybackEngine for audio playback | GAP-D12-001 | `SurVibe/Learn/Steps/ListenStepView.swift`, `+StepContent.swift` | DONE |
+| 7 | **Wire SingStepView** to PitchDetectionViewModel for real accuracy | GAP-D12-002 | `SurVibe/Learn/Steps/SingStepView.swift` | DONE |
+| 8 | **Wire ExerciseStepView** to WaitModeEngine for guided drill | GAP-D12-003 | `SurVibe/Learn/Steps/ExerciseStepView.swift` | DONE |
+| 9 | **Wire QuizStepView** to main lesson flow (already functional standalone) | — | `+StepContent.swift` | DONE |
 | 10 | **Create 23 seed songs** — 6 Hindi, 5 Marathi, 5 English, 2 classical, 5 additional | GAP-D03-004/005, GAP-D07-003..007, GAP-D08-003..007, GAP-D09-007..011, GAP-D13-011 | `SurVibe/Resources/SeedContent/seed-songs.json` | DEFERRED — user will create manually; AI notations unreliable |
 
 ### Phase 3: Gamification + Profile (P0 — user motivation)
