@@ -18,6 +18,8 @@ struct ContentView: View {
 
     @Environment(OnboardingManager.self) private var onboardingManager
     @Environment(GamificationService.self) private var gamificationService: GamificationService?
+    @Environment(AppThemeManager.self) private var themeManager
+    @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// Controls the post-onboarding welcome sheet.
@@ -50,7 +52,11 @@ struct ContentView: View {
                 ProfileTab()
             }
         }
+        .tint(themeManager.resolved.accentColor)
         .environment(router)
+        .onChange(of: colorScheme) { _, newScheme in
+            themeManager.updateColorScheme(newScheme)
+        }
         .onChange(of: selectedTab) { _, newTab in
             router.switchTab(to: newTab)
             AnalyticsManager.shared.track(.tabSelected, properties: ["tab": newTab.label])
@@ -126,4 +132,5 @@ struct ContentView: View {
 #Preview {
     ContentView()
         .environment(OnboardingManager())
+        .environment(AppThemeManager())
 }

@@ -43,14 +43,16 @@ struct SongPlayAlongView: View {
     /// Color of the current correctness flash (green for correct, red for wrong).
     @State var correctnessBannerColor: Color = .green
 
+    /// Whether the theme quick-switch sheet is presented.
+    @State private var showThemeSheet = false
+
     // MARK: - AppStorage (persisted preferences)
 
-    @AppStorage("playAlongViewMode") private var storedViewMode: String = PlayAlongViewMode.fallingNotes.rawValue
-    @AppStorage("playAlongNotationMode") private var storedNotationMode: String = NotationDisplayMode.sargam.rawValue
     @AppStorage("playAlongWaitMode") private var storedWaitMode: Bool = false
 
     // MARK: - Environment
 
+    @Environment(AppThemeManager.self) private var themeManager
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
@@ -59,18 +61,19 @@ struct SongPlayAlongView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            // Transport toolbar
+            // Transport toolbar — theme-driven, no view/notation pickers
             PlayAlongToolbar(
                 playbackState: viewModel.playbackState,
                 tempoScale: viewModel.tempoScale,
                 isWaitModeEnabled: viewModel.isWaitModeEnabled,
                 isSoundEnabled: viewModel.isSoundEnabled,
-                viewMode: viewModel.viewMode,
-                notationMode: viewModel.notationMode,
                 isMIDIConnected: viewModel.isMIDIConnected,
                 midiDeviceName: viewModel.midiDeviceName,
-                latencyPreset: viewModel.latencyPreset,
                 baseBPM: song.tempo,
+                songTitle: song.title,
+                songSubtitle: song.artist.isEmpty ? "Aaroha" : song.artist,
+                playbackProgress: viewModel.playbackProgress,
+                playbackDuration: viewModel.playbackDuration,
                 onPlayPause: handlePlayPause,
                 onStop: handleStop,
                 onTempoChange: {
@@ -91,23 +94,8 @@ struct SongPlayAlongView: View {
                         properties: ["enabled": viewModel.isSoundEnabled, "song_title": song.title]
                     )
                 },
-                onViewModeChange: {
-                    viewModel.viewMode = $0
-                    storedViewMode = $0.rawValue
-                    AnalyticsManager.shared.track(
-                        .playAlongViewModeChanged,
-                        properties: ["view_mode": $0.rawValue, "song_title": song.title]
-                    )
-                },
-                onNotationModeChange: {
-                    viewModel.notationMode = $0
-                    storedNotationMode = $0.rawValue
-                    AnalyticsManager.shared.track(
-                        .playAlongNotationToggled,
-                        properties: ["notation_mode": $0.rawValue, "song_title": song.title]
-                    )
-                },
-                onLatencyPresetChange: { viewModel.latencyPreset = $0 }
+                onThemeTapped: { showThemeSheet = true },
+                onSeek: { viewModel.seek(to: $0) }
             )
 
             // Main content area — switches between visual modes
@@ -172,7 +160,18 @@ struct SongPlayAlongView: View {
                     .animation(reduceMotion ? nil : .spring(response: 0.4), value: viewModel.isStuck)
             }
         }
-        .background(Color(.systemBackground))
+        .background(
+            LinearGradient(
+                colors: themeManager.resolved.backgroundGradient,
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            .ignoresSafeArea()
+        )
+        .sheet(isPresented: $showThemeSheet) {
+            ThemeQuickSwitchSheet()
+                .presentationDetents([.height(180)])
+        }
         .navigationTitle(song.title)
         .navigationBarTitleDisplayMode(.inline)
         .toolbar {
@@ -187,10 +186,24 @@ struct SongPlayAlongView: View {
         }
         .task {
             viewModel.modelContext = modelContext
-            viewModel.viewMode = PlayAlongViewMode(rawValue: storedViewMode) ?? .fallingNotes
-            viewModel.notationMode = NotationDisplayMode(rawValue: storedNotationMode) ?? .sargam
+            // Derive view mode and notation from the active theme preset
+            viewModel.viewMode = themeManager.currentPreset.viewMode
+            viewModel.notationMode = themeManager.currentPreset.notationMode
             viewModel.isWaitModeEnabled = storedWaitMode
             await viewModel.loadSong(song)
+        }
+        .onChange(of: themeManager.currentPreset) { _, newPreset in
+            // Live-switch when user changes theme via quick-switch sheet
+            viewModel.viewMode = newPreset.viewMode
+            viewModel.notationMode = newPreset.notationMode
+            AnalyticsManager.shared.track(
+                .playAlongViewModeChanged,
+                properties: ["view_mode": newPreset.viewMode.rawValue, "song_title": song.title]
+            )
+            AnalyticsManager.shared.track(
+                .playAlongNotationToggled,
+                properties: ["notation_mode": newPreset.notationMode.rawValue, "song_title": song.title]
+            )
         }
         .onDisappear {
             viewModel.cleanup()
@@ -356,6 +369,7 @@ struct SongPlayAlongView: View {
             song: Song(title: "Raag Yaman", difficulty: 2, tempo: 120)
         )
     }
+    .environment(AppThemeManager())
 }
 
 #Preview("Play Along — With Song") {
@@ -367,4 +381,5 @@ struct SongPlayAlongView: View {
             }()
         )
     }
+    .environment(AppThemeManager())
 }

@@ -1,24 +1,25 @@
 import SVAudio
 import SwiftUI
 
-/// Top toolbar providing play-along transport controls, tempo adjustment,
-/// and display mode toggles.
+/// Play-along toolbar with transport controls, timeline scrubber,
+/// tempo pills, and quick-access theme switching.
 ///
 /// All controls are driven by external state passed as `let` properties
 /// with change callbacks. The toolbar adapts its layout horizontally and
 /// provides full VoiceOver accessibility for every interactive element.
 ///
 /// ## Layout
-/// Two rows of controls:
-/// 1. Transport row: Play/Pause, Stop, Tempo slider
-/// 2. Options row: Wait Mode, Sound toggle, View Mode, Notation Mode
+/// Three rows of controls:
+/// 1. **Header:** Play/Pause, song title/subtitle, theme button
+/// 2. **Timeline:** Scrubber slider with elapsed/remaining time labels
+/// 3. **Controls:** BPM preset pills, divider, Wait/Sound/MIDI status
 struct PlayAlongToolbar: View {
     // MARK: - Properties
 
     /// Current playback state driving button icons and enabled states.
     let playbackState: PlaybackState
 
-    /// Tempo multiplier (0.25x to 1.5x) applied to the song's base tempo.
+    /// Tempo multiplier (0.4x to 1.0x) applied to the song's base tempo.
     let tempoScale: Double
 
     /// Whether wait mode is active (pauses until player hits the correct note).
@@ -27,26 +28,34 @@ struct PlayAlongToolbar: View {
     /// Whether reference audio playback is enabled.
     let isSoundEnabled: Bool
 
-    /// Current visual mode (falling notes or scrolling sheet).
-    let viewMode: PlayAlongViewMode
-
-    /// Current notation display mode (sargam, western, dual, etc.).
-    let notationMode: NotationDisplayMode
-
     /// Whether a MIDI keyboard is currently connected via USB or Bluetooth.
     let isMIDIConnected: Bool
 
     /// Human-readable name of the connected MIDI device, or nil if none.
     let midiDeviceName: String?
 
-    /// Current latency preset for mic pitch detection.
-    let latencyPreset: LatencyPreset
-
     /// Base tempo in BPM from the loaded song, used to compute effective BPM display.
     ///
-    /// Combined with `tempoScale` to show the effective BPM as "♩ = 72 BPM (60%)",
-    /// giving the player a concrete sense of the actual playback speed.
+    /// Combined with `tempoScale` to show the effective BPM as "40% / 60% / 80% / 100%",
+    /// giving the player discrete speed presets.
     var baseBPM: Int = 120
+
+    /// Title of the currently loaded song.
+    let songTitle: String
+
+    /// Subtitle for the song (e.g., raga name or artist).
+    let songSubtitle: String
+
+    /// Playback progress as a normalized value from 0.0 (start) to 1.0 (end).
+    let playbackProgress: Double
+
+    /// Total duration of the song in seconds.
+    let playbackDuration: TimeInterval
+
+    // MARK: - Environment
+
+    /// Whether the user has requested reduced motion in system accessibility settings.
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     // MARK: - Callbacks
 
@@ -56,7 +65,7 @@ struct PlayAlongToolbar: View {
     /// Called when the user taps Stop.
     var onStop: () -> Void
 
-    /// Called when the user adjusts the tempo slider.
+    /// Called when the user selects a tempo preset.
     var onTempoChange: (Double) -> Void
 
     /// Called when the user toggles wait mode.
@@ -65,35 +74,35 @@ struct PlayAlongToolbar: View {
     /// Called when the user toggles reference sound.
     var onSoundToggle: () -> Void
 
-    /// Called when the user changes the view mode.
-    var onViewModeChange: (PlayAlongViewMode) -> Void
+    /// Called when the user taps the theme button to open the theme sheet.
+    var onThemeTapped: () -> Void
 
-    /// Called when the user changes the notation mode.
-    var onNotationModeChange: (NotationDisplayMode) -> Void
-
-    /// Called when the user selects a different latency preset.
-    var onLatencyPresetChange: (LatencyPreset) -> Void
+    /// Called when the user drags the timeline scrubber to a new position.
+    ///
+    /// - Parameter progress: Normalized position (0.0 to 1.0).
+    var onSeek: (Double) -> Void
 
     // MARK: - Body
 
     var body: some View {
         VStack(spacing: 8) {
-            transportRow
-            optionsRow
+            headerRow
+            timelineRow
+            controlsRow
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
         .background(.ultraThinMaterial)
     }
 
-    // MARK: - Transport Row
+    // MARK: - Row 1: Header
 
-    /// Play/Pause, Stop, and tempo slider in a horizontal row.
-    private var transportRow: some View {
+    /// Play/Pause button, song title/subtitle (centered), and theme button.
+    private var headerRow: some View {
         HStack(spacing: 12) {
             playPauseButton
-            stopButton
-            tempoSlider
+            songInfo
+            themeButton
         }
     }
 
@@ -109,81 +118,124 @@ struct PlayAlongToolbar: View {
         .accessibilityHint(playPauseAccessibilityHint)
     }
 
-    /// Stop button that resets playback to the beginning.
-    private var stopButton: some View {
-        Button(action: onStop) {
-            Image(systemName: "stop.fill")
-                .font(.title2)
-                .frame(width: 44, height: 44)
-        }
-        .disabled(isStopDisabled)
-        .accessibilityLabel("Stop")
-        .accessibilityHint("Stop playback and return to the beginning")
-    }
-
-    /// Tempo controls: preset buttons and a 40%–100% slider.
-    private var tempoSlider: some View {
-        VStack(spacing: 4) {
-            // Preset buttons
-            HStack(spacing: 6) {
-                ForEach([0.4, 0.6, 0.8, 1.0], id: \.self) { preset in
-                    Button {
-                        onTempoChange(preset)
-                    } label: {
-                        Text("\(Int(preset * 100))%")
-                            .font(.caption2)
-                            .fontWeight(.semibold)
-                            .padding(.horizontal, 6)
-                            .padding(.vertical, 3)
-                            .background(
-                                abs(tempoScale - preset) < 0.01
-                                    ? Color.accentColor
-                                    : Color(.tertiarySystemBackground)
-                            )
-                            .foregroundStyle(
-                                abs(tempoScale - preset) < 0.01 ? .white : .primary
-                            )
-                            .clipShape(Capsule())
-                    }
-                    .accessibilityLabel("\(Int(preset * 100)) percent tempo")
-                    .accessibilityHint("Set playback speed to \(Int(preset * 100)) percent")
-                }
-            }
-            // Slider
-            HStack(spacing: 4) {
-                Text(PlayAlongToolbar.formatTempoBPM(scale: tempoScale, baseBPM: baseBPM))
+    /// Song title and subtitle, centered in the available space.
+    private var songInfo: some View {
+        VStack(spacing: 2) {
+            Text(verbatim: songTitle)
+                .font(.headline)
+                .lineLimit(1)
+                .truncationMode(.tail)
+            if !songSubtitle.isEmpty {
+                Text(verbatim: songSubtitle)
                     .font(.caption)
-                    .monospacedDigit()
-                    .frame(width: 120, alignment: .trailing)
-                    .accessibilityHidden(true)
-                Slider(
-                    value: Binding(
-                        get: { tempoScale },
-                        set: { onTempoChange($0) }
-                    ),
-                    in: 0.4...1.0,
-                    step: 0.1
-                )
-                .accessibilityLabel("Tempo speed")
-                .accessibilityValue(PlayAlongToolbar.formatTempoBPM(scale: tempoScale, baseBPM: baseBPM))
-                .accessibilityHint("Adjust playback speed from 40 percent to 100 percent")
+                    .foregroundStyle(.secondary)
+                    .lineLimit(1)
+                    .truncationMode(.tail)
             }
+        }
+        .frame(maxWidth: .infinity)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel("\(songTitle), \(songSubtitle)")
+        .accessibilityAddTraits(.isHeader)
+    }
+
+    /// Button to open the theme quick-switch sheet.
+    private var themeButton: some View {
+        Button(action: onThemeTapped) {
+            Image(systemName: "paintbrush.fill")
+                .font(.body)
+                .frame(width: 36, height: 36)
+                .background(Color(.tertiarySystemBackground))
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+        }
+        .accessibilityLabel("Change theme")
+        .accessibilityHint("Open theme picker to switch visual style")
+    }
+
+    // MARK: - Row 2: Timeline
+
+    /// Timeline scrubber showing current position and total duration.
+    private var timelineRow: some View {
+        HStack(spacing: 8) {
+            Text(verbatim: PlayAlongToolbar.formatTime(playbackProgress * playbackDuration))
+                .font(.caption)
+                .monospacedDigit()
+                .foregroundStyle(.secondary)
+                .frame(width: 40, alignment: .leading)
+                .accessibilityHidden(true)
+
+            Slider(
+                value: Binding(
+                    get: { playbackProgress },
+                    set: { onSeek($0) }
+                ),
+                in: 0.0...1.0
+            )
+            .accessibilityLabel("Playback position")
+            .accessibilityValue(
+                "\(PlayAlongToolbar.formatTime(playbackProgress * playbackDuration)) of \(PlayAlongToolbar.formatTime(playbackDuration))"
+            )
+            .accessibilityHint("Drag to seek to a different position in the song")
+
+            Text(verbatim: PlayAlongToolbar.formatTime(playbackDuration))
+                .font(.caption)
+                .monospacedDigit()
+                .foregroundStyle(.secondary)
+                .frame(width: 40, alignment: .trailing)
+                .accessibilityHidden(true)
         }
     }
 
-    // MARK: - Options Row
+    // MARK: - Row 3: Controls
 
-    /// Wait mode, sound toggle, MIDI status pill, latency menu, view mode picker, and notation mode picker.
-    private var optionsRow: some View {
+    /// BPM preset pills, divider, and wait/sound/MIDI controls.
+    private var controlsRow: some View {
         HStack(spacing: 12) {
+            tempoPills
+            divider
             waitModeButton
             soundToggleButton
             midiStatusPill
-            Spacer()
-            latencyPresetMenu
-            viewModePicker
-            notationModePicker
         }
+    }
+
+    /// Four discrete tempo preset buttons (40%, 60%, 80%, 100%).
+    private var tempoPills: some View {
+        HStack(spacing: 6) {
+            ForEach(Self.tempoPresets, id: \.self) { preset in
+                Button {
+                    onTempoChange(preset)
+                } label: {
+                    Text(verbatim: "\(Int(preset * 100))%")
+                        .font(.caption2)
+                        .fontWeight(.semibold)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 5)
+                        .background(
+                            abs(tempoScale - preset) < 0.01
+                                ? Color.accentColor
+                                : Color(.tertiarySystemBackground)
+                        )
+                        .foregroundStyle(
+                            abs(tempoScale - preset) < 0.01 ? .white : .primary
+                        )
+                        .clipShape(Capsule())
+                }
+                .accessibilityLabel("\(Int(preset * 100)) percent tempo")
+                .accessibilityHint("Set playback speed to \(Int(preset * 100)) percent")
+                .accessibilityAddTraits(
+                    abs(tempoScale - preset) < 0.01 ? .isSelected : []
+                )
+            }
+        }
+    }
+
+    /// Visual separator between tempo pills and toggle controls.
+    private var divider: some View {
+        Rectangle()
+            .fill(Color(.separator))
+            .frame(width: 1, height: 20)
+            .accessibilityHidden(true)
     }
 
     /// A non-interactive status pill showing MIDI connection state.
@@ -240,67 +292,6 @@ struct PlayAlongToolbar: View {
         }
         .accessibilityLabel(isSoundEnabled ? "Sound on" : "Sound off")
         .accessibilityHint("Toggle reference audio playback")
-    }
-
-    /// Menu for selecting the mic detection latency preset.
-    ///
-    /// Mirrors the latency menu on the Practice tab — 4 presets from ~23ms
-    /// (Ultra Fast, lowest accuracy) to ~186ms (Precise, highest accuracy).
-    private var latencyPresetMenu: some View {
-        Menu {
-            ForEach(LatencyPreset.allCases, id: \.self) { preset in
-                Button {
-                    onLatencyPresetChange(preset)
-                } label: {
-                    HStack {
-                        Text(preset.displayName)
-                        if preset == latencyPreset {
-                            Image(systemName: "checkmark")
-                        }
-                    }
-                }
-                .accessibilityLabel(preset.displayName)
-            }
-        } label: {
-            Image(systemName: "waveform.badge.magnifyingglass")
-                .font(.body)
-                .frame(width: 36, height: 36)
-        }
-        .accessibilityLabel("Detection latency")
-        .accessibilityValue(latencyPreset.displayName)
-        .accessibilityHint("Select mic detection speed vs accuracy tradeoff")
-    }
-
-    /// Picker to switch between falling notes and scrolling sheet modes.
-    private var viewModePicker: some View {
-        Picker("View", selection: Binding(
-            get: { viewMode },
-            set: { onViewModeChange($0) }
-        )) {
-            ForEach(PlayAlongViewMode.allCases, id: \.self) { mode in
-                Label(mode.label, systemImage: mode.iconName)
-                    .tag(mode)
-            }
-        }
-        .pickerStyle(.menu)
-        .accessibilityLabel("View mode")
-        .accessibilityHint("Switch between falling notes and sheet view")
-    }
-
-    /// Picker to switch notation display modes.
-    private var notationModePicker: some View {
-        Picker("Notation", selection: Binding(
-            get: { notationMode },
-            set: { onNotationModeChange($0) }
-        )) {
-            ForEach(NotationDisplayMode.allCases, id: \.self) { mode in
-                Label(mode.label, systemImage: mode.iconName)
-                    .tag(mode)
-            }
-        }
-        .pickerStyle(.menu)
-        .accessibilityLabel("Notation mode")
-        .accessibilityHint("Choose notation display style")
     }
 
     // MARK: - Computed Properties
@@ -362,18 +353,34 @@ struct PlayAlongToolbar: View {
         }
     }
 
+    // MARK: - Constants
+
+    /// Available tempo scale presets shown as pill buttons.
+    private static let tempoPresets: [Double] = [0.4, 0.6, 0.8, 1.0]
+
     // MARK: - Static Helpers
 
-    /// Format tempo as "♩ = 72 BPM (60%)" given a scale and base BPM.
+    /// Format a time interval as "m:ss".
+    ///
+    /// - Parameter time: Time in seconds to format.
+    /// - Returns: Formatted string in "m:ss" format (e.g., "3:42").
+    static func formatTime(_ time: TimeInterval) -> String {
+        let clamped = max(time, 0)
+        let minutes = Int(clamped) / 60
+        let seconds = Int(clamped) % 60
+        return String(format: "%d:%02d", minutes, seconds)
+    }
+
+    /// Format tempo as "quarter-note = 72 BPM (60%)" given a scale and base BPM.
     ///
     /// - Parameters:
-    ///   - scale: The tempo multiplier (0.4–1.0).
+    ///   - scale: The tempo multiplier (0.4-1.0).
     ///   - baseBPM: The song's original BPM.
-    /// - Returns: Formatted string like "♩ = 72 BPM (60%)".
+    /// - Returns: Formatted string like "quarter-note = 72 BPM (60%)".
     static func formatTempoBPM(scale: Double, baseBPM: Int) -> String {
         let effectiveBPM = Int((Double(baseBPM) * scale).rounded())
         let percent = Int((scale * 100).rounded())
-        return "♩ = \(effectiveBPM) BPM (\(percent)%)"
+        return "\u{2669} = \(effectiveBPM) BPM (\(percent)%)"
     }
 
     /// Format tempo scale as a short percentage string (e.g. "75%").
@@ -394,7 +401,7 @@ struct PlayAlongToolbar: View {
         formatTempoLabel(scale)
     }
 
-    /// Clamp a tempo scale value to the valid range (40%–100%).
+    /// Clamp a tempo scale value to the valid range (40%-100%).
     ///
     /// - Parameter scale: The raw tempo multiplier.
     /// - Returns: Value clamped to 0.4...1.0.
@@ -411,42 +418,42 @@ struct PlayAlongToolbar: View {
         tempoScale: 1.0,
         isWaitModeEnabled: false,
         isSoundEnabled: true,
-        viewMode: .fallingNotes,
-        notationMode: .sargam,
         isMIDIConnected: false,
         midiDeviceName: nil,
-        latencyPreset: .fast,
         baseBPM: 120,
+        songTitle: "Aarohan Practice",
+        songSubtitle: "Raga Yaman",
+        playbackProgress: 0.0,
+        playbackDuration: 180,
         onPlayPause: {},
         onStop: {},
         onTempoChange: { _ in },
         onWaitModeToggle: {},
         onSoundToggle: {},
-        onViewModeChange: { _ in },
-        onNotationModeChange: { _ in },
-        onLatencyPresetChange: { _ in }
+        onThemeTapped: {},
+        onSeek: { _ in }
     )
 }
 
-#Preview("Toolbar — MIDI Connected") {
+#Preview("Toolbar — Playing") {
     PlayAlongToolbar(
         playbackState: .playing,
-        tempoScale: 0.75,
+        tempoScale: 0.6,
         isWaitModeEnabled: true,
         isSoundEnabled: false,
-        viewMode: .scrollingSheet,
-        notationMode: .dual,
         isMIDIConnected: true,
         midiDeviceName: "Yamaha PSR-400",
-        latencyPreset: .balanced,
         baseBPM: 100,
+        songTitle: "Teentaal Drut",
+        songSubtitle: "Raga Bhairav",
+        playbackProgress: 0.35,
+        playbackDuration: 225,
         onPlayPause: {},
         onStop: {},
         onTempoChange: { _ in },
         onWaitModeToggle: {},
         onSoundToggle: {},
-        onViewModeChange: { _ in },
-        onNotationModeChange: { _ in },
-        onLatencyPresetChange: { _ in }
+        onThemeTapped: {},
+        onSeek: { _ in }
     )
 }
