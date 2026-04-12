@@ -1,5 +1,10 @@
 import Foundation
+import os
+import SVCore
 import SwiftData
+
+/// Module-level logger for SongProgress model mutations.
+private let songProgressLogger = Logger.survibe(category: "SongProgressModel")
 
 /// Tracks progress on a song. Max-wins merge for bestScore and timesPlayed.
 @Model
@@ -31,6 +36,12 @@ final class SongProgress {
         bestScore = max(bestScore, score)
         timesPlayed += 1
         lastPlayedAt = Date()
+        let scoreStr = String(format: "%.1f", score)
+        let bestStr = String(format: "%.1f", bestScore)
+        let sid = self.songId
+        songProgressLogger.debug(
+            "Play: \(sid, privacy: .public) score=\(scoreStr, privacy: .public) best=\(bestStr, privacy: .public)"
+        )
     }
 
     /// Mark the song as completed. One-way: once true, cannot revert to false.

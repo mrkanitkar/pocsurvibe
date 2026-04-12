@@ -1,3 +1,4 @@
+import os
 import SVCore
 import SwiftData
 import SwiftUI
@@ -11,6 +12,10 @@ import SwiftUI
 /// Presented as a `.sheet` from `ContentView` after the onboarding
 /// `fullScreenCover` is dismissed.
 struct PostOnboardingWelcomeView: View {
+    // MARK: - Logger
+
+    private static let logger = Logger.survibe(category: "OnboardingWelcome")
+
     // MARK: - Properties
 
     @Environment(OnboardingManager.self) private var onboardingManager
@@ -63,6 +68,7 @@ struct PostOnboardingWelcomeView: View {
         .task {
             loadFeaturedContent()
         }
+        .onAppear { Self.logger.info("Onboarding screen appeared: PostOnboardingWelcome") }
     }
 
     // MARK: - Subviews

@@ -1,4 +1,5 @@
 import Foundation
+import os
 import SVCore
 import SVLearning
 import SwiftData
@@ -14,6 +15,10 @@ import SwiftUI
 @MainActor
 @Observable
 final class SongLibraryViewModel {
+    // MARK: - Logger
+
+    private static let logger = Logger.survibe(category: "SongLibrary")
+
     // MARK: - Properties
 
     /// All songs fetched from SwiftData.
@@ -106,7 +111,9 @@ final class SongLibraryViewModel {
                 sortBy: [SortDescriptor(\Song.sortOrder)]
             )
             allSongs = try modelContext.fetch(descriptor)
+            Self.logger.info("Loaded \(self.allSongs.count, privacy: .public) songs")
         } catch {
+            Self.logger.error("Song fetch failed: \(error.localizedDescription, privacy: .public)")
             allSongs = []
         }
         applyFilters()
@@ -269,6 +276,7 @@ final class SongLibraryViewModel {
     ///
     /// - Parameter song: The song to permanently delete.
     func deleteSong(_ song: Song) {
+        Self.logger.info("Deleting song: \(song.title, privacy: .public)")
         modelContext.delete(song)
         // Immediately remove from in-memory arrays so the UI updates without waiting for a reload
         allSongs.removeAll { $0.id == song.id }

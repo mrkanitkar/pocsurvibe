@@ -1,3 +1,5 @@
+import os
+import SVCore
 import SwiftUI
 
 /// Onboarding screen 2: notation display preference.
@@ -10,6 +12,10 @@ import SwiftUI
 /// Navigation chrome (Next / Back / Skip) is handled by the parent
 /// container — this view only manages the notation preference state.
 struct NotationPreferenceView: View {
+    // MARK: - Logger
+
+    private static let logger = Logger.survibe(category: "OnboardingNotation")
+
     // MARK: - Properties
 
     @Environment(OnboardingManager.self) private var onboardingManager
@@ -31,6 +37,7 @@ struct NotationPreferenceView: View {
             Spacer()
         }
         .padding(.top, 32)
+        .onAppear { Self.logger.info("Onboarding screen appeared: NotationPreference") }
     }
 
     // MARK: - Subviews

@@ -1,3 +1,4 @@
+import os
 import SVCore
 import SwiftUI
 
@@ -10,6 +11,10 @@ import SwiftUI
 /// Presented as a `.fullScreenCover` from `ContentView` when the user
 /// has not yet completed onboarding.
 struct OnboardingContainerView: View {
+    // MARK: - Logger
+
+    private static let logger = Logger.survibe(category: "OnboardingContainer")
+
     // MARK: - Properties
 
     @Environment(OnboardingManager.self) private var onboardingManager
@@ -48,6 +53,7 @@ struct OnboardingContainerView: View {
             bottomBar
         }
         .background(Color(.systemBackground))
+        .onAppear { Self.logger.info("Onboarding screen appeared: Container") }
         .onChange(of: onboardingManager.currentScreen) { _, newValue in
             AnalyticsManager.shared.track(
                 .onboardingScreenViewed,

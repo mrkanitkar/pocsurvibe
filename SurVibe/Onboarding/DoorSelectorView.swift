@@ -1,3 +1,5 @@
+import os
+import SVCore
 import SwiftUI
 
 /// Onboarding screen 1: feature door selection.
@@ -9,6 +11,10 @@ import SwiftUI
 /// Navigation chrome (Next / Back / Skip) is handled by the parent
 /// container — this view only manages the door selection state.
 struct DoorSelectorView: View {
+    // MARK: - Logger
+
+    private static let logger = Logger.survibe(category: "OnboardingDoorSelector")
+
     // MARK: - Properties
 
     @Environment(OnboardingManager.self) private var onboardingManager
@@ -43,6 +49,7 @@ struct DoorSelectorView: View {
             Spacer()
         }
         .padding(.top, 32)
+        .onAppear { Self.logger.info("Onboarding screen appeared: DoorSelector") }
     }
 
     // MARK: - Subviews
