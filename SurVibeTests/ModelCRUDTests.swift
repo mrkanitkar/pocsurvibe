@@ -15,7 +15,11 @@ struct ModelCRUDTests {
             Achievement.self,
             SongProgress.self,
             LessonProgress.self,
-            SubscriptionState.self
+            SubscriptionState.self,
+            Song.self,
+            Lesson.self,
+            Curriculum.self,
+            XPEntry.self,
         ])
         let config = ModelConfiguration(isStoredInMemoryOnly: true)
         return try ModelContainer(for: schema, configurations: [config])

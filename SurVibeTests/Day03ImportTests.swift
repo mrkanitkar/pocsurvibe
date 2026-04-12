@@ -276,6 +276,7 @@ private func makeTestContainer() throws -> ModelContainer {
         Song.self,
         Lesson.self,
         Curriculum.self,
+        XPEntry.self,
     ])
     let config = ModelConfiguration(isStoredInMemoryOnly: true)
     return try ModelContainer(for: schema, configurations: [config])
