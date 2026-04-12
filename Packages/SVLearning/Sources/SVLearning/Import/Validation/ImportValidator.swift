@@ -1,4 +1,7 @@
 import Foundation
+import os
+
+private let validatorLogger = Logger.survibe(category: "ImportValidator")
 
 /// Validates a normalised `ParsedNotation` and generates smart warnings.
 ///
@@ -39,6 +42,10 @@ public struct ImportValidator: ImportValidatorProtocol {
         warnings.append(contentsOf: validateTempo(notation))
         warnings.append(contentsOf: validateOctaveRange(notation))
         warnings.append(contentsOf: validateDurations(notation))
+
+        validatorLogger.info(
+            "Validation complete: \(warnings.count, privacy: .public) warning(s) generated"
+        )
 
         return warnings
     }

@@ -1,5 +1,9 @@
 import Foundation
+import os
 import Synchronization
+
+/// Module-level logger for AudioRingBuffer (Sendable type — cannot use static stored property).
+private let ringBufferLogger = Logger.survibe(category: "RingBuffer")
 
 /// Single-producer, single-consumer ring buffer for accumulating audio samples.
 ///
@@ -43,29 +47,36 @@ public final class AudioRingBuffer: Sendable {
     ///
     /// - Parameter samples: Audio samples to append. Typically 1024 frames per tap callback.
     public func write(_ samples: [Float]) {
-        let capacity = self.capacity
+        let bufCapacity = self.capacity
+        let sampleCount = samples.count
         state.withLock { s in
-            let count = samples.count
-            if count >= capacity {
+            let count = sampleCount
+            if count >= bufCapacity {
                 // If writing more than capacity, keep only the last `capacity` samples
-                let start = count - capacity
+                ringBufferLogger.debug(
+                    """
+                    RingBuffer wrap: \(sampleCount, privacy: .public) samples, \
+                    cap \(bufCapacity, privacy: .public)
+                    """
+                )
+                let start = count - bufCapacity
                 s.buffer = Array(samples[start...])
                 s.writeIndex = 0
                 s.totalWritten += count
                 return
             }
 
-            let spaceToEnd = capacity - s.writeIndex
+            let spaceToEnd = bufCapacity - s.writeIndex
             if count <= spaceToEnd {
                 // Contiguous write
                 s.buffer.replaceSubrange(s.writeIndex..<(s.writeIndex + count), with: samples)
             } else {
                 // Wrap around
-                s.buffer.replaceSubrange(s.writeIndex..<capacity, with: samples[0..<spaceToEnd])
+                s.buffer.replaceSubrange(s.writeIndex..<bufCapacity, with: samples[0..<spaceToEnd])
                 let remaining = count - spaceToEnd
                 s.buffer.replaceSubrange(0..<remaining, with: samples[spaceToEnd..<count])
             }
-            s.writeIndex = (s.writeIndex + count) % capacity
+            s.writeIndex = (s.writeIndex + count) % bufCapacity
             s.totalWritten += count
         }
     }
@@ -78,20 +89,30 @@ public final class AudioRingBuffer: Sendable {
     /// - Parameter count: Number of samples to read. Must be <= capacity.
     /// - Returns: Array of the most recent `count` samples, or nil if insufficient data.
     public func read(count: Int) -> [Float]? {
-        let capacity = self.capacity
+        let bufCapacity = self.capacity
         return state.withLock { s in
-            guard count <= capacity, s.totalWritten >= count else { return nil }
+            guard count <= bufCapacity, s.totalWritten >= count else {
+                let written = s.totalWritten
+                ringBufferLogger.debug(
+                    """
+                    RingBuffer read nil: requested \(count, privacy: .public), \
+                    cap \(bufCapacity, privacy: .public), \
+                    written \(written, privacy: .public)
+                    """
+                )
+                return nil
+            }
 
             var result = [Float](repeating: 0, count: count)
-            let readStart = (s.writeIndex - count + capacity) % capacity
-            let spaceToEnd = capacity - readStart
+            let readStart = (s.writeIndex - count + bufCapacity) % bufCapacity
+            let spaceToEnd = bufCapacity - readStart
 
             if count <= spaceToEnd {
                 // Contiguous read
                 result.replaceSubrange(0..<count, with: s.buffer[readStart..<(readStart + count)])
             } else {
                 // Wrap around
-                result.replaceSubrange(0..<spaceToEnd, with: s.buffer[readStart..<capacity])
+                result.replaceSubrange(0..<spaceToEnd, with: s.buffer[readStart..<bufCapacity])
                 let remaining = count - spaceToEnd
                 result.replaceSubrange(spaceToEnd..<count, with: s.buffer[0..<remaining])
             }
@@ -113,9 +134,10 @@ public final class AudioRingBuffer: Sendable {
     /// Called when stopping detection or changing latency preset.
     /// Zeros the buffer and resets write index and total count.
     public func reset() {
-        let capacity = self.capacity
+        ringBufferLogger.info("RingBuffer reset")
+        let bufCapacity = self.capacity
         state.withLock { s in
-            s.buffer = [Float](repeating: 0, count: capacity)
+            s.buffer = [Float](repeating: 0, count: bufCapacity)
             s.writeIndex = 0
             s.totalWritten = 0
         }

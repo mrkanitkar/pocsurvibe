@@ -1,3 +1,5 @@
+import os
+import SVCore
 import SwiftUI
 
 /// Onboarding screen 3: language preference.
@@ -9,6 +11,10 @@ import SwiftUI
 /// Navigation chrome (Next / Back / Skip) is handled by the parent
 /// container — this view only manages the language preference state.
 struct OnboardingLanguageView: View {
+    // MARK: - Logger
+
+    private static let logger = Logger.survibe(category: "OnboardingLanguage")
+
     // MARK: - Properties
 
     @Environment(OnboardingManager.self) private var onboardingManager
@@ -30,6 +36,7 @@ struct OnboardingLanguageView: View {
             Spacer()
         }
         .padding(.top, 32)
+        .onAppear { Self.logger.info("Onboarding screen appeared: Language") }
     }
 
     // MARK: - Subviews

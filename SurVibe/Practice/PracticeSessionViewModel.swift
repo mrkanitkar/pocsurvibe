@@ -93,6 +93,24 @@ final class PracticeSessionViewModel {
         }
     }
 
+    /// Whether the tanpura drone is enabled.
+    var isTanpuraEnabled: Bool = false {
+        didSet {
+            if isTanpuraEnabled {
+                do {
+                    try tanpuraEngine.start()
+                } catch {
+                    Self.logger.error(
+                        "Tanpura start failed: \(error.localizedDescription, privacy: .public)"
+                    )
+                    isTanpuraEnabled = false
+                }
+            } else {
+                tanpuraEngine.stop()
+            }
+        }
+    }
+
     /// Whether the metronome is enabled.
     var isMetronomeEnabled: Bool = false {
         didSet {
@@ -130,6 +148,9 @@ final class PracticeSessionViewModel {
     /// Metronome engine for beat-keeping during practice.
     let metronomeEngine: MetronomeEngine
 
+    /// Tanpura engine for Sa-Pa drone reference during practice.
+    let tanpuraEngine: TanpuraEngine
+
     /// Raga scoring context, built from the song's ragaName. nil for non-raga songs.
     var ragaScoringContext: RagaScoringContext?
 
@@ -165,6 +186,7 @@ final class PracticeSessionViewModel {
     ///   - gamificationService: Optional gamification service for XP/achievement wiring.
     init(modelContext: ModelContext, gamificationService: GamificationService? = nil) {
         self.metronomeEngine = MetronomeEngine(bpm: 60.0, volume: 0.5)
+        self.tanpuraEngine = TanpuraEngine(saFrequency: 261.63, volume: 0.3)
         self.recorder = PracticeSessionRecorder(modelContext: modelContext)
         self.gamificationService = gamificationService
     }
@@ -365,6 +387,7 @@ final class PracticeSessionViewModel {
         practiceTimerTask = nil
         audioProcessor.stop()
         metronomeEngine.stop()
+        tanpuraEngine.stop()
 
         // Reset state
         noteScores = []
@@ -398,6 +421,7 @@ final class PracticeSessionViewModel {
         practiceTimerTask = nil
         audioProcessor.stop()
         metronomeEngine.stop()
+        tanpuraEngine.stop()
         if playbackEngine.playbackState == .playing
             || playbackEngine.playbackState == .paused
         {
@@ -414,7 +438,7 @@ final class PracticeSessionViewModel {
 
     // MARK: - Private Methods
 
-    /// Cancel monitoring tasks and stop audio/metronome.
+    /// Cancel monitoring tasks and stop audio/metronome/tanpura.
     private func stopMonitoring() {
         pitchMonitoringTask?.cancel()
         pitchMonitoringTask = nil
@@ -422,6 +446,7 @@ final class PracticeSessionViewModel {
         practiceTimerTask = nil
         audioProcessor.stop()
         metronomeEngine.stop()
+        tanpuraEngine.stop()
     }
 
     /// Mark all remaining unscored notes as misses.

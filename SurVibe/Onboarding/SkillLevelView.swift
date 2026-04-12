@@ -1,3 +1,5 @@
+import os
+import SVCore
 import SwiftUI
 
 /// Onboarding screen 0: skill level selection.
@@ -9,6 +11,10 @@ import SwiftUI
 /// Navigation chrome (Next / Back / Skip) is handled by the parent
 /// container — this view only manages the selection state.
 struct SkillLevelView: View {
+    // MARK: - Logger
+
+    private static let logger = Logger.survibe(category: "OnboardingSkillLevel")
+
     // MARK: - Properties
 
     @Environment(OnboardingManager.self) private var onboardingManager
@@ -30,6 +36,7 @@ struct SkillLevelView: View {
             Spacer()
         }
         .padding(.top, 32)
+        .onAppear { Self.logger.info("Onboarding screen appeared: SkillLevel") }
     }
 
     // MARK: - Subviews

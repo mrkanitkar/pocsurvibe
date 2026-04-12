@@ -14,6 +14,12 @@ public final class AudioSessionManager {
 
     private let session = AVAudioSession.sharedInstance()
 
+    /// Whether the microphone is unavailable due to session configuration fallback.
+    ///
+    /// When `true`, the audio session is in `.playback` mode because `.playAndRecord`
+    /// failed (e.g., MDM restriction). SoundFont playback works; mic input does not.
+    public private(set) var isMicUnavailable: Bool = false
+
     /// Observer tokens for NotificationCenter — removed in `deinit` to prevent leaks.
     /// `nonisolated(unsafe)` is required because `deinit` is nonisolated but these
     /// properties live on a @MainActor class. This is safe because:
@@ -46,17 +52,36 @@ public final class AudioSessionManager {
     /// A 46ms buffer (2048 frames) was unnecessarily large; professional
     /// MIDI playback apps typically use 128–256 frames.
     public func configure() throws {
-        try session.setCategory(
-            .playAndRecord,
-            mode: .measurement,
-            options: [.defaultToSpeaker, .allowBluetoothHFP, .mixWithOthers]
-        )
-        // Request 44100 Hz sample rate per spec
-        try session.setPreferredSampleRate(44100)
-        // 256 frames at 44100 Hz ≈ 5.8 ms — low-latency for MIDI-triggered SoundFont playback.
-        // PracticeAudioProcessor accumulates its own buffer, so pitch detection is unaffected.
-        try session.setPreferredIOBufferDuration(256.0 / 44100.0)
-        try session.setActive(true)
+        do {
+            try session.setCategory(
+                .playAndRecord,
+                mode: .measurement,
+                options: [.defaultToSpeaker, .allowBluetoothHFP, .mixWithOthers]
+            )
+            // Request 44100 Hz sample rate per spec
+            try session.setPreferredSampleRate(44100)
+            // 256 frames at 44100 Hz ≈ 5.8 ms — low-latency for MIDI-triggered SoundFont playback.
+            // PracticeAudioProcessor accumulates its own buffer, so pitch detection is unaffected.
+            try session.setPreferredIOBufferDuration(256.0 / 44100.0)
+            try session.setActive(true)
+            isMicUnavailable = false
+            Self.logger.info("Audio session configured: .playAndRecord")
+        } catch {
+            Self.logger.error(
+                "Failed to configure .playAndRecord: \(error.localizedDescription, privacy: .public)"
+            )
+            isMicUnavailable = true
+            // Fallback to playback-only so SoundFont output still works.
+            // If this also fails, let the error propagate to the caller.
+            try session.setCategory(
+                .playback,
+                mode: .default,
+                options: [.mixWithOthers]
+            )
+            try session.setPreferredSampleRate(44100)
+            try session.setActive(true)
+            Self.logger.warning("Audio session fallback active: .playback (mic unavailable)")
+        }
     }
 
     /// Configure audio session for playback only (no microphone input).

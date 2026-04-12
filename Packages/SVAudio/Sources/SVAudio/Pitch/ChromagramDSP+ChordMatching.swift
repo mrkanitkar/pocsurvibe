@@ -1,5 +1,6 @@
 import Accelerate
 import Foundation
+import os.signpost
 
 // MARK: - Chord Template Matching & Full Pipeline
 
@@ -21,6 +22,9 @@ extension ChromagramDSP {
     ) -> ChordName? {
         // Need at least 3 pitch classes for a triad
         guard pitchClasses.count >= 3 else { return nil }
+
+        let signpostID = chromaSignposter.makeSignpostID()
+        let state = chromaSignposter.beginInterval("ChordMatching", id: signpostID)
 
         var bestMatch: ChordName?
         var bestScore: Double = 0
@@ -55,6 +59,8 @@ extension ChromagramDSP {
                 }
             }
         }
+
+        chromaSignposter.endInterval("ChordMatching", state)
 
         return bestMatch
     }

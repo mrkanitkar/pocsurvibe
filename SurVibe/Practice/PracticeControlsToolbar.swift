@@ -11,6 +11,9 @@ struct PracticeControlsToolbar: View {
     /// Whether the metronome is enabled.
     @Binding var isMetronomeEnabled: Bool
 
+    /// Whether the tanpura drone is enabled.
+    @Binding var isTanpuraEnabled: Bool
+
     /// Current speed multiplier (for display).
     let speedMultiplier: Double
 
@@ -31,6 +34,16 @@ struct PracticeControlsToolbar: View {
             }
             .accessibilityLabel(isMetronomeEnabled ? "Metronome on" : "Metronome off")
             .accessibilityHint("Toggle the metronome")
+
+            // Tanpura drone toggle
+            Button {
+                isTanpuraEnabled.toggle()
+            } label: {
+                Image(systemName: isTanpuraEnabled ? "waveform.circle.fill" : "waveform.circle")
+                    .font(.title3)
+            }
+            .accessibilityLabel(isTanpuraEnabled ? "Tanpura drone on" : "Tanpura drone off")
+            .accessibilityHint("Toggles the Sa-Pa drone for tonic reference")
 
             Spacer()
 
