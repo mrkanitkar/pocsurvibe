@@ -44,6 +44,18 @@ public final class TanpuraPlayer {
         }
     }
 
+    /// Loads a pre-generated audio buffer for looped playback.
+    ///
+    /// Use this to load a synthesized drone buffer (e.g., from
+    /// `TanpuraDroneGenerator`) instead of loading from a file URL.
+    ///
+    /// - Parameter buffer: PCM buffer to loop. Must be in a format
+    ///   compatible with the tanpura player node.
+    public func loadAudio(buffer: AVAudioPCMBuffer) {
+        loopBuffer = buffer
+        Self.logger.info("Tanpura buffer loaded: \(buffer.frameLength, privacy: .public) frames")
+    }
+
     /// Start the tanpura drone with gapless looped playback.
     public func start() {
         guard let loopBuffer else {
