@@ -11,6 +11,10 @@ struct SongsTab: View {
     // MARK: - Properties
 
     @Environment(\.modelContext) private var modelContext
+
+    /// App-wide theme manager for background gradients and accent colors.
+    @Environment(AppThemeManager.self) private var themeManager
+
     @State private var viewModel: SongLibraryViewModel?
 
     // MARK: - Body
@@ -26,6 +30,14 @@ struct SongsTab: View {
                 }
             }
             .navigationTitle("Songs")
+            .background(
+                LinearGradient(
+                    colors: themeManager.resolved.backgroundGradient,
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+                .ignoresSafeArea()
+            )
             .navigationDestination(for: Song.self) { song in
                 SongPlayAlongView(song: song)
             }
@@ -44,4 +56,5 @@ struct SongsTab: View {
 #Preview {
     SongsTab()
         .modelContainer(for: Song.self, inMemory: true)
+        .environment(AppThemeManager())
 }

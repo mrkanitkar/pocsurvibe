@@ -24,6 +24,9 @@ struct XPProgressCard: View {
     /// The user's current rang level (used for color theming).
     let currentRang: RangLevel
 
+    /// App-wide theme manager for accent color on the progress bar.
+    @Environment(AppThemeManager.self) private var themeManager
+
     @Environment(\.accessibilityReduceMotion)
     private var reduceMotion
 
@@ -71,7 +74,7 @@ struct XPProgressCard: View {
     private var progressBar: some View {
         VStack(alignment: .leading, spacing: 4) {
             ProgressView(value: progressToNextRang)
-                .tint(currentRang.color)
+                .tint(themeManager.resolved.accentColor)
                 .accessibilityLabel(
                     Text("Progress to next rang: \(Int(progressToNextRang * 100)) percent")
                 )
@@ -114,4 +117,5 @@ struct XPProgressCard: View {
             )
         }
     }
+    .environment(AppThemeManager())
 }

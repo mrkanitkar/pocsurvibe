@@ -197,6 +197,10 @@ struct SurVibeApp: App {
     /// view hierarchy's auto-saving context.
     @State private var gamificationService: GamificationService
 
+    /// App-wide theme manager controlling background gradients, accent colors,
+    /// and visual presets. Injected into the environment for all views.
+    @State private var themeManager = AppThemeManager()
+
     // MARK: - Body
 
     var body: some Scene {
@@ -205,6 +209,7 @@ struct SurVibeApp: App {
                 .environment(onboardingManager)
                 .environment(AuthManager.shared)
                 .environment(gamificationService)
+                .environment(themeManager)
         }
         .modelContainer(modelContainer)
     }

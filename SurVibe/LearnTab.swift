@@ -16,6 +16,9 @@ struct LearnTab: View {
     @Environment(\.modelContext)
     private var modelContext
 
+    /// App-wide theme manager for background gradients and accent colors.
+    @Environment(AppThemeManager.self) private var themeManager
+
     @State private var progressManager: LessonProgressManager?
     @State private var viewModel: LessonLibraryViewModel?
 
@@ -32,6 +35,14 @@ struct LearnTab: View {
                 }
             }
             .navigationTitle("Learn")
+            .background(
+                LinearGradient(
+                    colors: themeManager.resolved.backgroundGradient,
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+                .ignoresSafeArea()
+            )
             .navigationDestination(for: Curriculum.self) { curriculum in
                 if let progressManager {
                     CurriculumDetailView(curriculum: curriculum)
@@ -59,4 +70,5 @@ struct LearnTab: View {
 #Preview {
     LearnTab()
         .modelContainer(for: [Lesson.self, Curriculum.self, LessonProgress.self], inMemory: true)
+        .environment(AppThemeManager())
 }

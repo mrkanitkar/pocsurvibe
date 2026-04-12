@@ -17,6 +17,7 @@ struct ProfileTab: View {
     @Environment(AuthManager.self) private var authManager
     @Environment(OnboardingManager.self) private var onboardingManager
     @Environment(GamificationService.self) private var gamificationService: GamificationService?
+    @Environment(AppThemeManager.self) private var themeManager
 
     @State private var languageManager = LanguageManager()
 
@@ -35,11 +36,14 @@ struct ProfileTab: View {
                 achievementPreviewSection
                 authSection
                 settingsSection
+                appearanceSection
             }
             .navigationTitle("Profile")
             .navigationDestination(for: String.self) { destination in
                 if destination == "languages" {
                     LanguageSelectorView()
+                } else if destination == "appearance" {
+                    ThemeCarouselPicker()
                 } else if destination == "achievements" {
                     if let am = gamificationService?.achievementManager {
                         AchievementGalleryView(achievementManager: am)
@@ -237,6 +241,26 @@ struct ProfileTab: View {
         }
     }
 
+    // MARK: - Appearance Section
+
+    /// Appearance section -- navigates to the theme carousel picker.
+    private var appearanceSection: some View {
+        Section(header: Text("Appearance")) {
+            NavigationLink(value: "appearance") {
+                HStack {
+                    Label("Theme", systemImage: "paintbrush.fill")
+                    Spacer()
+                    Text(verbatim: themeManager.currentPreset.displayName)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .accessibilityLabel("App Theme")
+            .accessibilityHint(
+                "Current theme: \(themeManager.currentPreset.displayName). Double tap to change."
+            )
+        }
+    }
+
     // MARK: - Computed Data
 
     /// Display name derived from the current authenticated user, falling back to "SurVibe User".
@@ -295,6 +319,7 @@ struct ProfileTab: View {
     ProfileTab()
         .environment(AuthManager.shared)
         .environment(OnboardingManager())
+        .environment(AppThemeManager())
         .modelContainer(for: [
             UserProfile.self,
             XPEntry.self,

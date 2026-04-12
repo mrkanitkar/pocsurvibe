@@ -22,6 +22,9 @@ struct HomeTab: View {
     @Environment(AppRouter.self)
     private var router
 
+    /// App-wide theme manager for background gradients and accent colors.
+    @Environment(AppThemeManager.self) private var themeManager
+
     /// Tracks which "Coming Soon" door is currently showing its sheet.
     /// The value is a `ComingSoonDoor` case, or `nil` if no sheet is presented.
     @State
@@ -48,6 +51,14 @@ struct HomeTab: View {
                 .padding(.vertical, 24)
             }
             .navigationTitle("Home")
+            .background(
+                LinearGradient(
+                    colors: themeManager.resolved.backgroundGradient,
+                    startPoint: .topLeading,
+                    endPoint: .bottomTrailing
+                )
+                .ignoresSafeArea()
+            )
         }
         .sheet(item: $showComingSoon) { door in
             ComingSoonSheet(
@@ -211,4 +222,5 @@ enum ComingSoonDoor: String, Identifiable {
 #Preview {
     HomeTab()
         .environment(AppRouter())
+        .environment(AppThemeManager())
 }

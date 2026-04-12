@@ -68,6 +68,27 @@ final class PlayAlongViewModel {
     /// Total duration of the song in seconds.
     private(set) var duration: TimeInterval = 0
 
+    /// Normalized playback progress (0.0 to 1.0) for the timeline scrubber.
+    var playbackProgress: Double {
+        guard duration > 0 else { return 0 }
+        return min(1.0, max(0.0, currentTime / duration))
+    }
+
+    /// Total playback duration in seconds, exposed for the toolbar timeline.
+    var playbackDuration: TimeInterval { duration }
+
+    /// Seek to a normalized position (0.0 to 1.0) in the song.
+    ///
+    /// Adjusts `currentTime` and `playbackStartDate` so the playback
+    /// clock resumes from the new position. Only effective when paused.
+    ///
+    /// - Parameter progress: Normalized position from 0.0 (start) to 1.0 (end).
+    func seek(to progress: Double) {
+        guard duration > 0 else { return }
+        let targetTime = progress * duration
+        currentTime = targetTime
+    }
+
     /// Overall session accuracy (0.0-1.0), updated in real time.
     private(set) var accuracy: Double = 0
 

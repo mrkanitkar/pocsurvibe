@@ -69,6 +69,7 @@ public enum AnalyticsEvent: String, Sendable {
     case playAlongNotationToggled = "play_along_notation_toggled"
     case playAlongSoundToggled = "play_along_sound_toggled"
     case playAlongRestarted = "play_along_restarted"
+    case themeChanged = "theme_changed"
 
     // Song Import events
     case songImportStarted = "song_import_started"
