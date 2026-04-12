@@ -1,5 +1,10 @@
 import Foundation
+import os
+import SVCore
 import SwiftData
+
+/// Module-level logger for UserProfile model mutations.
+private let profileLogger = Logger.survibe(category: "UserProfileModel")
 
 /// User profile model for CloudKit sync.
 /// All fields have defaults or are optional per CloudKit requirements.
@@ -43,5 +48,6 @@ final class UserProfile {
         guard amount > 0 else { return }
         totalXP += amount
         lastActiveAt = Date()
+        profileLogger.debug("XP added: \(amount, privacy: .public), total: \(self.totalXP, privacy: .public)")
     }
 }

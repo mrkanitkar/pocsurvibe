@@ -17,6 +17,8 @@ struct ContentView: View {
     private var router = AppRouter()
 
     @Environment(OnboardingManager.self) private var onboardingManager
+    @Environment(GamificationService.self) private var gamificationService: GamificationService?
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// Controls the post-onboarding welcome sheet.
     @State private var showPostOnboarding = false
@@ -81,6 +83,29 @@ struct ContentView: View {
                 .environment(onboardingManager)
                 .environment(router)
         }
+        .overlay(alignment: .top) {
+            if let achievement = gamificationService?.achievementManager.lastUnlockedAchievement {
+                AchievementUnlockToast(
+                    title: achievement.title,
+                    xpBonus: achievement.xpBonus,
+                    onDismiss: {
+                        gamificationService?.achievementManager.lastUnlockedAchievement = nil
+                    }
+                )
+                .transition(reduceMotion ? .opacity : .move(edge: .top).combined(with: .opacity))
+                .padding(.top, 60)
+                .task {
+                    try? await Task.sleep(for: .seconds(3))
+                    withAnimation(reduceMotion ? .none : .easeOut) {
+                        gamificationService?.achievementManager.lastUnlockedAchievement = nil
+                    }
+                }
+            }
+        }
+        .animation(
+            reduceMotion ? .none : .spring(duration: 0.4),
+            value: gamificationService?.achievementManager.lastUnlockedAchievement != nil
+        )
     }
 
     // MARK: - Private Methods

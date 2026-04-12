@@ -1,4 +1,6 @@
 import Foundation
+import os
+import SVCore
 import SwiftUI
 
 /// Pure computation engine for falling notes layout.
@@ -8,6 +10,11 @@ import SwiftUI
 /// This engine handles all coordinate math for the falling notes
 /// visualization without coupling to SwiftUI rendering.
 enum FallingNotesLayoutEngine {
+
+    // MARK: - Logger
+
+    /// Logger for layout engine diagnostics.
+    static let logger = Logger.survibe(category: "FallingNotesLayout")
 
     // MARK: - Note State
 

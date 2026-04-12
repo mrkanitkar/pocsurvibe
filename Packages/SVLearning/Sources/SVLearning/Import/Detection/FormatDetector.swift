@@ -1,4 +1,7 @@
 import Foundation
+import os
+
+private let formatDetectorLogger = Logger.survibe(category: "FormatDetector")
 
 /// Detects the notation format of a raw text input.
 ///
@@ -47,8 +50,13 @@ public struct FormatDetector: Sendable {
         ]
 
         guard let best = scores.max(by: { $0.1 < $1.1 }), best.1 >= Self.minimumScore else {
+            formatDetectorLogger.info("Format detection inconclusive, returning unknown")
             return .unknown
         }
+
+        formatDetectorLogger.info(
+            "Detected format \(String(describing: best.0), privacy: .public) with score \(best.1, privacy: .public)"
+        )
 
         return best.0
     }

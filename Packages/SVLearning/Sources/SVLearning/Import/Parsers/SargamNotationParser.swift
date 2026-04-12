@@ -1,4 +1,7 @@
 import Foundation
+import os
+
+private let sargamParserLogger = Logger.survibe(category: "SargamParser")
 
 /// Parses Indian sargam notation text into a `ParsedNotation`.
 ///
@@ -30,10 +33,14 @@ public struct SargamNotationParser: NotationParserProtocol {
     ///           `ImportError.parsingFailed` if no sargam notes are found.
     public func parse(_ input: NotationInput) throws -> ParsedNotation {
         let trimmed = input.text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { throw ImportError.emptyInput }
+        guard !trimmed.isEmpty else {
+            sargamParserLogger.warning("Sargam parse called with empty input")
+            throw ImportError.emptyInput
+        }
 
         let tokens = tokenise(trimmed)
         guard !tokens.isEmpty else {
+            sargamParserLogger.warning("No tokens found in sargam input")
             throw ImportError.parsingFailed("No tokens found in sargam input.")
         }
 
@@ -50,8 +57,13 @@ public struct SargamNotationParser: NotationParserProtocol {
         }
 
         guard !notes.isEmpty else {
+            sargamParserLogger.warning("Could not extract any sargam notes from input")
             throw ImportError.parsingFailed("Could not extract any sargam notes from input.")
         }
+
+        sargamParserLogger.info(
+            "Sargam parse complete: \(tokens.count, privacy: .public) tokens, \(notes.count, privacy: .public) notes"
+        )
 
         return ParsedNotation(format: .sargam, notes: notes)
     }

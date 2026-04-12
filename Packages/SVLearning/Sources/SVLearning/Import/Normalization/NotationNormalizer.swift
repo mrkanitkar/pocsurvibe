@@ -1,4 +1,7 @@
 import Foundation
+import os
+
+private let normalizerLogger = Logger.survibe(category: "NotationNormalizer")
 
 /// Fills in missing octave and duration values in a `ParsedNotation`.
 ///
@@ -43,9 +46,11 @@ public struct NotationNormalizer: Sendable {
         }
 
         // Normalise each note
+        var defaultsFilledCount = 0
         result.notes = notation.notes.map { note in
             var updated = note
             if updated.octave == nil {
+                defaultsFilledCount += 1
                 updated = ParsedNotation.Note(
                     name: updated.name,
                     octave: inferOctave(for: updated, format: notation.format),
@@ -54,6 +59,7 @@ public struct NotationNormalizer: Sendable {
                     index: updated.index
                 )
             } else if updated.durationBeats == nil {
+                defaultsFilledCount += 1
                 updated = ParsedNotation.Note(
                     name: updated.name,
                     octave: updated.octave,
@@ -64,6 +70,11 @@ public struct NotationNormalizer: Sendable {
             }
             return updated
         }
+
+        let noteCount = result.notes.count
+        normalizerLogger.info(
+            "Normalised: \(noteCount, privacy: .public) notes, \(defaultsFilledCount, privacy: .public) defaults filled"
+        )
 
         return result
     }

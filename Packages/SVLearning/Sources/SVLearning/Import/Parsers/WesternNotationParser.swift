@@ -1,4 +1,7 @@
 import Foundation
+import os
+
+private let westernParserLogger = Logger.survibe(category: "WesternParser")
 
 /// Parses Western notation text into a `ParsedNotation`.
 ///
@@ -62,6 +65,10 @@ public struct WesternNotationParser: NotationParserProtocol {
         guard !notes.isEmpty else {
             throw ImportError.parsingFailed("Could not extract any western notes from input.")
         }
+
+        westernParserLogger.info(
+            "Western parse complete: \(notes.count, privacy: .public) notes extracted"
+        )
 
         return ParsedNotation(
             format: .western,

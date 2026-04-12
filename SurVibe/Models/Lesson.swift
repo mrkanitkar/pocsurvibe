@@ -1,5 +1,10 @@
 import Foundation
+import os
+import SVCore
 import SwiftData
+
+/// Module-level logger for Lesson model decode diagnostics.
+private let lessonLogger = Logger.survibe(category: "LessonModel")
 
 // MARK: - Supporting Types
 
@@ -112,13 +117,29 @@ final class Lesson {
     /// Decodes prerequisite lesson IDs from the JSON blob.
     var decodedPrerequisites: [String]? {
         guard let data = prerequisiteLessonIds else { return nil }
-        return try? JSONDecoder().decode([String].self, from: data)
+        do {
+            return try JSONDecoder().decode([String].self, from: data)
+        } catch {
+            let desc = error.localizedDescription
+            lessonLogger.warning(
+                "Failed to decode prerequisites for \(self.lessonId, privacy: .public): \(desc, privacy: .public)"
+            )
+            return nil
+        }
     }
 
     /// Decodes associated song UUIDs from the JSON blob.
     var decodedSongIds: [UUID]? {
         guard let data = associatedSongIds else { return nil }
-        return try? JSONDecoder().decode([UUID].self, from: data)
+        do {
+            return try JSONDecoder().decode([UUID].self, from: data)
+        } catch {
+            let desc = error.localizedDescription
+            lessonLogger.warning(
+                "Failed to decode song IDs for \(self.lessonId, privacy: .public): \(desc, privacy: .public)"
+            )
+            return nil
+        }
     }
 
     /// Decodes associated song slug strings from the JSON blob.
@@ -127,13 +148,29 @@ final class Lesson {
     /// rather than UUIDs. This provides access to those slug identifiers.
     var decodedAssociatedSongSlugs: [String]? {
         guard let data = associatedSongIds else { return nil }
-        return try? JSONDecoder().decode([String].self, from: data)
+        do {
+            return try JSONDecoder().decode([String].self, from: data)
+        } catch {
+            let desc = error.localizedDescription
+            lessonLogger.warning(
+                "Failed to decode song slugs for \(self.lessonId, privacy: .public): \(desc, privacy: .public)"
+            )
+            return nil
+        }
     }
 
     /// Decodes lesson steps from the JSON blob.
     var decodedSteps: [LessonStep]? {
         guard let data = stepsData else { return nil }
-        return try? JSONDecoder().decode([LessonStep].self, from: data)
+        do {
+            return try JSONDecoder().decode([LessonStep].self, from: data)
+        } catch {
+            let desc = error.localizedDescription
+            lessonLogger.warning(
+                "Failed to decode steps for \(self.lessonId, privacy: .public): \(desc, privacy: .public)"
+            )
+            return nil
+        }
     }
 
     // MARK: - Initialization

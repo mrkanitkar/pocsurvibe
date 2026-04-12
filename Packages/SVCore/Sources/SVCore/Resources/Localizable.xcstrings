@@ -11,6 +11,9 @@
         }
       }
     },
+    "Audio buffer creation failed: %@" : {
+
+    },
     "Audio engine failed to start: %@" : {
 
     },

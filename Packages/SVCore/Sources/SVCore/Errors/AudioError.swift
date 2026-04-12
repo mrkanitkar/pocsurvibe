@@ -15,6 +15,8 @@ public enum AudioError: SurVibeError {
     case sessionFallbackFailed(primary: String, fallback: String)
     /// MIDI sequencer failed to load or play data.
     case sequencerError(underlying: String)
+    /// Audio buffer creation failed (e.g., invalid format or allocation failure).
+    case bufferCreationFailed(reason: String)
 
     public var domain: String { "SVAudio" }
 
@@ -25,6 +27,7 @@ public enum AudioError: SurVibeError {
         case .sessionConfigurationFailed: "session_config_failed"
         case .sessionFallbackFailed: "session_fallback_failed"
         case .sequencerError: "sequencer_error"
+        case .bufferCreationFailed: "buffer_creation_failed"
         }
     }
 
@@ -44,6 +47,8 @@ public enum AudioError: SurVibeError {
             )
         case .sequencerError(let underlying):
             String(localized: "MIDI sequencer error: \(underlying)", bundle: .module)
+        case .bufferCreationFailed(let reason):
+            String(localized: "Audio buffer creation failed: \(reason)", bundle: .module)
         }
     }
 }

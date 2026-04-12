@@ -1332,21 +1332,23 @@ The learning experience is currently non-functional.
 | 14 | **Create AchievementManager** — 10 achievements with trigger conditions | GAP-D13-008, GAP-D13-009 | `SurVibe/Gamification/AchievementManager.swift`, `AchievementDefinitions.swift`, `AchievementGalleryView.swift` | DONE |
 | 15 | **Complete ProfileTab** — XP progress, rang badge, streak, stats grid, achievement gallery | GAP-D13-010, GAP-D14-008 | `SurVibe/ProfileTab.swift`, 5 sub-views in `SurVibe/Profile/` | DONE |
 
-### Phase 4: Audio Quality + Logging (P1) — PARTIALLY COMPLETE
+### Phase 4: Audio Quality + Logging (P1) — COMPLETE
 
-**Partial Status:** Items 16, 19, 25 DONE. Item 19A (SwiftLint cleanup) DONE (2026-04-12).
-**Commits:** `8dfc34b` (centralize Logger factory + privacy annotations), `1b7093b` (SwiftLint 66→0 warnings + file splits)
-**Verification:** 0 SwiftLint warnings, 0 SwiftLint errors, build passes, 76 package tests pass
+**Status:** All items DONE (2026-04-12).
+**Commits:** `8dfc34b`, `1b7093b` (early), `b0d1c7e`..`bddea6f` (completion batch)
+**Verification:** 0 SwiftLint warnings, 0 errors, build passes, all tests pass
 
 | # | Task | Gaps Resolved | Files | Status |
 |---|------|--------------|-------|--------|
 | 16 | **Migrate SongPlaybackEngine to AVAudioSequencer** — sample-accurate MIDI playback, ~10ms latency reduction, native tempo control via `rate` property | ARCH-005, AUD-003 | `SurVibe/Playback/SongPlaybackEngine.swift` | DONE (ARCH batch) |
-| 17 | **Add Logger to 15+ unlogged files** — RingBuffer, TanpuraPlayer, Import pipeline, PlayAlong subsystem | LOG-001..008, AUD-006 | See LOG gap register for full file list | TODO |
-| 18 | **Add OSSignposter intervals** — pitch detection, FFT, SwiftData fetches | LOG-016, AUD-007 | `SVAudio/Pitch/AudioKitPitchDetector.swift`, `SVAudio/DSP/ChromagramDSP.swift` | TODO |
+| 17 | **Add Logger to 29 unlogged files** — RingBuffer, TanpuraPlayer, Import pipeline, PlayAlong, Onboarding, @Models, SVAI, SVBilling | LOG-001..008, AUD-006 | 29 files across SVAudio, SVLearning, SVBilling, SVAI, App | DONE (`b0d1c7e`..`da59d63`) |
+| 18 | **Add OSSignposter intervals** — pitch detection, FFT, chord matching, SwiftData fetches | LOG-016, AUD-007 | AudioKitPitchDetector, ChromagramDSP, SongLibraryViewModel | DONE (`71514eb`) |
 | 19 | **Add `privacy:` annotations** to all Logger interpolations | LOG-017 | All files with Logger instances | DONE |
 | 19A | **Fix all 66 SwiftLint warnings** — comprehensive code quality pass across ~40 files | LOG-017, LOG-019 | 50 files (see details below) | DONE |
-| 20 | **Add audio session fallback** — try `.playback` if `.playAndRecord` fails | AUD-009 | `SVAudio/Engine/AudioSessionManager.swift` | TODO |
-| 21 | **Evaluate AudioKit PitchTap** vs custom autocorrelation | AUD-005 | `SVAudio/Pitch/AudioKitPitchDetector.swift` | TODO |
+| 20 | **Add audio session fallback** — try `.playback` if `.playAndRecord` fails, `isMicUnavailable` flag | AUD-009 | `SVAudio/Engine/AudioSessionManager.swift` | DONE (`e25acef`) |
+| 21 | **Evaluate AudioKit PitchTap** vs custom autocorrelation | AUD-005 | `SVAudio/Pitch/AudioKitPitchDetector.swift` | DEFERRED to Sprint 2 |
+| 22 | **Wire TanpuraPlayer to practice UI** — synthesized Sa-Pa drone, engine wrapper, toolbar toggle | — | TanpuraDroneGenerator, TanpuraEngine, PracticeSessionViewModel, PracticeControlsToolbar | DONE (`0dae811`) |
+| 23 | **Add achievement unlock toast** — observable lastUnlockedAchievement, auto-dismiss banner | — | AchievementManager, AchievementUnlockToast, ContentView | DONE (`bddea6f`) |
 
 #### Item 19A Details: SwiftLint Cleanup (commit `1b7093b`)
 

@@ -1,4 +1,6 @@
 import Foundation
+import os
+import SVCore
 import SVLearning
 
 /// Controls wait-mode behavior for play-along, pausing playback at each note
@@ -15,6 +17,10 @@ import SVLearning
 @Observable
 @MainActor
 final class PlayAlongWaitController {
+    // MARK: - Logger
+
+    private static let logger = Logger.survibe(category: "PlayAlongWait")
+
     // MARK: - Properties
 
     /// The note events for the current song.
@@ -57,6 +63,7 @@ final class PlayAlongWaitController {
         currentNoteIndex = index
         isWaitingForNote = true
         waitEngine.waitForNote()
+        Self.logger.debug("Waiting for note at index \(index, privacy: .public)")
     }
 
     /// Evaluate a detected note name against the expected note.
@@ -80,6 +87,10 @@ final class PlayAlongWaitController {
             expectedOctave: expected.octave
         )
 
+        let exp = expected.swarName
+        Self.logger.debug(
+            "Attempt: \(detectedNoteName, privacy: .public) vs \(exp, privacy: .public) = \(result, privacy: .public)"
+        )
         if result {
             isWaitingForNote = false
         }
@@ -94,5 +105,6 @@ final class PlayAlongWaitController {
         currentNoteIndex = 0
         isWaitingForNote = false
         waitEngine.reset()
+        Self.logger.info("PlayAlong wait controller reset")
     }
 }
