@@ -74,7 +74,7 @@ struct SurVibeApp: App {
         let config = ModelConfiguration(schema: schema, cloudKitDatabase: .automatic)
 
         // Proactive store reset on schema version change
-        let currentSchemaVersion = 4
+        let currentSchemaVersion = 5
         let previousVersion = UserDefaults.standard.integer(forKey: "survibe_schema_version")
         if previousVersion != 0, previousVersion < currentSchemaVersion {
             appLogger.info(
