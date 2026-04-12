@@ -1,5 +1,6 @@
 import Foundation
 import os.log
+import SVCore
 import SVLearning
 import SwiftData
 
@@ -23,7 +24,7 @@ final class StreakTracker {
     private let modelContext: ModelContext
 
     /// Logger for streak computation diagnostics.
-    private static let logger = Logger(subsystem: "com.survibe", category: "StreakTracker")
+    private static let logger = Logger.survibe(category: "StreakTracker")
 
     /// Current consecutive-day practice streak.
     private(set) var currentStreak: Int = 0
@@ -133,7 +134,7 @@ final class StreakTracker {
                 "Recompute: current=\(streak), longest=\(longest), uniqueDays=\(uniqueDays.count)"
             )
         } catch {
-            Self.logger.error("Failed to fetch RiyazEntry for streak: \(error.localizedDescription)")
+            Self.logger.error("Failed to fetch RiyazEntry for streak: \(error.localizedDescription, privacy: .public)")
             currentStreak = 0
             longestStreak = 0
             lastPracticeDate = nil

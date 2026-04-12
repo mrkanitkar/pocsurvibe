@@ -1,5 +1,6 @@
 import Foundation
 import os.log
+import SVCore
 import SwiftData
 
 /// XP award source types. Stored as String rawValue in `XPEntry.source`.
@@ -41,7 +42,7 @@ final class XPManager {
     private let modelContext: ModelContext
 
     /// Logger for XP operations (subsystem: "com.survibe", category: "XPManager").
-    private static let logger = Logger(subsystem: "com.survibe", category: "XPManager")
+    private static let logger = Logger.survibe(category: "XPManager")
 
     // MARK: - Initialization
 
@@ -79,9 +80,9 @@ final class XPManager {
 
         do {
             try modelContext.save()
-            Self.logger.info("Awarded \(amount) XP from \(source.rawValue) (sourceId: \(sourceId))")
+            Self.logger.info("Awarded \(amount) XP from \(source.rawValue, privacy: .public) (sourceId: \(sourceId, privacy: .public))")
         } catch {
-            Self.logger.error("Failed to save XP award: \(error.localizedDescription)")
+            Self.logger.error("Failed to save XP award: \(error.localizedDescription, privacy: .public)")
         }
     }
 
@@ -97,7 +98,7 @@ final class XPManager {
             let profiles = try modelContext.fetch(descriptor)
             return profiles.first?.totalXP ?? 0
         } catch {
-            Self.logger.error("Failed to fetch UserProfile for totalXP: \(error.localizedDescription)")
+            Self.logger.error("Failed to fetch UserProfile for totalXP: \(error.localizedDescription, privacy: .public)")
             return 0
         }
     }
@@ -117,7 +118,7 @@ final class XPManager {
             let entries = try modelContext.fetch(descriptor)
             return entries.reduce(0) { $0 + $1.amount }
         } catch {
-            Self.logger.error("Failed to fetch today's XP entries: \(error.localizedDescription)")
+            Self.logger.error("Failed to fetch today's XP entries: \(error.localizedDescription, privacy: .public)")
             return 0
         }
     }
@@ -133,7 +134,7 @@ final class XPManager {
         do {
             return try modelContext.fetch(descriptor)
         } catch {
-            Self.logger.error("Failed to fetch recent XP entries: \(error.localizedDescription)")
+            Self.logger.error("Failed to fetch recent XP entries: \(error.localizedDescription, privacy: .public)")
             return []
         }
     }
@@ -152,7 +153,7 @@ final class XPManager {
                 return existing
             }
         } catch {
-            Self.logger.error("Failed to fetch UserProfile: \(error.localizedDescription)")
+            Self.logger.error("Failed to fetch UserProfile: \(error.localizedDescription, privacy: .public)")
         }
 
         let newProfile = UserProfile()

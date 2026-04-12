@@ -67,7 +67,7 @@ final class OnboardingManager {
     // MARK: - Private
 
     /// Logger for onboarding events.
-    private static let logger = Logger(subsystem: "com.survibe", category: "OnboardingManager")
+    private static let logger = Logger.survibe(category: "OnboardingManager")
 
     /// Total number of onboarding screens.
     private let totalScreens = 4

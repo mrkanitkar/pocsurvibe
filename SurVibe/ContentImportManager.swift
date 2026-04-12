@@ -1,4 +1,5 @@
 import Foundation
+import SVCore
 import SVLearning
 import SwiftData
 import os.log
@@ -16,7 +17,7 @@ import os.log
 /// ```
 @MainActor
 final class ContentImportManager {
-    private static let logger = Logger(subsystem: "com.survibe", category: "ContentImportManager")
+    private static let logger = Logger.survibe(category: "ContentImportManager")
 
     /// Result of an import operation.
     struct ImportSummary: Sendable {

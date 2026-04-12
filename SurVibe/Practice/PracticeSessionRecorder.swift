@@ -1,6 +1,7 @@
 import Foundation
 import SwiftData
 import SVLearning
+import SVCore
 import os.log
 
 /// Records practice session results to SwiftData models.
@@ -35,10 +36,7 @@ final class PracticeSessionRecorder {
 
     private let modelContext: ModelContext
 
-    private static let logger = Logger(
-        subsystem: "com.survibe",
-        category: "PracticeSessionRecorder"
-    )
+    private static let logger = Logger.survibe(category: "PracticeSessionRecorder")
 
     // MARK: - Initialization
 
@@ -101,7 +99,7 @@ final class PracticeSessionRecorder {
         // PracticeSessionRecorder only handles RiyazEntry + SongProgress persistence.
 
         Self.logger.info(
-            "Session recorded: song=\(songInfo.songId) accuracy=\(accuracy) xp=\(xp) notes=\(noteScores.count)"
+            "Session recorded: song=\(songInfo.songId, privacy: .public) accuracy=\(accuracy) xp=\(xp) notes=\(noteScores.count)"
         )
     }
 
@@ -126,7 +124,7 @@ final class PracticeSessionRecorder {
                 return existing
             }
         } catch {
-            Self.logger.error("Failed to fetch SongProgress for \(songId): \(error.localizedDescription)")
+            Self.logger.error("Failed to fetch SongProgress for \(songId, privacy: .public): \(error.localizedDescription, privacy: .public)")
         }
 
         let progress = SongProgress(songId: songId, songTitle: songTitle)

@@ -1338,7 +1338,7 @@ The learning experience is currently non-functional.
 | 16 | **Migrate SongPlaybackEngine to AVAudioSequencer** — sample-accurate MIDI playback, ~10ms latency reduction, native tempo control via `rate` property | ARCH-005, AUD-003 | `SurVibe/Playback/SongPlaybackEngine.swift` | DONE (ARCH batch) |
 | 17 | **Add Logger to 15+ unlogged files** — RingBuffer, TanpuraPlayer, Import pipeline, PlayAlong subsystem | LOG-001..008, AUD-006 | See LOG gap register for full file list |
 | 18 | **Add OSSignposter intervals** — pitch detection, FFT, SwiftData fetches | LOG-016, AUD-007 | `SVAudio/Pitch/AudioKitPitchDetector.swift`, `SVAudio/DSP/ChromagramDSP.swift` |
-| 19 | **Add `privacy:` annotations** to all Logger interpolations | LOG-017 | All files with Logger instances |
+| 19 | **Add `privacy:` annotations** to all Logger interpolations | LOG-017 | All files with Logger instances | DONE |
 | 20 | **Add audio session fallback** — try `.playback` if `.playAndRecord` fails | AUD-009 | `SVAudio/Engine/AudioSessionManager.swift` |
 | 21 | **Evaluate AudioKit PitchTap** vs custom autocorrelation | AUD-005 | `SVAudio/Pitch/AudioKitPitchDetector.swift` |
 
@@ -1349,7 +1349,7 @@ The learning experience is currently non-functional.
 | 22 | **Update CLAUDE.md** — fix 4-tab nav table, .allowBluetoothHFP, platform declaration, add MIDIInputManager exception, nonisolated(unsafe) rules, @ObservationIgnored, @Bindable, Liquid Glass, SwiftData explicit save, `sending` keyword | CMD-001..012 | `CLAUDE.md` | DONE (Phase 1A, commit `06cfce5`) |
 | 23 | **Remove CLAUDE.md duplicates** — 6 rules stated in both prose and Banned Patterns table | CMD-013..018 | `CLAUDE.md` | DONE (Phase 1A, commit `06cfce5`) |
 | 24 | **Create project docs** — CHANGELOG.md, SECURITY.md, CONTRIBUTING.md | GAP-D01-002/003/007/014, GAP-D02-009 | New files in repo root | TODO |
-| 25 | **Create centralized Logger factory** | LOG-019 | New: `SVCore/Logging/Logger+SurVibe.swift` | TODO |
+| 25 | **Create centralized Logger factory** | LOG-019 | New: `SVCore/Logging/Logger+SurVibe.swift` | DONE |
 
 ### Phase 6: Testing + CI (P1)
 
@@ -1595,9 +1595,9 @@ These 6 duplications add ~30 lines of redundancy. Recommend keeping ONLY the Ban
 | Gap ID | Tool | Severity | Issue | Apple Reference | Remediation |
 |--------|------|----------|-------|----------------|-------------|
 | LOG-016 | OSSignposter | P1 | **Zero usage of `OSSignposter`** in the entire codebase. Apple recommends signposts for performance-critical intervals (WWDC 2023 "Analyze hangs with Instruments"). Audio pipeline (pitch detection, FFT, chord matching), SwiftData fetches, and view model operations should use signpost intervals for Instruments profiling | WWDC 2023: "Analyze hangs with Instruments" | Add `OSSignposter` to: pitch detection loop, ChromagramDSP.computeChromagram, SongPlaybackEngine.load, SwiftData fetch operations |
-| LOG-017 | os.Logger privacy | P1 | No use of `privacy: .private` or `privacy: .public` annotations on Logger interpolations. Apple recommends explicit privacy for sensitive data (user IDs, emails) and for values that should be visible in release logs | Apple os.Logger docs: "Privacy in Logging" | Audit all logger calls: user-facing data → `\(value, privacy: .private)`, diagnostic values → `\(value, privacy: .public)` |
+| LOG-017 | os.Logger privacy | P1 | ~~No use of `privacy: .private` or `privacy: .public` annotations on Logger interpolations.~~ **RESOLVED** — Added `privacy: .public` to all error descriptions, diagnostic strings, and `privacy: .private` to file paths and diagnostic payloads across 25+ files. | Apple os.Logger docs: "Privacy in Logging" | ~~Audit all logger calls~~ DONE |
 | LOG-018 | MetricKit custom metrics | P2 | `CrashReportingManager` handles system diagnostics but app doesn't emit custom `MXMetricPayload` markers for app-specific performance intervals (practice session duration, pitch detection latency, notation render time) | Apple MetricKit docs | Consider `mxSignpost` for custom performance metrics reportable via MetricKit |
-| LOG-019 | Centralized Logger factory | P2 | Each file creates its own Logger inline: `private static let logger = Logger(subsystem: "com.survibe", category: "X")`. No centralized factory. If subsystem changes (e.g., bundle ID rename), every file must be updated | Apple pattern: centralized Logger extension | Create `extension Logger` in SVCore with static factory: `static func survibe(category: String) -> Logger { Logger(subsystem: "com.survibe", category: category) }` |
+| LOG-019 | Centralized Logger factory | P2 | ~~Each file creates its own Logger inline.~~ **RESOLVED** — Created `Logger.survibe(category:)` factory in `SVCore/Logging/Logger+SurVibe.swift`. Migrated all 36+ declarations across 7 packages + app target. Zero `Logger(subsystem:)` calls remain outside tests. | Apple WWDC20/23 pattern | ~~Create extension Logger~~ DONE |
 
 ---
 

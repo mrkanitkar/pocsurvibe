@@ -6,7 +6,7 @@ import os.log
 /// Lives in SVLearning (no SwiftData dependency). The app target's
 /// `ContentImportManager` maps DTOs to `Song` @Model objects.
 public struct SongImporter: Sendable {
-    private static let logger = Logger(subsystem: "com.survibe", category: "SongImporter")
+    private static let logger = Logger.survibe(category: "SongImporter")
 
     // MARK: - Single Import
 
@@ -20,11 +20,11 @@ public struct SongImporter: Sendable {
         do {
             dto = try JSONDecoder().decode(SongImportDTO.self, from: data)
         } catch {
-            logger.error("Song JSON decoding failed: \(error)")
+            logger.error("Song JSON decoding failed: \(error, privacy: .public)")
             throw SongImportError.decodingFailed(error.localizedDescription)
         }
         try dto.validate()
-        logger.info("Imported song DTO: \(dto.slugId)")
+        logger.info("Imported song DTO: \(dto.slugId, privacy: .public)")
         return dto
     }
 
@@ -40,7 +40,7 @@ public struct SongImporter: Sendable {
         do {
             dtos = try JSONDecoder().decode([SongImportDTO].self, from: data)
         } catch {
-            logger.error("Songs JSON array decoding failed: \(error)")
+            logger.error("Songs JSON array decoding failed: \(error, privacy: .public)")
             return []
         }
 
@@ -50,7 +50,7 @@ public struct SongImporter: Sendable {
                 try dto.validate()
                 validated.append(dto)
             } catch {
-                logger.warning("Skipped invalid song '\(dto.slugId)': \(error)")
+                logger.warning("Skipped invalid song '\(dto.slugId, privacy: .public)': \(error, privacy: .public)")
             }
         }
         logger.info("Imported \(validated.count)/\(dtos.count) song DTOs")

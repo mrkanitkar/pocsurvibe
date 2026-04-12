@@ -6,120 +6,104 @@ import os
 
 /// TEST-D01-009: Structured Logging (os.Logger Categories)
 ///
-/// Verifies that os.Logger is properly configured with distinct subsystems and
-/// categories for SVCore and SVAudio packages, and that logging calls complete
-/// without errors.
+/// Verifies that the centralized `Logger.survibe(category:)` factory produces
+/// correctly configured loggers, and that privacy annotations compile and
+/// execute without errors.
 @Suite("Structured Logging Tests")
 @MainActor
 struct StructuredLoggingTests {
 
-    // MARK: - Scenario 1: SVCore Logger Categories Exist
+    // MARK: - Scenario 1: SVCore Logger Categories via Factory
 
-    @Test("SVCore logger categories can be instantiated")
+    @Test("SVCore logger categories via factory")
     func svCoreLoggerCategoriesExist() {
-        // Verify that os.Logger instances for all SVCore categories initialize correctly.
-        let subsystem = "com.survibe"
+        let analyticsLogger = Logger.survibe(category: "Analytics")
+        let authLogger = Logger.survibe(category: "Auth")
+        let permissionsLogger = Logger.survibe(category: "Permissions")
+        let crashLogger = Logger.survibe(category: "CrashReporting")
 
-        let analyticsLogger = Logger(subsystem: subsystem, category: "Analytics")
-        let authLogger = Logger(subsystem: subsystem, category: "Auth")
-        let permissionsLogger = Logger(subsystem: subsystem, category: "Permissions")
-        let crashLogger = Logger(subsystem: subsystem, category: "CrashReporting")
-
-        // os.Logger always initializes (never nil), so we verify usage doesn't crash
         analyticsLogger.debug("Test: Analytics logger active")
         authLogger.debug("Test: Auth logger active")
         permissionsLogger.debug("Test: Permissions logger active")
         crashLogger.debug("Test: CrashReporting logger active")
 
-        #expect(true, "All SVCore logger categories initialized without error")
+        #expect(true, "All SVCore logger categories initialized via factory without error")
     }
 
-    // MARK: - Scenario 2: SVAudio Logger Categories Exist
+    // MARK: - Scenario 2: SVAudio Logger Categories via Factory
 
-    @Test("SVAudio logger categories can be instantiated")
+    @Test("SVAudio logger categories via factory")
     func svAudioLoggerCategoriesExist() {
-        let subsystem = "com.survibe"
-
-        let pitchLogger = Logger(subsystem: subsystem, category: "PitchDetector")
-        let engineLogger = Logger(subsystem: subsystem, category: "AudioEngine")
-        let sessionLogger = Logger(subsystem: subsystem, category: "AudioSession")
-        let metronomeLogger = Logger(subsystem: subsystem, category: "Metronome")
+        let pitchLogger = Logger.survibe(category: "PitchDetector")
+        let engineLogger = Logger.survibe(category: "AudioEngine")
+        let sessionLogger = Logger.survibe(category: "AudioSession")
+        let metronomeLogger = Logger.survibe(category: "Metronome")
 
         pitchLogger.debug("Test: PitchDetector logger active")
         engineLogger.debug("Test: AudioEngine logger active")
         sessionLogger.debug("Test: AudioSession logger active")
         metronomeLogger.debug("Test: Metronome logger active")
 
-        #expect(true, "All SVAudio logger categories initialized without error")
+        #expect(true, "All SVAudio logger categories initialized via factory without error")
     }
 
-    // MARK: - Scenario 3: Logger Subsystem Uses Correct Identifier
+    // MARK: - Scenario 3: Factory Produces Correct Subsystem
 
-    @Test("Logger subsystem is com.survibe")
-    func loggerSubsystemCorrect() {
-        let expectedSubsystem = "com.survibe"
-
-        // Create loggers with the expected subsystem
-        let coreLogger = Logger(subsystem: expectedSubsystem, category: "Analytics")
-        let audioLogger = Logger(subsystem: expectedSubsystem, category: "AudioEngine")
+    @Test("Factory uses com.survibe subsystem")
+    func factorySubsystemCorrect() {
+        let logger = Logger.survibe(category: "TestCategory")
 
         // os.Logger doesn't expose its subsystem property, but we verify
-        // the subsystem string matches what we use throughout the codebase.
-        #expect(expectedSubsystem == "com.survibe")
+        // the factory method exists and produces a usable logger.
+        logger.info("Subsystem verification: info level")
+        logger.debug("Subsystem verification: debug level")
+        logger.error("Subsystem verification: error level")
+        logger.warning("Subsystem verification: warning level")
 
-        // Log at various levels to verify no crashes
-        coreLogger.info("Subsystem verification: info level")
-        coreLogger.debug("Subsystem verification: debug level")
-        coreLogger.error("Subsystem verification: error level")
-        audioLogger.warning("Subsystem verification: warning level")
-
-        #expect(true, "Logger with com.survibe subsystem works at all levels")
+        #expect(true, "Logger.survibe(category:) produces working logger at all levels")
     }
 
-    // MARK: - Scenario 4: Logging Does Not Leak PII
+    // MARK: - Scenario 4: Privacy Annotations
 
-    @Test("Logging with privacy redaction does not crash")
-    func loggingDoesNotLeakPII() {
-        let logger = Logger(subsystem: "com.survibe", category: "Analytics")
+    @Test("Privacy annotations compile and execute")
+    func privacyAnnotationsWork() {
+        let logger = Logger.survibe(category: "PrivacyTest")
 
-        // os.Logger automatically redacts dynamic strings in non-debug builds.
-        // In debug builds, strings are visible. This test verifies the pattern works.
         let sensitiveEmail = "user@example.com"
         let sensitivePhone = "555-1234"
         let userId = "usr_abc123"
 
-        // Use os.Logger's built-in privacy controls
         logger.info("User identified: \(sensitiveEmail, privacy: .private)")
         logger.info("Phone: \(sensitivePhone, privacy: .private)")
         logger.info("User ID: \(userId, privacy: .public)")
 
-        // Non-sensitive data should use .public
+        // Non-sensitive diagnostic data should use .public
         logger.info("App version: \("1.0.0", privacy: .public)")
         logger.info("Event count: \(42, privacy: .public)")
+
+        // Error descriptions use .public (diagnostic, not user data)
+        let error = NSError(domain: "test", code: 42)
+        logger.error("Error: \(error.localizedDescription, privacy: .public)")
 
         #expect(true, "Logging with privacy annotations completed without error")
     }
 
-    // MARK: - Scenario: AnalyticsManager Uses Logger
+    // MARK: - Scenario 5: AnalyticsManager Uses Logger
 
     @Test("AnalyticsManager has configured logger")
     @MainActor
     func analyticsManagerUsesLogger() {
-        // AnalyticsManager.shared should have a static logger.
-        // We verify the manager can be accessed and its logging doesn't crash.
         let manager = AnalyticsManager.shared
-        // Track an event — this exercises the internal logger
         manager.track(.appScaffoldingLoaded)
         #expect(true, "AnalyticsManager.track() with logger completed without error")
     }
 
-    // MARK: - Scenario: CrashReportingManager Uses Logger
+    // MARK: - Scenario 6: CrashReportingManager Uses Logger
 
     @Test("CrashReportingManager logs activation")
     @MainActor
     func crashReportingManagerUsesLogger() {
         let manager = CrashReportingManager.shared
-        // Activate and deactivate — both paths use logger
         manager.deactivate()
         manager.activate()
         #expect(manager.isActive == true, "Activation logged via os.Logger")

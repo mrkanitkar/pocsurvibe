@@ -10,10 +10,7 @@ import os
 public final class AudioSessionManager {
     public static let shared = AudioSessionManager()
 
-    private static let logger = Logger(
-        subsystem: "com.survibe",
-        category: "AudioSessionManager"
-    )
+    private static let logger = Logger.survibe(category: "AudioSessionManager")
 
     private let session = AVAudioSession.sharedInstance()
 
@@ -82,7 +79,7 @@ public final class AudioSessionManager {
         do {
             try session.setActive(false, options: .notifyOthersOnDeactivation)
         } catch {
-            Self.logger.warning("Audio session deactivation failed: \(error.localizedDescription)")
+            Self.logger.warning("Audio session deactivation failed: \(error.localizedDescription, privacy: .public)")
         }
     }
 

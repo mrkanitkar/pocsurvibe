@@ -1,7 +1,7 @@
 import Foundation
 import os
 
-private let pipelineLogger = Logger(subsystem: "com.survibe", category: "ImportPipeline")
+private let pipelineLogger = Logger.survibe(category: "ImportPipeline")
 
 /// Orchestrates the full 5-stage song import pipeline.
 ///

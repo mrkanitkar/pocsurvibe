@@ -1,4 +1,5 @@
 import Foundation
+import SVCore
 import SVAudio
 import SVLearning
 import os.log
@@ -27,7 +28,7 @@ actor NoteMatchingActor {
 
     // MARK: - Private Helpers
 
-    private static let logger = Logger(subsystem: "com.survibe", category: "NoteMatching")
+    private static let logger = Logger.survibe(category: "NoteMatching")
 
     // MARK: - Public Interface
 

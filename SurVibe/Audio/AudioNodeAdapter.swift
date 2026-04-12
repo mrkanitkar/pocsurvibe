@@ -1,6 +1,7 @@
 import AudioKit
 import AVFoundation
 import SVAudio
+import SVCore
 import os.log
 
 /// Wraps the app's single AVAudioEngine's mainMixerNode as an AudioKit Node.
@@ -41,10 +42,7 @@ final class AudioNodeAdapter: Node {
     /// Whether this adapter is currently connected and ready for visualization.
     private(set) var isConnected = false
 
-    private static let logger = Logger(
-        subsystem: "com.survibe",
-        category: "AudioNodeAdapter"
-    )
+    private static let logger = Logger.survibe(category: "AudioNodeAdapter")
 
     // MARK: - Initialization
 

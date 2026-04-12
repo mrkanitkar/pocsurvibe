@@ -79,10 +79,7 @@ final class SongPlaybackEngine {
     /// Monotonically advanced; never reset during active playback.
     private var positionCursor: Int = 0
 
-    private static let logger = Logger(
-        subsystem: "com.survibe",
-        category: "SongPlayback"
-    )
+    private static let logger = Logger.survibe(category: "SongPlayback")
 
     // MARK: - Initialization
 

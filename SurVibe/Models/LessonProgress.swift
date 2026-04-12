@@ -1,8 +1,9 @@
 import Foundation
 import os
+import SVCore
 import SwiftData
 
-private let lpLogger = Logger(subsystem: "com.survibe", category: "LessonProgress")
+private let lpLogger = Logger.survibe(category: "LessonProgress")
 
 /// Tracks lesson completion progress. One-way flag: once completed, stays completed.
 ///

@@ -33,7 +33,7 @@ struct HomeTab: View {
     ]
 
     /// Logger for Home tab events.
-    private static let logger = Logger(subsystem: "com.survibe", category: "HomeTab")
+    private static let logger = Logger.survibe(category: "HomeTab")
 
     // MARK: - Body
 

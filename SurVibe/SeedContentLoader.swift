@@ -1,6 +1,7 @@
 import Foundation
 import SwiftData
 import os.log
+import SVCore
 
 /// Manages seed content loading into SwiftData with version tracking.
 ///
@@ -16,7 +17,7 @@ import os.log
 /// ```
 @MainActor
 final class SeedContentLoader {
-    private static let logger = Logger(subsystem: "com.survibe", category: "SeedContentLoader")
+    private static let logger = Logger.survibe(category: "SeedContentLoader")
     private static let seedContentVersionKey = "com.survibe.seedContentVersion"
 
     /// Current seed content version.
@@ -53,9 +54,9 @@ final class SeedContentLoader {
         do {
             let summary = try ContentImportManager.importAllSeedContent(into: container)
             UserDefaults.standard.set(currentContentVersion, forKey: seedContentVersionKey)
-            logger.info("Seed content loaded successfully (v\(currentContentVersion)): \(summary.description)")
+            logger.info("Seed content loaded successfully (v\(currentContentVersion)): \(summary.description, privacy: .public)")
         } catch {
-            logger.error("Seed content loading failed: \(error). App will continue without seed data.")
+            logger.error("Seed content loading failed: \(error, privacy: .public). App will continue without seed data.")
         }
     }
 

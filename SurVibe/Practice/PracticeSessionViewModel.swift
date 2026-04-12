@@ -154,10 +154,7 @@ final class PracticeSessionViewModel {
     /// Whether first-pitch achievement has been fired this session.
     private var hasTrackedFirstPitch: Bool = false
 
-    private static let logger = Logger(
-        subsystem: "com.survibe",
-        category: "PracticeSessionVM"
-    )
+    private static let logger = Logger.survibe(category: "PracticeSessionVM")
 
     // MARK: - Initialization
 

@@ -1,4 +1,5 @@
 import Foundation
+import SVCore
 import SwiftData
 import os.log
 
@@ -38,7 +39,7 @@ struct LessonWithProgress: Identifiable {
 final class LessonLibraryViewModel {
     // MARK: - Properties
 
-    private static let logger = Logger(subsystem: "com.survibe", category: "LessonLibrary")
+    private static let logger = Logger.survibe(category: "LessonLibrary")
 
     /// All lessons fetched from SwiftData.
     private(set) var allLessons: [LessonWithProgress] = []
@@ -126,7 +127,7 @@ final class LessonLibraryViewModel {
                 )
             }
         } catch {
-            Self.logger.error("Failed to load lessons: \(error)")
+            Self.logger.error("Failed to load lessons: \(error, privacy: .public)")
             allLessons = []
         }
 

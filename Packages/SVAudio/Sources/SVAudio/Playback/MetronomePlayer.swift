@@ -33,10 +33,7 @@ public final class MetronomePlayer: MetronomePlaying {
     /// Number of beats to schedule ahead of the current playback position.
     private let lookAheadBeats = 4
 
-    private static let logger = Logger(
-        subsystem: "com.survibe",
-        category: "Metronome"
-    )
+    private static let logger = Logger.survibe(category: "Metronome")
 
     // MARK: - Initialization
 

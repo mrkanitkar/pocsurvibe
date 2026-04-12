@@ -74,7 +74,7 @@ struct SurVibeApp: App {
 
     /// Create the production container with CloudKit sync and schema migration.
     private static func createProductionContainer(schema: Schema) -> ModelContainer {
-        let appLogger = Logger(subsystem: "com.survibe", category: "App")
+        let appLogger = Logger.survibe(category: "App")
         let config = ModelConfiguration(schema: schema, cloudKitDatabase: .automatic)
 
         // Proactive store reset on schema version change
@@ -129,7 +129,7 @@ struct SurVibeApp: App {
         let apiKey = Bundle.main.object(forInfoDictionaryKey: "POSTHOG_API_KEY") as? String ?? ""
         #if DEBUG
         if apiKey.isEmpty || apiKey.contains("PLACEHOLDER") {
-            Logger(subsystem: "com.survibe", category: "App")
+            Logger.survibe(category: "App")
                 .warning("PostHog API key not configured. Analytics disabled.")
         }
         #endif
@@ -154,7 +154,7 @@ struct SurVibeApp: App {
     /// Scans Application Support for all `.store` / `.sqlite` files and their
     /// WAL/SHM companions.
     private static func deleteSwiftDataStore() {
-        let appLogger = Logger(subsystem: "com.survibe", category: "App")
+        let appLogger = Logger.survibe(category: "App")
         guard
             let appSupportURL = FileManager.default.urls(
                 for: .applicationSupportDirectory, in: .userDomainMask

@@ -309,10 +309,7 @@ final class PlayAlongViewModel {
     /// back to update `@Observable` state.
     private let noteMatchingActor = NoteMatchingActor()
 
-    private static let logger = Logger(
-        subsystem: "com.survibe",
-        category: "PlayAlong"
-    )
+    private static let logger = Logger.survibe(category: "PlayAlong")
 
     // MARK: - Initialization
 
@@ -839,7 +836,7 @@ final class PlayAlongViewModel {
                 guard !Task.isCancelled else { return }
                 self.isMIDIConnected = connected
                 self.midiDeviceName = connected ? self.midiInput.connectedDeviceName : nil
-                Self.logger.info("MIDI connection changed: \(connected ? "connected" : "disconnected")")
+                Self.logger.info("MIDI connection changed: \(connected ? "connected" : "disconnected", privacy: .public)")
             }
         }
     }
@@ -878,7 +875,7 @@ final class PlayAlongViewModel {
                 try audioProcessor.start()
                 Self.logger.info("MicDiag: audioProcessor.start() succeeded")
             } catch {
-                Self.logger.error("MicDiag: audioProcessor.start() FAILED: \(error.localizedDescription)")
+                Self.logger.error("MicDiag: audioProcessor.start() FAILED: \(error.localizedDescription, privacy: .public)")
                 return
             }
         } else {
@@ -992,7 +989,7 @@ final class PlayAlongViewModel {
             let midiConn = self.isMIDIConnected
             Self.logger.info(
                 // swiftlint:disable:next line_length
-                "MicDiag: pitchStream result #\(pitchResultCount) freq=\(freqStr)Hz note=\(enriched.noteName)\(enriched.octave) amp=\(ampStr)/\(silThresh) conf=\(confStr)/\(confThresh) midiConnected=\(midiConn)"
+                "MicDiag: pitchStream result #\(pitchResultCount) freq=\(freqStr)Hz note=\(enriched.noteName, privacy: .public)\(enriched.octave) amp=\(ampStr)/\(silThresh) conf=\(confStr)/\(confThresh) midiConnected=\(midiConn)"
             )
             pitchResultCount += 1
 
@@ -1004,7 +1001,7 @@ final class PlayAlongViewModel {
                 self.lastMelodyDetectionDate = Date()
                 let midiNote = Self.midiNoteFromFrequency(enriched.frequency)
                 if !self.isMIDIConnected {
-                    Self.logger.info("MicDiag: highlight note=\(midiNote) (\(enriched.noteName)\(enriched.octave))")
+                    Self.logger.info("MicDiag: highlight note=\(midiNote) (\(enriched.noteName, privacy: .public)\(enriched.octave))")
                     self.detectedMidiNotes = [midiNote]
                     self.updateDetectedSwarInfo(from: self.detectedMidiNotes)
                 } else {
@@ -1200,10 +1197,10 @@ final class PlayAlongViewModel {
         ragaScoringContext = RagaScoringContext.from(ragaName: ragaName)
         if let ragaContext = RagaTuningProvider.context(for: ragaName) {
             ragaMapper = RagaAwareMapper(ragaContext: ragaContext)
-            Self.logger.info("Raga context configured: \(ragaName)")
+            Self.logger.info("Raga context configured: \(ragaName, privacy: .public)")
         } else {
             ragaMapper = nil
-            Self.logger.info("Unknown raga '\(ragaName)' — using equal temperament")
+            Self.logger.info("Unknown raga '\(ragaName, privacy: .public)' — using equal temperament")
         }
     }
 

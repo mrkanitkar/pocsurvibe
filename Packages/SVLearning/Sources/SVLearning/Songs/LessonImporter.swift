@@ -6,7 +6,7 @@ import os.log
 /// Lives in SVLearning (no SwiftData dependency). The app target's
 /// `ContentImportManager` maps DTOs to `Lesson` @Model objects.
 public struct LessonImporter: Sendable {
-    private static let logger = Logger(subsystem: "com.survibe", category: "LessonImporter")
+    private static let logger = Logger.survibe(category: "LessonImporter")
 
     // MARK: - Single Import
 
@@ -20,11 +20,11 @@ public struct LessonImporter: Sendable {
         do {
             dto = try JSONDecoder().decode(LessonImportDTO.self, from: data)
         } catch {
-            logger.error("Lesson JSON decoding failed: \(error)")
+            logger.error("Lesson JSON decoding failed: \(error, privacy: .public)")
             throw LessonImportError.decodingFailed(error.localizedDescription)
         }
         try dto.validate()
-        logger.info("Imported lesson DTO: \(dto.lessonId)")
+        logger.info("Imported lesson DTO: \(dto.lessonId, privacy: .public)")
         return dto
     }
 
@@ -40,7 +40,7 @@ public struct LessonImporter: Sendable {
         do {
             dtos = try JSONDecoder().decode([LessonImportDTO].self, from: data)
         } catch {
-            logger.error("Lessons JSON array decoding failed: \(error)")
+            logger.error("Lessons JSON array decoding failed: \(error, privacy: .public)")
             return []
         }
 
@@ -50,7 +50,7 @@ public struct LessonImporter: Sendable {
                 try dto.validate()
                 validated.append(dto)
             } catch {
-                logger.warning("Skipped invalid lesson '\(dto.lessonId)': \(error)")
+                logger.warning("Skipped invalid lesson '\(dto.lessonId, privacy: .public)': \(error, privacy: .public)")
             }
         }
         logger.info("Imported \(validated.count)/\(dtos.count) lesson DTOs")

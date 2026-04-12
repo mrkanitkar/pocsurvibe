@@ -22,10 +22,7 @@ public final class MetronomeEngine {
     /// Current volume (0.0 to 1.0).
     public private(set) var volume: Float
 
-    private static let logger = Logger(
-        subsystem: "com.survibe",
-        category: "MetronomeEngine"
-    )
+    private static let logger = Logger.survibe(category: "MetronomeEngine")
 
     // MARK: - Initialization
 

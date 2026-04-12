@@ -21,7 +21,7 @@ final class RangSystem {
     private let modelContext: ModelContext
 
     /// Logger for rang progression events.
-    private static let logger = Logger(subsystem: "com.survibe", category: "RangSystem")
+    private static let logger = Logger.survibe(category: "RangSystem")
 
     // MARK: - Initialization
 
@@ -109,7 +109,7 @@ final class RangSystem {
         do {
             return try modelContext.fetch(descriptor).first?.totalXP ?? 0
         } catch {
-            Self.logger.error("Failed to fetch UserProfile for XP: \(error.localizedDescription)")
+            Self.logger.error("Failed to fetch UserProfile for XP: \(error.localizedDescription, privacy: .public)")
             return 0
         }
     }
@@ -124,7 +124,7 @@ final class RangSystem {
         do {
             return try modelContext.fetch(descriptor).first?.currentRang ?? 1
         } catch {
-            Self.logger.error("Failed to fetch UserProfile for rang: \(error.localizedDescription)")
+            Self.logger.error("Failed to fetch UserProfile for rang: \(error.localizedDescription, privacy: .public)")
             return 1
         }
     }
@@ -144,7 +144,7 @@ final class RangSystem {
             profile.currentRang = max(profile.currentRang, newRang)
             try modelContext.save()
         } catch {
-            Self.logger.error("Failed to update rang: \(error.localizedDescription)")
+            Self.logger.error("Failed to update rang: \(error.localizedDescription, privacy: .public)")
         }
     }
 }

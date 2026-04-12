@@ -8,7 +8,7 @@ import Synchronization
 import os.log
 
 /// Module-level logger for @MainActor-isolated methods of PitchDetectionViewModel.
-private let vmLogger = Logger(subsystem: "com.survibe", category: "PitchDetectionVM")
+private let vmLogger = Logger.survibe(category: "PitchDetectionVM")
 
 /// Carries a single DSP result from the processing queue to MainActor.
 private struct DSPResult: Sendable {
@@ -436,7 +436,7 @@ private final class AtomicCounter: Sendable {
 nonisolated enum PitchDSP {
     /// Logger for DSP diagnostics — declared here (nonisolated context) so it
     /// can be used from @Sendable mic tap closures and nonisolated static methods.
-    static let logger = Logger(subsystem: "com.survibe", category: "PitchDetectionVM")
+    static let logger = Logger.survibe(category: "PitchDetectionVM")
 
     /// Result of pitch detection with spectral confidence.
     struct DetectionResult {

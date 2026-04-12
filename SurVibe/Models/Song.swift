@@ -1,8 +1,9 @@
 import Foundation
 import os
+import SVCore
 import SwiftData
 
-private let songLogger = Logger(subsystem: "com.survibe", category: "Song")
+private let songLogger = Logger.survibe(category: "Song")
 
 // MARK: - Supporting Types
 

@@ -1,5 +1,6 @@
 import Foundation
 import os.log
+import SVCore
 
 /// Phases of a quiz session.
 ///
@@ -49,10 +50,7 @@ final class QuizEngine {
     /// The quiz questions.
     let questions: [QuizQuestion]
 
-    private static let logger = Logger(
-        subsystem: "com.survibe",
-        category: "QuizEngine"
-    )
+    private static let logger = Logger.survibe(category: "QuizEngine")
 
     // MARK: - Computed Properties
 

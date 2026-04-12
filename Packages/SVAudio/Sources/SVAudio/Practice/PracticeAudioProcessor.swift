@@ -6,7 +6,7 @@ import os.log
 
 // File-private logger accessible from nonisolated static methods.
 // Logger is Sendable so this is safe to use from any isolation context.
-private let practiceAudioLogger = Logger(subsystem: "com.survibe", category: "PracticeAudioProcessor")
+private let practiceAudioLogger = Logger.survibe(category: "PracticeAudioProcessor")
 
 /// Processes microphone audio during practice mode and produces pitch detection results.
 ///
@@ -98,10 +98,7 @@ public final class PracticeAudioProcessor {
     /// DSP processing task.
     private var dspTask: Task<Void, Never>?
 
-    private static let logger = Logger(
-        subsystem: "com.survibe",
-        category: "PracticeAudioProcessor"
-    )
+    private static let logger = Logger.survibe(category: "PracticeAudioProcessor")
 
     // MARK: - Initialization
 

@@ -37,7 +37,7 @@ final class GamificationService {
     private let modelContext: ModelContext
 
     /// Logger for gamification events.
-    private static let logger = Logger(subsystem: "com.survibe", category: "GamificationService")
+    private static let logger = Logger.survibe(category: "GamificationService")
 
     // MARK: - Initialization
 
@@ -76,7 +76,7 @@ final class GamificationService {
         let newRang = rangSystem.recalculate()
         evaluateAchievements(latestQuizScore: quizScore, newRangLevel: newRang)
 
-        Self.logger.info("Step completed: \(stepType) in lesson \(lessonId)")
+        Self.logger.info("Step completed: \(stepType, privacy: .public) in lesson \(lessonId, privacy: .public)")
     }
 
     /// Called when all steps in a lesson are finished.
@@ -93,7 +93,7 @@ final class GamificationService {
         let newRang = rangSystem.recalculate()
         evaluateAchievements(latestQuizScore: quizScore, newRangLevel: newRang)
 
-        Self.logger.info("Lesson completed: \(lessonId)")
+        Self.logger.info("Lesson completed: \(lessonId, privacy: .public)")
     }
 
     /// Called when a practice session finishes.
@@ -118,7 +118,7 @@ final class GamificationService {
         evaluateAchievements(newRangLevel: newRang, hasMasteredSong: songMastered)
 
         Self.logger.info(
-            "Practice completed: song=\(songId) xp=\(xp) mastered=\(songMastered)"
+            "Practice completed: song=\(songId, privacy: .public) xp=\(xp) mastered=\(songMastered)"
         )
     }
 
@@ -217,7 +217,7 @@ final class GamificationService {
             return try modelContext.fetchCount(descriptor)
         } catch {
             Self.logger.error(
-                "Failed to fetch count for \(String(describing: T.self)): \(error.localizedDescription)"
+                "Failed to fetch count for \(String(describing: T.self), privacy: .public): \(error.localizedDescription, privacy: .public)"
             )
             return 0
         }

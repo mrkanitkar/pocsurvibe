@@ -4,10 +4,7 @@ import Synchronization
 import os.log
 
 /// Module-level logger — not actor-isolated, safe to use from any context.
-private let pitchLogger = Logger(
-    subsystem: "com.survibe",
-    category: "PitchDetector"
-)
+private let pitchLogger = Logger.survibe(category: "PitchDetector")
 
 /// Autocorrelation-based pitch detector using Accelerate/vDSP.
 ///

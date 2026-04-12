@@ -1,5 +1,6 @@
 import Foundation
 import os.log
+import SVCore
 import SwiftData
 
 /// Manages lesson progress tracking, prerequisite validation, and curriculum completion.
@@ -28,7 +29,7 @@ final class LessonProgressManager {
     private let modelContext: ModelContext
 
     /// Logger for progress-related operations.
-    private static let logger = Logger(subsystem: "com.survibe", category: "LessonProgress")
+    private static let logger = Logger.survibe(category: "LessonProgress")
 
     // MARK: - Initialization
 
@@ -58,13 +59,13 @@ final class LessonProgressManager {
                 return existing
             }
         } catch {
-            Self.logger.error("Failed to fetch progress for lesson '\(lessonId)': \(error)")
+            Self.logger.error("Failed to fetch progress for lesson '\(lessonId, privacy: .public)': \(error, privacy: .public)")
         }
 
         // Not found or fetch failed — create a new record
         let newProgress = LessonProgress(lessonId: lessonId)
         modelContext.insert(newProgress)
-        Self.logger.info("Created new progress record for lesson '\(lessonId)'")
+        Self.logger.info("Created new progress record for lesson '\(lessonId, privacy: .public)'")
         return newProgress
     }
 
@@ -114,7 +115,7 @@ final class LessonProgressManager {
 
         let pct = record.progressPercent
         Self.logger.info(
-            "Step \(stepIndex) completed for '\(lessonId)' — \(pct, format: .fixed(precision: 2))"
+            "Step \(stepIndex) completed for '\(lessonId, privacy: .public)' — \(pct, format: .fixed(precision: 2))"
         )
     }
 
@@ -148,7 +149,7 @@ final class LessonProgressManager {
         let total = record.totalTimeSpent
         Self.logger.info(
             """
-            Lesson '\(lessonId)' done \
+            Lesson '\(lessonId, privacy: .public)' done \
             quiz=\(quiz, format: .fixed(precision: 2)) \
             time=\(total, format: .fixed(precision: 1))s
             """
@@ -329,11 +330,11 @@ final class LessonProgressManager {
             }
 
             Self.logger.warning(
-                "Progress record exists for lesson '\(topProgress.lessonId)' but no matching Lesson found"
+                "Progress record exists for lesson '\(topProgress.lessonId, privacy: .public)' but no matching Lesson found"
             )
             return nil
         } catch {
-            Self.logger.error("Failed to fetch continue-lesson progress: \(error)")
+            Self.logger.error("Failed to fetch continue-lesson progress: \(error, privacy: .public)")
             return nil
         }
     }
@@ -348,7 +349,7 @@ final class LessonProgressManager {
         do {
             try modelContext.save()
         } catch {
-            Self.logger.error("Failed to save model context: \(error)")
+            Self.logger.error("Failed to save model context: \(error, privacy: .public)")
         }
     }
 }

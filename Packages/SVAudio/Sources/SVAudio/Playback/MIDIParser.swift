@@ -20,10 +20,7 @@ import os.log
 /// time division (ticks per quarter note) and tempo meta events.
 /// Default tempo is 120 BPM if no tempo event is present.
 public struct MIDIParser: Sendable {
-    private static let logger = Logger(
-        subsystem: "com.survibe",
-        category: "MIDIParser"
-    )
+    private static let logger = Logger.survibe(category: "MIDIParser")
 
     // MARK: - Public Interface
 
@@ -70,7 +67,7 @@ public struct MIDIParser: Sendable {
         }
 
         let lastTimestamp = events.last?.timestamp ?? 0
-        logger.info("Parsed \(events.count) MIDI events, duration: \(String(format: "%.1f", lastTimestamp))s")
+        logger.info("Parsed \(events.count) MIDI events, duration: \(String(format: "%.1f", lastTimestamp), privacy: .public)s")
         return .success(events)
     }
 }

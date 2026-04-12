@@ -1,6 +1,7 @@
 import CoreMIDI
 import Foundation
 import os
+import SVCore
 import SVAudio
 
 /// Real-time diagnostic logger for MIDI note detection in the play-along pipeline.
@@ -32,7 +33,7 @@ nonisolated final class MIDIEventDiagnostics: Sendable {
 
     static let shared = MIDIEventDiagnostics()
 
-    nonisolated private static let logger = Logger(subsystem: "com.survibe", category: "MIDIDiagnostics")
+    nonisolated private static let logger = Logger.survibe(category: "MIDIDiagnostics")
 
     /// Set to false to disable all logging with zero overhead.
     ///
@@ -111,13 +112,13 @@ nonisolated final class MIDIEventDiagnostics: Sendable {
             }
             if d.isDrop {
                 let msg = "[DROP] note=\(note) gap=\(String(format: "%.1f", d.gapMs))ms drops=\(d.dropTotal)"
-                Self.logger.warning("\(msg)")
+                Self.logger.warning("\(msg, privacy: .public)")
                 appendLine(msg)
             }
             let ioi = String(format: "%.1f", d.ioi)
             let bpm = String(format: "%.0f", d.bpm)
             let msg = "[MIDI] ON  note=\(note) vel=\(event.velocity) IOI=\(ioi)ms bpm≈\(bpm) seq=\(d.seq)"
-            Self.logger.info("\(msg)")
+            Self.logger.info("\(msg, privacy: .public)")
             appendLine(msg)
         } else {
             let d: NoteOffLog = stateLock.withLock { state in
@@ -126,7 +127,7 @@ nonisolated final class MIDIEventDiagnostics: Sendable {
                 return NoteOffLog(heldMs: heldMs)
             }
             let msg = "[MIDI] OFF note=\(note) held=\(String(format: "%.1f", d.heldMs))ms"
-            Self.logger.info("\(msg)")
+            Self.logger.info("\(msg, privacy: .public)")
             appendLine(msg)
         }
     }
@@ -165,7 +166,7 @@ nonisolated final class MIDIEventDiagnostics: Sendable {
         let avg = String(format: "%.1f", d.avgLagMs)
         let max = String(format: "%.1f", d.maxLagMs)
         let msg = "\(tag) ON  note=\(note) lag=\(lag)ms avg=\(avg)ms max=\(max)ms pending=\(d.pending)"
-        Self.logger.info("\(msg)")
+        Self.logger.info("\(msg, privacy: .public)")
         appendLine(msg)
     }
 
@@ -202,7 +203,7 @@ nonisolated final class MIDIEventDiagnostics: Sendable {
             Max MainActor lag : \(String(format: "%.1f", s.maxLagMs))ms
             ══════════════════
             """
-        Self.logger.info("\(msg)")
+        Self.logger.info("\(msg, privacy: .public)")
         appendLine(msg)
         closeLogFile()
     }
@@ -229,9 +230,9 @@ nonisolated final class MIDIEventDiagnostics: Sendable {
             try "".write(to: url, atomically: true, encoding: .utf8)
             fileHandle = try FileHandle(forWritingTo: url)
             fileHandle?.seekToEndOfFile()
-            Self.logger.info("[DIAG] Log file opened at \(url.path)")
+            Self.logger.info("[DIAG] Log file opened at \(url.path, privacy: .private)")
         } catch {
-            Self.logger.error("[DIAG] Failed to open log file: \(error.localizedDescription) path=\(url.path)")
+            Self.logger.error("[DIAG] Failed to open log file: \(error.localizedDescription, privacy: .public) path=\(url.path, privacy: .private)")
         }
     }
 

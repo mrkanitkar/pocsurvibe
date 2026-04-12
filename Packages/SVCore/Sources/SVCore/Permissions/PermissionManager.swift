@@ -31,10 +31,7 @@ public final class PermissionManager: PermissionProviding {
     /// in Sprint 1 when the full practice flow is implemented.
     public var hasShownDeniedMessage: Bool = false
 
-    private static let logger = Logger(
-        subsystem: "com.survibe",
-        category: "Permissions"
-    )
+    private static let logger = Logger.survibe(category: "Permissions")
 
     private init() {
         updateMicrophoneStatus()

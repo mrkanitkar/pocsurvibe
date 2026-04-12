@@ -23,10 +23,7 @@ public final class AnalyticsManager: AnalyticsProviding {
     /// Whether the SDK has been configured via `configure(apiKey:host:)`.
     public private(set) var isConfigured: Bool = false
 
-    private static let logger = Logger(
-        subsystem: "com.survibe",
-        category: "Analytics"
-    )
+    private static let logger = Logger.survibe(category: "Analytics")
 
     private init() {}
 
@@ -76,7 +73,7 @@ public final class AnalyticsManager: AnalyticsProviding {
             }
             PostHogSDK.shared.capture(eventName, properties: posthogProps)
         }
-        Self.logger.debug("Tracked event: \(eventName)")
+        Self.logger.debug("Tracked event: \(eventName, privacy: .public)")
     }
 
     /// Identify a user for analytics.

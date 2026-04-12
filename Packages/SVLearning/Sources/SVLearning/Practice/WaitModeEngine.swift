@@ -54,10 +54,7 @@ public final class WaitModeEngine {
     /// Whether the current note has had any incorrect attempts.
     private var hasIncorrectAttemptForCurrentNote: Bool = false
 
-    private static let logger = Logger(
-        subsystem: "com.survibe",
-        category: "WaitModeEngine"
-    )
+    private static let logger = Logger.survibe(category: "WaitModeEngine")
 
     // MARK: - Initialization
 

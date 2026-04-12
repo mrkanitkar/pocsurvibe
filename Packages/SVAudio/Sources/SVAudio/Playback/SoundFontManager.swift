@@ -35,10 +35,7 @@ public final class SoundFontManager: SoundFontPlaying {
     /// all 128 MIDI values. Encoded as `UInt16(channel) << 8 | UInt16(note)`.
     private var activeNotes: Set<UInt16> = []
 
-    private static let logger = Logger(
-        subsystem: "com.survibe",
-        category: "SoundFontManager"
-    )
+    private static let logger = Logger.survibe(category: "SoundFontManager")
 
     // MARK: - Initialization
 
@@ -87,7 +84,7 @@ public final class SoundFontManager: SoundFontPlaying {
 
         if !success {
             let message = objcError?.localizedDescription ?? "Unknown SoundFont load failure"
-            Self.logger.error("SoundFont ObjC exception: \(message)")
+            Self.logger.error("SoundFont ObjC exception: \(message, privacy: .public)")
             throw SoundFontError.loadFailed(message)
         }
 

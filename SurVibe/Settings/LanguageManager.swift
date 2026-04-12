@@ -14,10 +14,7 @@ import SVCore
 final class LanguageManager {
     // MARK: - Properties
 
-    private static let logger = Logger(
-        subsystem: "com.survibe",
-        category: "LanguageManager"
-    )
+    private static let logger = Logger.survibe(category: "LanguageManager")
 
     /// Key used by iOS to determine per-app language override.
     private static let appleLanguagesKey = "AppleLanguages"
@@ -53,7 +50,7 @@ final class LanguageManager {
     func setLanguage(_ code: String?) {
         if let code {
             UserDefaults.standard.set([code], forKey: Self.appleLanguagesKey)
-            Self.logger.info("Language set to: \(code)")
+            Self.logger.info("Language set to: \(code, privacy: .public)")
         } else {
             UserDefaults.standard.removeObject(forKey: Self.appleLanguagesKey)
             Self.logger.info("Language reset to system default")

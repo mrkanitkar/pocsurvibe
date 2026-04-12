@@ -91,10 +91,7 @@ public final class AudioEngineManager: AudioEngineProviding {
     /// Stored mic tap buffer size for reinstallation after route changes.
     private var micTapBufferSize: AVAudioFrameCount?
 
-    private static let logger = Logger(
-        subsystem: "com.survibe",
-        category: "AudioEngine"
-    )
+    private static let logger = Logger.survibe(category: "AudioEngine")
 
     // MARK: - Initialization
 
@@ -155,7 +152,7 @@ public final class AudioEngineManager: AudioEngineProviding {
                         try self?.engine.start()
                         Self.logger.info("Engine restarted after interruption")
                     } catch {
-                        Self.logger.error("Engine restart after interruption failed: \(error.localizedDescription)")
+                        Self.logger.error("Engine restart after interruption failed: \(error.localizedDescription, privacy: .public)")
                     }
                 }
             }
@@ -221,7 +218,7 @@ public final class AudioEngineManager: AudioEngineProviding {
             try engine.start()
             Self.logger.info("Engine restarted after route change")
         } catch {
-            Self.logger.error("Engine restart after route change failed: \(error.localizedDescription)")
+            Self.logger.error("Engine restart after route change failed: \(error.localizedDescription, privacy: .public)")
             return
         }
 

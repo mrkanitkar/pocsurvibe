@@ -1,5 +1,6 @@
 import Foundation
 import os.log
+import SVCore
 import SwiftData
 
 /// Phases of the lesson player.
@@ -74,10 +75,7 @@ final class LessonPlayerViewModel {
     private var sessionStartTime: Date = Date()
 
     /// Logger for player events.
-    nonisolated private static let logger = Logger(
-        subsystem: "com.survibe",
-        category: "LessonPlayer"
-    )
+    nonisolated private static let logger = Logger.survibe(category: "LessonPlayer")
 
     // MARK: - Computed Properties
 
@@ -233,7 +231,7 @@ final class LessonPlayerViewModel {
             // Reset so onDisappear doesn't double-count
             sessionStartTime = Date()
             phase = .completed
-            Self.logger.info("Lesson '\(self.lesson.lessonId)' completed")
+            Self.logger.info("Lesson '\(self.lesson.lessonId, privacy: .public)' completed")
         } else {
             phase = .active(stepIndex: index + 1)
             resetStepState()

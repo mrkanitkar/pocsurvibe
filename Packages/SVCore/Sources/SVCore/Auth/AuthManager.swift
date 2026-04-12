@@ -91,10 +91,7 @@ public final class AuthManager: NSObject, AuthManagerProtocol,
     }
 
     /// Logger for authentication events.
-    private static let logger = Logger(
-        subsystem: "com.survibe",
-        category: "Auth"
-    )
+    private static let logger = Logger.survibe(category: "Auth")
 
     /// Continuation bridging ASAuthorizationControllerDelegate → async/await.
     private var signInContinuation: CheckedContinuation<AppleUser, any Error>?
@@ -148,7 +145,7 @@ public final class AuthManager: NSObject, AuthManagerProtocol,
                 .signInFailed,
                 properties: ["error": error.localizedDescription]
             )
-            Self.logger.error("Sign in with Apple failed: \(error.localizedDescription)")
+            Self.logger.error("Sign in with Apple failed: \(error.localizedDescription, privacy: .public)")
             throw authError
         }
     }
@@ -309,7 +306,7 @@ public final class AuthManager: NSObject, AuthManagerProtocol,
         } catch let error as AuthError {
             throw error
         } catch {
-            Self.logger.error("Credential state check failed: \(error.localizedDescription)")
+            Self.logger.error("Credential state check failed: \(error.localizedDescription, privacy: .public)")
             throw AuthError.unknown(error.localizedDescription)
         }
     }

@@ -31,10 +31,7 @@ public final class CrashReportingManager: NSObject {
     /// Number of metric payloads received since activation.
     public private(set) var metricPayloadsReceived: Int = 0
 
-    private static let logger = Logger(
-        subsystem: "com.survibe",
-        category: "CrashReporting"
-    )
+    private static let logger = Logger.survibe(category: "CrashReporting")
 
     // MARK: - Initialization
 
@@ -139,7 +136,7 @@ public final class CrashReportingManager: NSObject {
                 )
             }
             if let json = summary.jsonString {
-                Self.logger.debug("Diagnostic payload JSON: \(json)")
+                Self.logger.debug("Diagnostic payload JSON: \(json, privacy: .private)")
             }
         }
     }
@@ -157,7 +154,7 @@ public final class CrashReportingManager: NSObject {
                 Self.logger.info("Memory metrics received.")
             }
             if let json = summary.jsonString {
-                Self.logger.debug("Metric payload JSON: \(json)")
+                Self.logger.debug("Metric payload JSON: \(json, privacy: .private)")
             }
         }
     }

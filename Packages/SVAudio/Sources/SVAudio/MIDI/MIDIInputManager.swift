@@ -217,10 +217,7 @@ public final class MIDIInputManager: MIDIInputProviding {
     /// to AsyncStream, giving consumers the fastest possible delivery path.
     private let callbackBox = NoteCallbackBox()
 
-    private static let logger = Logger(
-        subsystem: "com.survibe",
-        category: "MIDIInput"
-    )
+    private static let logger = Logger.survibe(category: "MIDIInput")
 
     // MARK: - Initialization
 
@@ -428,7 +425,7 @@ public final class MIDIInputManager: MIDIInputProviding {
             guard source != 0 else { continue }
 
             guard Self.isPhysicalSource(source) else {
-                Self.logger.info("Skipping virtual MIDI source \(i): \(Self.sourceName(source))")
+                Self.logger.info("Skipping virtual MIDI source \(i): \(Self.sourceName(source), privacy: .public)")
                 continue
             }
 
@@ -436,7 +433,7 @@ public final class MIDIInputManager: MIDIInputProviding {
             if connectStatus == noErr {
                 newSources.append(source)
                 if firstName == nil { firstName = Self.sourceName(source) }
-                Self.logger.info("Connected to MIDI source \(i): \(Self.sourceName(source))")
+                Self.logger.info("Connected to MIDI source \(i): \(Self.sourceName(source), privacy: .public)")
             } else {
                 Self.logger.error(
                     "MIDIPortConnectSource failed for source \(i): OSStatus=\(connectStatus)"
@@ -456,7 +453,7 @@ public final class MIDIInputManager: MIDIInputProviding {
         }
 
         if connected {
-            Self.logger.info("MIDI connected: \(deviceName ?? "unknown device")")
+            Self.logger.info("MIDI connected: \(deviceName ?? "unknown device", privacy: .public)")
         } else {
             Self.logger.info("No physical MIDI sources connected")
         }

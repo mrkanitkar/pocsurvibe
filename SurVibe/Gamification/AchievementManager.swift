@@ -31,7 +31,7 @@ final class AchievementManager {
     private let xpManager: XPManager
 
     /// Logger for achievement events.
-    private static let logger = Logger(subsystem: "com.survibe", category: "AchievementManager")
+    private static let logger = Logger.survibe(category: "AchievementManager")
 
     /// Cache of earned achievement type IDs to avoid repeated fetches.
     private var earnedCache: Set<String> = []

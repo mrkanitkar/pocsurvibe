@@ -1,5 +1,6 @@
 import SwiftUI
 import os.log
+import SVCore
 
 /// Centralized navigation router managing tab selection and per-tab navigation paths.
 ///
@@ -25,7 +26,7 @@ final class AppRouter {
     private var navigationPaths: [AppTab: [AppDestination]] = [:]
 
     /// Logger for navigation events.
-    private static let logger = Logger(subsystem: "com.survibe", category: "AppRouter")
+    private static let logger = Logger.survibe(category: "AppRouter")
 
     // MARK: - Initialization
 
@@ -45,7 +46,7 @@ final class AppRouter {
     /// - Parameter tab: The target tab to select.
     func switchTab(to tab: AppTab) {
         guard currentTab != tab else { return }
-        Self.logger.debug("Tab switch: \(self.currentTab.rawValue) → \(tab.rawValue)")
+        Self.logger.debug("Tab switch: \(self.currentTab.rawValue, privacy: .public) → \(tab.rawValue, privacy: .public)")
         currentTab = tab
     }
 
