@@ -50,8 +50,12 @@ docs/
 
 # ── Claude Code / AI — machine-specific config and plans ─────────────
 .mcp.json
+.claude/plans/
+.claude/launch.json
+.claude/serve-missinglink.py
 PLAN.md
 SurVibe_Code_Review.md
+llm.txt
 
 # ── Secrets — NEVER commit credentials, keys, or certificates ───────
 .env*
