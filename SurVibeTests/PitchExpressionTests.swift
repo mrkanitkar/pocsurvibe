@@ -4,6 +4,7 @@ import Testing
 @testable import SVAudio
 
 @Suite("PitchExpression Analyzer")
+@MainActor
 struct PitchExpressionTests {
     /// Hop interval matching 1024 frames at 44100 Hz (~23ms).
     private let hopInterval = 1024.0 / 44100.0

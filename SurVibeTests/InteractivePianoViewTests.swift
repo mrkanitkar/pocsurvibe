@@ -5,6 +5,7 @@ import Testing
 @testable import SurVibe
 
 /// Tests for InteractivePianoView data model and highlighting logic.
+@MainActor
 struct InteractivePianoViewTests {
 
     // MARK: - Devanagari Label Constants

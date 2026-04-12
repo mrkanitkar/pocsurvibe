@@ -1,6 +1,7 @@
 import Testing
 @testable import SVAudio
 
+@MainActor
 struct RagaTuningTests {
     // MARK: - RagaTuningProvider Tests
 

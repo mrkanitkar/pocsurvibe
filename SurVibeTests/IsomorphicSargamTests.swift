@@ -4,6 +4,7 @@ import Testing
 @testable import SurVibe
 
 /// Tests for IsomorphicSargamView data model, color mapping, and layout logic.
+@MainActor
 struct IsomorphicSargamTests {
 
     // MARK: - Sargam Color Mapping

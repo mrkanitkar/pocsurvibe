@@ -7,6 +7,7 @@ import Testing
 // MARK: - ContentImportManager Tests
 
 @Suite("ContentImportManager Tests")
+@MainActor
 struct ContentImportManagerTests {
     @Test("Import seed songs from bundle JSON")
     @MainActor
@@ -113,6 +114,7 @@ struct ContentImportManagerTests {
 // MARK: - Seed Content Validation Tests
 
 @Suite("Seed Content Validation Tests")
+@MainActor
 struct SeedContentValidationTests {
     @Test("jana-gana-mana-v1 has correct metadata")
     @MainActor
@@ -253,6 +255,7 @@ struct SeedContentValidationTests {
 // MARK: - SeedContentLoader Tests
 
 @Suite("SeedContentLoader Tests")
+@MainActor
 struct SeedContentLoaderTests {
     @Test("isSeedContentLoaded defaults to false")
     @MainActor

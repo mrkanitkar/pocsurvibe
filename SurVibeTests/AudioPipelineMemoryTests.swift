@@ -17,6 +17,7 @@ import Testing
 /// Serialized because some tests create PitchDetectionViewModel which accesses
 /// the AudioEngineManager.shared singleton.
 @Suite("Audio Pipeline Memory Safety Tests", .serialized)
+@MainActor
 struct AudioPipelineMemoryTests {
 
     // MARK: - TEST-D01-001 Scenario 1: ViewModel Deallocates After Stop
@@ -25,13 +26,13 @@ struct AudioPipelineMemoryTests {
     @MainActor
     func viewModelDeallocatesAfterStop() {
         var vm: PitchDetectionViewModel? = PitchDetectionViewModel()
-        weak var weakVM = vm
+        let checkDeallocated = { [weak vm] in vm == nil }
 
         // Stop without starting — exercises cleanup path
         vm?.stopListening()
         vm = nil
 
-        #expect(weakVM == nil, "ViewModel should deallocate after stop and release")
+        #expect(checkDeallocated(), "ViewModel should deallocate after stop and release")
     }
 
     // MARK: - TEST-D01-001 Scenario 2: Stop Clears All State

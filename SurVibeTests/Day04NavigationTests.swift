@@ -6,6 +6,7 @@ import Testing
 // MARK: - AppTab Tests
 
 @Suite("Day 4 — AppTab Tests")
+@MainActor
 struct Day04AppTabTests {
 
     @Test("AppTab has exactly 4 cases")
@@ -56,6 +57,7 @@ struct Day04AppTabTests {
 // MARK: - AppRouter Tests
 
 @Suite("Day 4 — AppRouter Tests")
+@MainActor
 struct Day04AppRouterTests {
 
     @MainActor
@@ -210,6 +212,7 @@ struct Day04AppRouterTests {
 // MARK: - AppDestination Tests
 
 @Suite("Day 4 — AppDestination Tests")
+@MainActor
 struct Day04AppDestinationTests {
 
     @Test("AppDestination simple cases are equal")

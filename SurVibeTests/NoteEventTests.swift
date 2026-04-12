@@ -6,6 +6,7 @@ import SVAudio
 
 // MARK: - NoteEvent fromNotation Tests
 
+@MainActor
 struct NoteEventFromNotationTests {
 
     // MARK: - Basic Conversion
@@ -170,6 +171,7 @@ struct NoteEventFromNotationTests {
 
 // MARK: - NoteEvent fromMIDI Tests
 
+@MainActor
 struct NoteEventFromMIDITests {
 
     @Test func convertsMIDIEventsPreservingTimestamps() {
@@ -243,6 +245,7 @@ struct NoteEventFromMIDITests {
 
 // MARK: - fullSwarName Helper Tests
 
+@MainActor
 struct FullSwarNameTests {
 
     @Test func noModifierReturnsBaseNote() {

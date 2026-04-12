@@ -5,6 +5,7 @@ import Testing
 
 @testable import SurVibe
 
+@MainActor
 struct LanguageManagerTests {
     // MARK: - SupportedLanguage Tests
 

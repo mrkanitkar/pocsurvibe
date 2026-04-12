@@ -2,6 +2,7 @@ import Testing
 @testable import SVAudio
 @testable import SVLearning
 
+@MainActor
 struct RagaScoringTests {
     // MARK: - RagaScoringContext Tests
 

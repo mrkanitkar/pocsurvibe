@@ -3,6 +3,7 @@ import SwiftUI
 import Testing
 @testable import SurVibe
 
+@MainActor
 struct FallingNotesLayoutEngineTests {
 
     // MARK: - pixelsPerSecond

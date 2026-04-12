@@ -5,6 +5,7 @@ import Testing
 
 // MARK: - SongSortOption Tests
 
+@MainActor
 struct SongSortOptionTests {
     @Test func allCasesExist() {
         let cases = SongSortOption.allCases
@@ -32,6 +33,7 @@ struct SongSortOptionTests {
 
 // MARK: - DifficultyBadge Label Tests
 
+@MainActor
 struct DifficultyMappingTests {
     @Test func allLevelsHaveLabels() {
         // Verify the labels map correctly for common difficulty levels
@@ -53,20 +55,17 @@ struct DifficultyMappingTests {
     }
 
     @Test func unknownDifficultyFallback() {
-        let label: String = switch 99 {
-        case 1: "Beginner"
-        case 2: "Easy"
-        case 3: "Medium"
-        case 4: "Hard"
-        case 5: "Expert"
-        default: "Level \(99)"
-        }
-        #expect(label == "Level 99")
+        // Difficulty 99 is outside the known range — should produce a fallback label.
+        let labels = [1: "Beginner", 2: "Easy", 3: "Medium", 4: "Hard", 5: "Expert"]
+        let unknown = 99
+        let fallback = labels[unknown] ?? "Level \(unknown)"
+        #expect(fallback == "Level 99")
     }
 }
 
 // MARK: - LanguageBadge Mapping Tests
 
+@MainActor
 struct LanguageMappingTests {
     @Test func knownLanguages() {
         let mappings = ["hi": "Hindi", "mr": "Marathi", "en": "English"]
@@ -95,6 +94,7 @@ struct LanguageMappingTests {
 
 // MARK: - SongLibraryViewModel Tests
 
+@MainActor
 struct SongLibraryViewModelTests {
     @Test @MainActor func initialState() throws {
         let container = try makeTestContainer()

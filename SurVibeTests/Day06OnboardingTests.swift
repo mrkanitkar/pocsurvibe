@@ -5,6 +5,7 @@ import Testing
 
 // MARK: - SkillLevel Tests
 
+@MainActor
 struct SkillLevelTests {
     @Test func allCasesExist() {
         let cases = SkillLevel.allCases
@@ -46,6 +47,7 @@ struct SkillLevelTests {
 
 // MARK: - OnboardingDoorType Tests
 
+@MainActor
 struct OnboardingDoorTypeTests {
     @Test func allCasesExist() {
         let cases = OnboardingDoorType.allCases
@@ -80,6 +82,7 @@ struct OnboardingDoorTypeTests {
 
 // MARK: - OnboardingManager Tests
 
+@MainActor
 struct OnboardingManagerTests {
     @Test @MainActor func initialState() {
         // Clear stored prefs so test is not polluted by other tests' @AppStorage writes

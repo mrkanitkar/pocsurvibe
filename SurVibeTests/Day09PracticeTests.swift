@@ -5,6 +5,7 @@ import SVLearning
 
 // MARK: - NoteGrade Tests
 
+@MainActor
 struct NoteGradeTests {
 
     // MARK: - Accuracy to Grade Mapping
@@ -114,6 +115,7 @@ struct NoteGradeTests {
 
 // MARK: - NoteScoreCalculator Tests
 
+@MainActor
 struct NoteScoreCalculatorTests {
 
     @Test func perfectScoreFromZeroDeviations() {
@@ -207,6 +209,7 @@ struct NoteScoreCalculatorTests {
 
 // MARK: - PracticeScoring Tests
 
+@MainActor
 struct PracticeScoringTests {
 
     // MARK: - Helpers
@@ -365,6 +368,7 @@ struct PracticeScoringTests {
 
 // MARK: - SectionScorer Tests
 
+@MainActor
 struct Day09SectionScorerTests {
 
     // MARK: - Helpers

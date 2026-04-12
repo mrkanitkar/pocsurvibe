@@ -9,6 +9,7 @@ import Testing
 /// Verifies that the app reads the PostHog API key from Info.plist (set via xcconfig),
 /// handles missing/placeholder keys gracefully, and never hardcodes secrets in source.
 @Suite("API Key Injection Tests")
+@MainActor
 struct APIKeyInjectionTests {
 
     // MARK: - Scenario 1: API Key Loaded from Info.plist

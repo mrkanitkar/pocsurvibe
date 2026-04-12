@@ -10,6 +10,7 @@ import Testing
 /// Verifies the complete pipeline: RagaTuningProvider → RagaAwareMapper →
 /// enriched PitchResult → NoteScoreCalculator with RagaScoringContext.
 @Suite("Raga Integration Tests")
+@MainActor
 struct RagaIntegrationTests {
 
     // MARK: - Mapper Pipeline

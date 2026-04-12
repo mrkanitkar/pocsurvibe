@@ -6,6 +6,7 @@ import Testing
 // MARK: - Song Model Tests
 
 @Suite("Song @Model Tests")
+@MainActor
 struct SongModelTests {
     @Test("Song default values are correct")
     func defaultValues() {
@@ -114,6 +115,7 @@ struct SongModelTests {
 // MARK: - Lesson Model Tests
 
 @Suite("Lesson @Model Tests")
+@MainActor
 struct LessonModelTests {
     @Test("Lesson default values are correct")
     func defaultValues() {
@@ -186,6 +188,7 @@ struct LessonModelTests {
 // MARK: - Curriculum Model Tests
 
 @Suite("Curriculum @Model Tests")
+@MainActor
 struct CurriculumModelTests {
     @Test("Curriculum default values are correct")
     func defaultValues() {
@@ -224,6 +227,7 @@ struct CurriculumModelTests {
 // MARK: - SargamNote / WesternNote Codable Tests
 
 @Suite("Notation Type Tests")
+@MainActor
 struct NotationTypeTests {
     @Test("SargamNote codable round-trip")
     func sargamNoteCodable() throws {

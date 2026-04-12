@@ -5,6 +5,7 @@ import Testing
 
 // MARK: - AuthState Tests
 
+@MainActor
 struct AuthStateTests {
     @Test func equalityAnonymous() {
         #expect(AuthState.anonymous == AuthState.anonymous)
@@ -39,6 +40,7 @@ struct AuthStateTests {
 
 // MARK: - AuthError Tests
 
+@MainActor
 struct AuthErrorTests {
     @Test func errorDescriptions() {
         #expect(AuthError.cancelled.errorDescription != nil)
@@ -68,6 +70,7 @@ struct AuthErrorTests {
 
 // MARK: - AppleUser Tests
 
+@MainActor
 struct AppleUserTests {
     @Test func creation() {
         let user = AppleUser(
@@ -110,6 +113,7 @@ struct AppleUserTests {
 
 // MARK: - SignInTrigger Tests
 
+@MainActor
 struct SignInTriggerTests {
     @Test func allCases() {
         let triggers: [SignInTrigger] = [.premiumSong, .cloudSync, .profile, .settings]

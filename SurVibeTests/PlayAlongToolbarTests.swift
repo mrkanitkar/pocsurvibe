@@ -4,6 +4,7 @@ import Testing
 
 // MARK: - Play/Pause Icon Tests
 
+@MainActor
 struct PlayAlongToolbarIconTests {
 
     @Test func idleStateShowsPlayIcon() {
@@ -41,6 +42,7 @@ struct PlayAlongToolbarIconTests {
 
 // clampTempoScale valid range is 0.4–1.0 (matches the 40%–100% slider).
 // formatTempoScale returns a percentage string, e.g. "75%".
+@MainActor
 struct PlayAlongToolbarTempoTests {
 
     @Test func tempoScaleClampedToMinimum() {
@@ -96,6 +98,7 @@ struct PlayAlongToolbarTempoTests {
 
 // MARK: - View Mode Tests
 
+@MainActor
 struct PlayAlongViewModeTests {
 
     @Test func allCasesContainsAllModes() {
@@ -139,6 +142,7 @@ struct PlayAlongViewModeTests {
 
 // MARK: - Notation Mode Cycling Tests
 
+@MainActor
 struct NotationModeCyclingTests {
 
     @Test func allNotationModesAvailable() {

@@ -8,6 +8,7 @@ import Testing
 ///
 /// All tests use an in-memory `ModelContainer` (no disk, no CloudKit).
 @Suite("StreakTracker Tests")
+@MainActor
 struct StreakTrackerTests {
 
     // MARK: - Helpers

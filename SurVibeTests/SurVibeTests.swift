@@ -5,6 +5,7 @@ import SwiftData
 /// D1: App launches, TabView shows 4 tabs — verified by build + UI test.
 /// D8: Build succeeds — verified by running these tests.
 @Suite("SurVibe App Tests")
+@MainActor
 struct SurVibeTests {
     @Test("App target compiles and test suite runs")
     func testAppCompiles() {

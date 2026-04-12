@@ -10,6 +10,7 @@ import SVLearning
 ///
 /// Verifies that scoring, state transitions, and streak outcomes are correct
 /// for standard mode, wait mode, and edge cases.
+@MainActor
 struct NoteMatchingActorTests {
 
     // MARK: - Helpers

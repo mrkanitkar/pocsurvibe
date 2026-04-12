@@ -4,6 +4,7 @@ import Testing
 
 // MARK: - Accuracy Formatting Tests
 
+@MainActor
 struct CompactScoringHUDAccuracyTests {
 
     @Test func zeroAccuracyFormatsAsZeroPercent() {
@@ -54,6 +55,7 @@ struct CompactScoringHUDAccuracyTests {
 
 // MARK: - Progress Fraction Tests
 
+@MainActor
 struct CompactScoringHUDProgressTests {
 
     @Test func progressFractionWithZeroTotalReturnsZero() {

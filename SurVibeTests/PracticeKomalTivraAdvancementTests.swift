@@ -12,6 +12,7 @@ import SVAudio
 /// Regression test for the bug where `processDetectedPitch` compared
 /// `pitch.noteName` against `expected.note` (bare name) instead of
 /// `expectedName` (full name including modifier).
+@MainActor
 struct PracticeKomalTivraAdvancementTests {
 
     // MARK: - expectedName Construction

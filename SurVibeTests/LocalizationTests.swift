@@ -7,6 +7,7 @@ import Testing
 // MARK: - SVCore Localization
 
 @Suite("SVCore Localization Validation")
+@MainActor
 struct SVCoreLocalizationTests {
     @Test func allProficiencyLabelsNonEmpty() {
         for level in RangLevel.allCases {
@@ -46,6 +47,7 @@ struct SVCoreLocalizationTests {
 // MARK: - SVAudio Localization
 
 @Suite("SVAudio Localization Validation")
+@MainActor
 struct SVAudioLocalizationTests {
     @Test func allLatencyPresetDisplayNamesNonEmpty() {
         for preset in LatencyPreset.allCases {

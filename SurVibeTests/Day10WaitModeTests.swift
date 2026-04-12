@@ -5,6 +5,7 @@ import SVLearning
 
 // MARK: - WaitModeConfiguration Tests
 
+@MainActor
 struct WaitModeConfigurationTests {
     @Test func defaultConfigurationValues() {
         let config = WaitModeConfiguration()
@@ -74,6 +75,7 @@ struct WaitModeConfigurationTests {
 
 // MARK: - WaitModeEngine Tests
 
+@MainActor
 struct WaitModeEngineTests {
     @Test @MainActor func initialStateIsIdle() {
         let engine = WaitModeEngine()
@@ -328,6 +330,7 @@ struct WaitModeEngineTests {
 
 // MARK: - Pitch Tolerance Tests (via WaitModeEngine)
 
+@MainActor
 struct PitchToleranceTests {
     @Test @MainActor func noteWithinToleranceIsCorrect() {
         let config = WaitModeConfiguration(
@@ -442,6 +445,7 @@ struct PitchToleranceTests {
 
 // MARK: - SectionScorer Wait Mode Integration Tests
 
+@MainActor
 struct SectionScorerWaitModeTests {
     @Test func customSectionSizeProducesCorrectSections() {
         let scores = (0..<6).map { _ in makeScore(accuracy: 0.80) }
@@ -522,6 +526,7 @@ struct SectionScorerWaitModeTests {
 
 // MARK: - PracticeDifficultyAdvisor Tests
 
+@MainActor
 struct PracticeDifficultyAdvisorTests {
     @Test func fewerThanTwoSessionsReturnsKeepPracticing() {
         let advice = PracticeDifficultyAdvisor.advise(

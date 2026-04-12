@@ -3,6 +3,7 @@ import Testing
 
 @testable import SurVibe
 
+@MainActor
 struct PianoKeyboardTests {
     @Test func totalKeyCount() {
         #expect(allPianoKeys.count == 61)

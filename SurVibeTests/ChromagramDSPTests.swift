@@ -41,6 +41,7 @@ private func chord(
 // MARK: - Latency Preset Tests
 
 @Suite("LatencyPreset")
+@MainActor
 struct LatencyPresetTests {
     @Test func ultraFastPresetValues() {
         let preset = LatencyPreset.ultraFast
@@ -81,6 +82,7 @@ struct LatencyPresetTests {
 // MARK: - Hann Window Tests
 
 @Suite("Hann Window")
+@MainActor
 struct HannWindowTests {
     @Test func outputHasCorrectLength() {
         let samples = [Float](repeating: 1.0, count: 512)
@@ -112,6 +114,7 @@ struct HannWindowTests {
 // MARK: - FFT Tests
 
 @Suite("FFT Magnitude Spectrum")
+@MainActor
 struct FFTMagnitudeTests {
     @Test func silenceProducesNearZeroMagnitudes() {
         let silence = [Float](repeating: 0, count: 1024)
@@ -147,6 +150,7 @@ struct FFTMagnitudeTests {
 // MARK: - Chromagram Tests
 
 @Suite("Chromagram")
+@MainActor
 struct ChromagramTests {
     @Test func singleNoteActivatesOneChromaBin() {
         let sampleRate = 44100.0
@@ -183,6 +187,7 @@ struct ChromagramTests {
 // MARK: - Chord Template Matching Tests
 
 @Suite("Chord Template Matching")
+@MainActor
 struct ChordMatchingTests {
     @Test func cMajorDetected() {
         // C Major = pitch classes {0, 4, 7}
@@ -225,6 +230,7 @@ struct ChordMatchingTests {
 // MARK: - Full Pipeline Tests
 
 @Suite("Full Chord Analysis Pipeline")
+@MainActor
 struct FullPipelineTests {
     @Test func syntheticCMajorChordDetected() {
         let sampleRate = 44100.0
@@ -279,6 +285,7 @@ struct FullPipelineTests {
 // MARK: - ChordResult Model Tests
 
 @Suite("ChordResult Model")
+@MainActor
 struct ChordResultModelTests {
     @Test func activeMidiNotesComputedCorrectly() {
         let pitches = [

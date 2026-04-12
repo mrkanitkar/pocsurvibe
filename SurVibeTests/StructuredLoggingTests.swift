@@ -10,6 +10,7 @@ import os
 /// categories for SVCore and SVAudio packages, and that logging calls complete
 /// without errors.
 @Suite("Structured Logging Tests")
+@MainActor
 struct StructuredLoggingTests {
 
     // MARK: - Scenario 1: SVCore Logger Categories Exist

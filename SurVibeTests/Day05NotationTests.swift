@@ -7,6 +7,7 @@ import Testing
 // MARK: - SargamColorMap Tests
 
 @Suite("Day 5 — SargamColorMap Tests")
+@MainActor
 struct Day05SargamColorMapTests {
 
     @Test("All seven swar return distinct non-gray colors")
@@ -82,6 +83,7 @@ struct Day05SargamColorMapTests {
 // MARK: - NotationDisplayMode Tests
 
 @Suite("Day 5 — NotationDisplayMode Tests")
+@MainActor
 struct Day05NotationDisplayModeTests {
 
     @Test("NotationDisplayMode has exactly 5 cases")
@@ -126,6 +128,7 @@ struct Day05NotationDisplayModeTests {
 // MARK: - SargamFadeManager Tests
 
 @Suite("Day 5 — SargamFadeManager Tests")
+@MainActor
 struct Day05SargamFadeManagerTests {
 
     @Test("Initial opacity is 1.0")
@@ -239,6 +242,7 @@ struct Day05SargamFadeManagerTests {
 // MARK: - WesternNoteHelper Tests
 
 @Suite("Day 5 — WesternNoteHelper Tests")
+@MainActor
 struct Day05WesternNoteHelperTests {
 
     @Test("Middle C (MIDI 60) returns 'C'")
@@ -320,6 +324,7 @@ struct Day05WesternNoteHelperTests {
 // MARK: - SargamNote Width Calculation Tests
 
 @Suite("Day 5 — Note Width Calculation Tests")
+@MainActor
 struct Day05NoteWidthTests {
 
     /// Base width constant used in SargamNoteView and WesternNoteView.
@@ -383,6 +388,7 @@ struct Day05NoteWidthTests {
 // MARK: - NotationErrorView Tests
 
 @Suite("Day 5 — NotationErrorView Tests")
+@MainActor
 struct Day05NotationErrorViewTests {
 
     @Test("noNotation convenience creates correct content")
@@ -417,6 +423,7 @@ struct Day05NotationErrorViewTests {
 // MARK: - SargamNote Struct Tests
 
 @Suite("Day 5 — SargamNote Struct Tests")
+@MainActor
 struct Day05SargamNoteStructTests {
 
     @Test("SargamNote initializes with default nil modifier")

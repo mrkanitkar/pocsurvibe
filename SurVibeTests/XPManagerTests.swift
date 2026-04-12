@@ -8,6 +8,7 @@ import Testing
 /// All tests use an in-memory ModelContainer (no disk, no CloudKit).
 /// A UserProfile is pre-inserted in each test to match production expectations.
 @Suite("XPManager Tests")
+@MainActor
 struct XPManagerTests {
 
     // MARK: - Test Helpers

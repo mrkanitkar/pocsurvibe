@@ -7,6 +7,7 @@ import SVAudio
 /// Uses `.serialized` to prevent parallel tests from polluting shared
 /// singleton state (AnalyticsManager, SoundFontManager, etc.).
 @Suite("Sprint 0 Integration Tests", .serialized)
+@MainActor
 struct IntegrationTests {
 
     // MARK: - D2: SoundFont play (stub verification)

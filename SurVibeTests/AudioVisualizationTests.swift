@@ -4,6 +4,7 @@ import Testing
 @testable import SurVibe
 
 /// Tests for VisualizationMode, KeyboardLayoutMode, and AudioNodeAdapter.
+@MainActor
 struct AudioVisualizationTests {
 
     // MARK: - VisualizationMode

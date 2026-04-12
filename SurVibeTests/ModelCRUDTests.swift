@@ -5,6 +5,7 @@ import SwiftData
 /// D5: SwiftData CRUD + CloudKit config verification.
 /// All tests use in-memory ModelContainer (no disk, no CloudKit).
 @Suite("SwiftData Model CRUD Tests")
+@MainActor
 struct ModelCRUDTests {
 
     /// Create an in-memory ModelContainer for testing.

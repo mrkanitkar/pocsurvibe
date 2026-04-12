@@ -1,6 +1,7 @@
 import Testing
 @testable import SVAudio
 
+@MainActor
 struct SpectralConfidenceTests {
     // MARK: - Autocorrelation-based Confidence
 

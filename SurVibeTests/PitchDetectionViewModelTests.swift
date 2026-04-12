@@ -4,6 +4,7 @@ import Testing
 @testable import SurVibe
 
 @Suite("PitchDetectionViewModel Tests")
+@MainActor
 struct PitchDetectionViewModelTests {
     // MARK: - Initial State
 

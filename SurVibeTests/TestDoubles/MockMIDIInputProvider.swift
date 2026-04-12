@@ -2,7 +2,9 @@ import SVAudio
 
 /// Test double for `MIDIInputProviding` that simulates MIDI keyboard input
 /// without requiring real hardware.
-final class MockMIDIInputProvider: MIDIInputProviding {
+/// Test double — `@unchecked Sendable` is permitted per CLAUDE.md for test doubles.
+/// All mutable state is only accessed from tests running on `@MainActor`.
+final class MockMIDIInputProvider: MIDIInputProviding, @unchecked Sendable {
     /// Whether to report as connected when `start()` is called.
     var simulateConnected: Bool = false
 

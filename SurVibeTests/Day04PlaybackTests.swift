@@ -8,6 +8,7 @@ import Testing
 // MARK: - PlaybackState Tests
 
 @Suite("Day 4 — PlaybackState Tests")
+@MainActor
 struct Day04PlaybackStateTests {
 
     @Test("PlaybackState idle is the default value")
@@ -57,6 +58,7 @@ struct Day04PlaybackStateTests {
 // MARK: - SongPlaybackEngine Tests
 
 @Suite("Day 4 — SongPlaybackEngine Tests")
+@MainActor
 struct Day04SongPlaybackEngineTests {
 
     @MainActor

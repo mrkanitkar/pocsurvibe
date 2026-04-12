@@ -9,6 +9,7 @@ import Testing
 ///
 /// Serialized because tests share the `CrashReportingManager.shared` singleton.
 @Suite(.serialized)
+@MainActor
 struct CrashReportingManagerTests {
 
     // MARK: - Singleton
