@@ -1,6 +1,7 @@
 # SurVibe Missing Link Report
 
 **Generated:** 2026-04-11
+**Last Updated:** 2026-04-12 — Phase 4 partial completion (SwiftLint 66→0, privacy annotations, centralized Logger factory enforcement)
 **Methodology:** Per-day sequential audit against User Stories (acceptance criteria as pass/fail bar)
 **Test Bar:** Every BDD scenario must have a corresponding passing test
 **Design Spec:** `docs/superpowers/specs/2026-04-11-full-audit-design.md`
@@ -102,12 +103,12 @@ Two remaining instances found (both acceptable):
 **Strong points:**
 - Mutex-based concurrency (AtomicCounter, RingBuffer) — superior to spec's proposed NSLock/timestamp approach
 - CrashReportingManager with Sendable summary extraction pattern — excellent Swift 6 concurrency handling
-- os.Logger deployed across 12+ subsystem categories in SVCore and SVAudio
+- os.Logger deployed via centralized `Logger.survibe(category:)` factory across 36+ categories in 7 packages + app target
 - API key injection via Info.plist is clean and testable
 
 **Architectural deviations (acceptable):**
 - CrashReportingManager at `SVCore/Diagnostics/` not `SVCore/Observability/` as spec'd — same functionality
-- Loggers defined inline per class, not in centralized `LoggerExtensions.swift` — actually better for encapsulation
+- ~~Loggers defined inline per class~~ **RESOLVED** — Migrated to centralized `Logger.survibe(category:)` factory (`SVCore/Logging/Logger+SurVibe.swift`). Custom SwiftLint rule `no_inline_logger_subsystem` blocks `Logger(subsystem:` to enforce factory usage
 - AtomicCounter uses Mutex instead of timestamp replacement — Mutex is the correct pattern
 
 ---
@@ -1331,16 +1332,56 @@ The learning experience is currently non-functional.
 | 14 | **Create AchievementManager** — 10 achievements with trigger conditions | GAP-D13-008, GAP-D13-009 | `SurVibe/Gamification/AchievementManager.swift`, `AchievementDefinitions.swift`, `AchievementGalleryView.swift` | DONE |
 | 15 | **Complete ProfileTab** — XP progress, rang badge, streak, stats grid, achievement gallery | GAP-D13-010, GAP-D14-008 | `SurVibe/ProfileTab.swift`, 5 sub-views in `SurVibe/Profile/` | DONE |
 
-### Phase 4: Audio Quality + Logging (P1)
+### Phase 4: Audio Quality + Logging (P1) — PARTIALLY COMPLETE
 
-| # | Task | Gaps Resolved | Files |
-|---|------|--------------|-------|
+**Partial Status:** Items 16, 19, 25 DONE. Item 19A (SwiftLint cleanup) DONE (2026-04-12).
+**Commits:** `8dfc34b` (centralize Logger factory + privacy annotations), `1b7093b` (SwiftLint 66→0 warnings + file splits)
+**Verification:** 0 SwiftLint warnings, 0 SwiftLint errors, build passes, 76 package tests pass
+
+| # | Task | Gaps Resolved | Files | Status |
+|---|------|--------------|-------|--------|
 | 16 | **Migrate SongPlaybackEngine to AVAudioSequencer** — sample-accurate MIDI playback, ~10ms latency reduction, native tempo control via `rate` property | ARCH-005, AUD-003 | `SurVibe/Playback/SongPlaybackEngine.swift` | DONE (ARCH batch) |
-| 17 | **Add Logger to 15+ unlogged files** — RingBuffer, TanpuraPlayer, Import pipeline, PlayAlong subsystem | LOG-001..008, AUD-006 | See LOG gap register for full file list |
-| 18 | **Add OSSignposter intervals** — pitch detection, FFT, SwiftData fetches | LOG-016, AUD-007 | `SVAudio/Pitch/AudioKitPitchDetector.swift`, `SVAudio/DSP/ChromagramDSP.swift` |
+| 17 | **Add Logger to 15+ unlogged files** — RingBuffer, TanpuraPlayer, Import pipeline, PlayAlong subsystem | LOG-001..008, AUD-006 | See LOG gap register for full file list | TODO |
+| 18 | **Add OSSignposter intervals** — pitch detection, FFT, SwiftData fetches | LOG-016, AUD-007 | `SVAudio/Pitch/AudioKitPitchDetector.swift`, `SVAudio/DSP/ChromagramDSP.swift` | TODO |
 | 19 | **Add `privacy:` annotations** to all Logger interpolations | LOG-017 | All files with Logger instances | DONE |
-| 20 | **Add audio session fallback** — try `.playback` if `.playAndRecord` fails | AUD-009 | `SVAudio/Engine/AudioSessionManager.swift` |
-| 21 | **Evaluate AudioKit PitchTap** vs custom autocorrelation | AUD-005 | `SVAudio/Pitch/AudioKitPitchDetector.swift` |
+| 19A | **Fix all 66 SwiftLint warnings** — comprehensive code quality pass across ~40 files | LOG-017, LOG-019 | 50 files (see details below) | DONE |
+| 20 | **Add audio session fallback** — try `.playback` if `.playAndRecord` fails | AUD-009 | `SVAudio/Engine/AudioSessionManager.swift` | TODO |
+| 21 | **Evaluate AudioKit PitchTap** vs custom autocorrelation | AUD-005 | `SVAudio/Pitch/AudioKitPitchDetector.swift` | TODO |
+
+#### Item 19A Details: SwiftLint Cleanup (commit `1b7093b`)
+
+Reduced SwiftLint warnings from 66 → 0 across the entire codebase:
+
+| Fix Category | Count | Details |
+|-------------|------:|---------|
+| `privacy: .public` annotations | 20+ | Added to all os.Logger string interpolations (error descriptions, song titles, diagnostic values) |
+| Duplicate logger category | 1 | `LessonProgress` → `LessonProgressModel` (was same as LessonProgressManager) |
+| Inclusive language | 5 | `mastered` → `proficient`, `mastery` → `proficiency` (rawValues preserved for backward compat) |
+| `modifier_order` | 3 | `fileprivate nonisolated` → `nonisolated fileprivate` |
+| `line_length` | 12+ | Multi-line string literals for long Logger messages; extracted local vars |
+| `function_body_length` | 15+ | Extracted helper methods (e.g., `stopMonitoring()`, `computeSessionResults()`, `persistResults()`, `handleImportResult()`) |
+| `cyclomatic_complexity` | 3 | Extracted `parseAccidental()`, `parseDuration()`, `evaluateWaitMode()`, `evaluateStandardMode()` |
+| `function_parameter_count` | 4 | New parameter structs: `ImportConfiguration`, `ScoringInputs`, `TapContext`, `StartSnapshot` |
+| `file_length` / `type_body_length` | 11 | File splits into extensions (see below) |
+| `implicit_optional_initialization` | 1 | Removed `= nil` from optional declarations |
+| `vertical_whitespace_closing_braces` | 1 | Removed empty line before closing `}` |
+| Custom rule `no_inline_logger_subsystem` | — | Added to `.swiftlint.yml` to block `Logger(subsystem:` and enforce `Logger.survibe()` factory |
+
+**New extension files created (11):**
+
+| File | Extracted From | Lines |
+|------|---------------|------:|
+| `MIDIInputManager+Connections.swift` | MIDIInputManager (607→396) | 233 |
+| `AudioKitPitchDetector+DSP.swift` | AudioKitPitchDetector | ~100 |
+| `ChromagramDSP+ChordMatching.swift` | ChromagramDSP (534→424) | 112 |
+| `ImportConfiguration.swift` | ImportPipeline (new param struct) | ~30 |
+| `ExerciseStepView+Subviews.swift` | ExerciseStepView (464→304) | 170 |
+| `StaffNotationRenderer+Helpers.swift` | StaffNotationRenderer | ~40 |
+| `PitchDSP.swift` | PitchDetectionViewModel (553→459) | ~95 |
+| `SongPlayAlongView+Subviews.swift` | SongPlayAlongView (540→370) | 170 |
+| `PracticeSessionViewModel+Monitoring.swift` | PracticeSessionViewModel (603→465) | ~70 |
+| `PracticeSessionViewModel+Raga.swift` | PracticeSessionViewModel | ~70 |
+| `PracticeTab+Subviews.swift` | PracticeTab (508→414) | 110 |
 
 ### Phase 5: CLAUDE.md + Documentation (P1) — PARTIALLY COMPLETE
 
@@ -1349,7 +1390,7 @@ The learning experience is currently non-functional.
 | 22 | **Update CLAUDE.md** — fix 4-tab nav table, .allowBluetoothHFP, platform declaration, add MIDIInputManager exception, nonisolated(unsafe) rules, @ObservationIgnored, @Bindable, Liquid Glass, SwiftData explicit save, `sending` keyword | CMD-001..012 | `CLAUDE.md` | DONE (Phase 1A, commit `06cfce5`) |
 | 23 | **Remove CLAUDE.md duplicates** — 6 rules stated in both prose and Banned Patterns table | CMD-013..018 | `CLAUDE.md` | DONE (Phase 1A, commit `06cfce5`) |
 | 24 | **Create project docs** — CHANGELOG.md, SECURITY.md, CONTRIBUTING.md | GAP-D01-002/003/007/014, GAP-D02-009 | New files in repo root | TODO |
-| 25 | **Create centralized Logger factory** | LOG-019 | New: `SVCore/Logging/Logger+SurVibe.swift` | DONE |
+| 25 | **Create centralized Logger factory** + custom SwiftLint enforcement rule | LOG-019 | `SVCore/Logging/Logger+SurVibe.swift`, `.swiftlint.yml` (`no_inline_logger_subsystem`) | DONE |
 
 ### Phase 6: Testing + CI (P1)
 
@@ -1559,11 +1600,16 @@ These 6 duplications add ~30 lines of redundancy. Recommend keeping ONLY the Ban
 
 ### What's Good
 
-- **Subsystem consistency:** ALL 45+ Logger instances use `subsystem: "com.survibe"` — enables Console.app filtering ✓
+- **Centralized Logger factory:** ALL 36+ Logger instances use `Logger.survibe(category:)` from `SVCore/Logging/Logger+SurVibe.swift`. Zero inline `Logger(subsystem:` calls remain outside tests ✓
+- **Factory enforced by lint:** Custom SwiftLint rule `no_inline_logger_subsystem` (severity: error) blocks `Logger(subsystem:` — prevents regression ✓
+- **Privacy annotations:** ALL Logger string interpolations have explicit `privacy: .public` for error descriptions, diagnostic strings, song titles, or `privacy: .private` for file paths and payloads ✓
+- **Subsystem consistency:** ALL instances use `subsystem: "com.survibe"` via factory — enables Console.app filtering ✓
 - **Zero `print()` in production:** grep across Packages/ and SurVibe/ returns zero `print()` calls ✓
 - **Correct log levels:** `.debug` for high-frequency audio, `.info` for state changes, `.warning` for recoverable issues, `.error` for failures ✓
-- **Categories per component:** 25+ unique categories (PitchDetector, AudioEngine, Auth, Permissions, Metronome, SoundFont, MIDIInput, etc.) ✓
+- **Categories per component:** 36+ unique categories (PitchDetector, AudioEngine, Auth, Permissions, Metronome, SoundFont, MIDIInput, LessonProgressModel, LessonProgressManager, etc.) ✓
+- **Zero SwiftLint warnings:** 66 warnings eliminated (2026-04-12 commit `1b7093b`) — function_body_length, cyclomatic_complexity, line_length, inclusive language, modifier_order, file_length ✓
 - **Structured metadata:** `PermissionManager.swift:54` → `"Microphone status updated: \(String(describing: self.microphoneStatus))"` ✓
+- **No duplicate categories:** Previously `LessonProgress` used by both `LessonProgress.swift` and `LessonProgressManager.swift`. Fixed: model now uses `LessonProgressModel` ✓
 
 ### Coverage Gaps
 
@@ -1595,9 +1641,9 @@ These 6 duplications add ~30 lines of redundancy. Recommend keeping ONLY the Ban
 | Gap ID | Tool | Severity | Issue | Apple Reference | Remediation |
 |--------|------|----------|-------|----------------|-------------|
 | LOG-016 | OSSignposter | P1 | **Zero usage of `OSSignposter`** in the entire codebase. Apple recommends signposts for performance-critical intervals (WWDC 2023 "Analyze hangs with Instruments"). Audio pipeline (pitch detection, FFT, chord matching), SwiftData fetches, and view model operations should use signpost intervals for Instruments profiling | WWDC 2023: "Analyze hangs with Instruments" | Add `OSSignposter` to: pitch detection loop, ChromagramDSP.computeChromagram, SongPlaybackEngine.load, SwiftData fetch operations |
-| LOG-017 | os.Logger privacy | P1 | ~~No use of `privacy: .private` or `privacy: .public` annotations on Logger interpolations.~~ **RESOLVED** — Added `privacy: .public` to all error descriptions, diagnostic strings, and `privacy: .private` to file paths and diagnostic payloads across 25+ files. | Apple os.Logger docs: "Privacy in Logging" | ~~Audit all logger calls~~ DONE |
+| LOG-017 | os.Logger privacy | P1 | ~~No use of `privacy: .private` or `privacy: .public` annotations on Logger interpolations.~~ **RESOLVED** — Added `privacy: .public` to all error descriptions, diagnostic strings, song titles, raga names, formatted numbers and `privacy: .private` to file paths and diagnostic payloads across 25+ files. Commits: `8dfc34b`, `1b7093b`. | Apple os.Logger docs: "Privacy in Logging" | ~~Audit all logger calls~~ DONE |
 | LOG-018 | MetricKit custom metrics | P2 | `CrashReportingManager` handles system diagnostics but app doesn't emit custom `MXMetricPayload` markers for app-specific performance intervals (practice session duration, pitch detection latency, notation render time) | Apple MetricKit docs | Consider `mxSignpost` for custom performance metrics reportable via MetricKit |
-| LOG-019 | Centralized Logger factory | P2 | ~~Each file creates its own Logger inline.~~ **RESOLVED** — Created `Logger.survibe(category:)` factory in `SVCore/Logging/Logger+SurVibe.swift`. Migrated all 36+ declarations across 7 packages + app target. Zero `Logger(subsystem:)` calls remain outside tests. | Apple WWDC20/23 pattern | ~~Create extension Logger~~ DONE |
+| LOG-019 | Centralized Logger factory | P2 | ~~Each file creates its own Logger inline.~~ **RESOLVED** — Created `Logger.survibe(category:)` factory in `SVCore/Logging/Logger+SurVibe.swift`. Migrated all 36+ declarations across 7 packages + app target. Zero `Logger(subsystem:)` calls remain outside tests. Custom SwiftLint rule `no_inline_logger_subsystem` enforces factory usage at build time. Commits: `8dfc34b`, `1b7093b`. | Apple WWDC20/23 pattern | ~~Create extension Logger~~ DONE |
 
 ---
 
@@ -1655,7 +1701,7 @@ These 6 duplications add ~30 lines of redundancy. Recommend keeping ONLY the Ban
 | `/review` | Yes | **Minimal** — 3 checkboxes: single engine, buffer loops, SwarUtility. No latency checks, no thread safety validation, no buffer size audit | Missing: audio thread safety rules, latency budget validation, `try?` engine.start() detection |
 | `/check` | Yes | Runs lint + format + build + test | No audio-specific quality gates |
 | `/test` | Yes | Runs test suite | No audio latency benchmarks in test suite |
-| `/lint` | Yes | SwiftLint rules | No custom SwiftLint rule for `try? engine.start()` or `DispatchQueue` on audio thread |
+| `/lint` | Yes | SwiftLint rules | Custom `no_inline_logger_subsystem` rule added. Still no custom rule for `try? engine.start()` or `DispatchQueue` on audio thread |
 
 **Missing Claude Skills for Audio:**
 
