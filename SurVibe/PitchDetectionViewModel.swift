@@ -49,6 +49,31 @@ enum DetectionMode: String, CaseIterable, Sendable {
 @MainActor
 @Observable
 final class PitchDetectionViewModel {
+    // MARK: - Dependencies
+
+    /// Permission provider for microphone access checks and requests.
+    private let permissions: any PermissionProviding
+
+    /// Audio engine provider for mic tap and engine lifecycle.
+    private let audioEngine: any AudioEngineProviding
+
+    // MARK: - Initialization
+
+    /// Create a new pitch detection view model.
+    ///
+    /// Pass `nil` for either parameter to use the production singleton.
+    ///
+    /// - Parameters:
+    ///   - permissions: Permission provider. Defaults to `PermissionManager.shared`.
+    ///   - audioEngine: Audio engine provider. Defaults to `AudioEngineManager.shared`.
+    init(
+        permissions: (any PermissionProviding)? = nil,
+        audioEngine: (any AudioEngineProviding)? = nil
+    ) {
+        self.permissions = permissions ?? PermissionManager.shared
+        self.audioEngine = audioEngine ?? AudioEngineManager.shared
+    }
+
     // MARK: - Properties
 
     /// Current pitch result from detector (melody mode).
@@ -75,7 +100,7 @@ final class PitchDetectionViewModel {
     /// Live amplitude level (0.0 to 1.0) for visual meter.
     var liveAmplitude: Double = 0
     /// Microphone permission status.
-    var micStatus: MicrophonePermissionStatus { PermissionManager.shared.microphoneStatus }
+    var micStatus: MicrophonePermissionStatus { permissions.microphoneStatus }
     /// Current detection mode.
     var detectionMode: DetectionMode = .melody
     /// Current latency preset for chord detection.
@@ -130,7 +155,8 @@ final class PitchDetectionViewModel {
         }
 
         let context = prepareTapContext()
-        let tapInstalled = AudioEngineManager.shared.installMicTap(
+        let tapInstalled = audioEngine.installMicTap(
+            bufferSize: nil,
             handler: buildMicTapHandler(context: context)
         )
 
@@ -152,8 +178,8 @@ final class PitchDetectionViewModel {
         stopFlag?.set()
         stopFlag = nil
         AudioNodeAdapter.shared.disconnect()
-        AudioEngineManager.shared.removeMicTap()
-        AudioEngineManager.shared.stop()
+        audioEngine.removeMicTap()
+        audioEngine.stop()
         isListening = false
 
         // Reset chord detection state
@@ -170,7 +196,7 @@ final class PitchDetectionViewModel {
 
     /// URL to iOS Settings for mic permission (opened by the View via @Environment(\.openURL)).
     var settingsURL: URL? {
-        PermissionManager.shared.settingsURL
+        permissions.settingsURL
     }
 }
 
@@ -179,10 +205,10 @@ final class PitchDetectionViewModel {
 private extension PitchDetectionViewModel {
     /// Request microphone permission. Returns `true` if granted.
     func requestMicPermission() async -> Bool {
-        PermissionManager.shared.updateMicrophoneStatus()
-        let granted = await PermissionManager.shared.requestMicrophoneAccess()
+        permissions.updateMicrophoneStatus()
+        let granted = await permissions.requestMicrophoneAccess()
         if !granted {
-            PermissionManager.shared.updateMicrophoneStatus()
+            permissions.updateMicrophoneStatus()
             errorMessage = String(localized: "Microphone access is needed to detect notes.")
             debugStatus = "Mic permission denied"
             vmLogger.error("Mic permission denied")
@@ -196,7 +222,7 @@ private extension PitchDetectionViewModel {
         vmLogger.info("Mic permission granted, starting engine")
 
         do {
-            try AudioEngineManager.shared.start()
+            try audioEngine.start()
         } catch {
             errorMessage = String(localized: "Could not start audio: \(error.localizedDescription)")
             debugStatus = "Engine failed: \(error.localizedDescription)"
@@ -204,10 +230,10 @@ private extension PitchDetectionViewModel {
             return false
         }
 
-        vmLogger.info("Engine started, isRunning=\(AudioEngineManager.shared.isRunning)")
+        vmLogger.info("Engine started, isRunning=\(self.audioEngine.isRunning)")
         try? await Task.sleep(for: .milliseconds(200))
 
-        guard AudioEngineManager.shared.isRunning else {
+        guard audioEngine.isRunning else {
             debugStatus = "Engine stopped during setup"
             vmLogger.warning("Engine stopped during sleep — aborting")
             return false

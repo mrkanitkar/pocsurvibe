@@ -18,7 +18,7 @@ public enum MicrophonePermissionStatus: Sendable {
 /// Request in context (first practice attempt), NOT at app launch, per Apple HIG.
 @MainActor
 @Observable
-public final class PermissionManager {
+public final class PermissionManager: PermissionProviding {
     public static let shared = PermissionManager()
 
     /// Current microphone permission status.

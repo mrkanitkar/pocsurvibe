@@ -4,7 +4,7 @@ import Foundation
 ///
 /// All associated values use `String` (not `Error`) to maintain `Sendable` conformance
 /// across isolation boundaries.
-public enum AuthError: LocalizedError, Sendable, Equatable {
+public enum AuthError: SurVibeError, Equatable {
     /// A network error prevented authentication.
     case networkError(String)
     /// The user cancelled the Sign in with Apple flow.
@@ -16,7 +16,19 @@ public enum AuthError: LocalizedError, Sendable, Equatable {
     /// An unknown error occurred.
     case unknown(String)
 
-    // MARK: - LocalizedError
+    // MARK: - SurVibeError
+
+    public var domain: String { "SVCore" }
+
+    public var code: String {
+        switch self {
+        case .networkError: "network_error"
+        case .cancelled: "cancelled"
+        case .credentialRevoked: "credential_revoked"
+        case .cloudKitUnavailable: "cloudkit_unavailable"
+        case .unknown: "unknown"
+        }
+    }
 
     public var errorDescription: String? {
         switch self {

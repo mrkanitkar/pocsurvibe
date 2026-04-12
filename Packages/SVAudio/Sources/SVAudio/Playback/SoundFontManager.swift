@@ -1,5 +1,6 @@
 import AVFoundation
 import ObjCExceptionCatcher
+import SVCore
 import os.log
 
 /// Manages SoundFont instrument loading and MIDI note playback
@@ -194,14 +195,22 @@ public final class SoundFontManager: SoundFontPlaying {
 // MARK: - SoundFontError
 
 /// Errors specific to SoundFont loading operations.
-public enum SoundFontError: LocalizedError, Sendable {
+public enum SoundFontError: SurVibeError {
     /// The SoundFont file failed to load into the sampler.
     case loadFailed(String)
+
+    public var domain: String { "SVAudio" }
+
+    public var code: String {
+        switch self {
+        case .loadFailed: "load_failed"
+        }
+    }
 
     public var errorDescription: String? {
         switch self {
         case .loadFailed(let reason):
-            "SoundFont load failed: \(reason)"
+            String(localized: "SoundFont load failed: \(reason)")
         }
     }
 }

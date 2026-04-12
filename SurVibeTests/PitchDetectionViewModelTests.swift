@@ -1,6 +1,8 @@
 import Foundation
+import SVCore
 import Testing
 
+@testable import SVAudio
 @testable import SurVibe
 
 @Suite("PitchDetectionViewModel Tests")
@@ -9,65 +11,83 @@ struct PitchDetectionViewModelTests {
     // MARK: - Initial State
 
     @Test("Initial state is not listening")
-    @MainActor
     func initialStateNotListening() {
-        let vm = PitchDetectionViewModel()
+        let vm = PitchDetectionViewModel(
+            permissions: MockPermissionProvider(),
+            audioEngine: MockAudioEngineProvider()
+        )
         #expect(vm.isListening == false)
     }
 
     @Test("Initial detection mode is melody")
-    @MainActor
     func initialDetectionModeIsMelody() {
-        let vm = PitchDetectionViewModel()
+        let vm = PitchDetectionViewModel(
+            permissions: MockPermissionProvider(),
+            audioEngine: MockAudioEngineProvider()
+        )
         #expect(vm.detectionMode == .melody)
     }
 
     @Test("Initial debug status is 'Not started'")
-    @MainActor
     func initialDebugStatus() {
-        let vm = PitchDetectionViewModel()
+        let vm = PitchDetectionViewModel(
+            permissions: MockPermissionProvider(),
+            audioEngine: MockAudioEngineProvider()
+        )
         #expect(vm.debugStatus == "Not started")
     }
 
     @Test("Initial recent notes is empty")
-    @MainActor
     func initialRecentNotesEmpty() {
-        let vm = PitchDetectionViewModel()
+        let vm = PitchDetectionViewModel(
+            permissions: MockPermissionProvider(),
+            audioEngine: MockAudioEngineProvider()
+        )
         #expect(vm.recentNotes.isEmpty)
     }
 
     @Test("Initial detection count is zero")
-    @MainActor
     func initialDetectionCountZero() {
-        let vm = PitchDetectionViewModel()
+        let vm = PitchDetectionViewModel(
+            permissions: MockPermissionProvider(),
+            audioEngine: MockAudioEngineProvider()
+        )
         #expect(vm.detectionCount == 0)
     }
 
     @Test("Initial active MIDI notes is empty")
-    @MainActor
     func initialActiveMidiNotesEmpty() {
-        let vm = PitchDetectionViewModel()
+        let vm = PitchDetectionViewModel(
+            permissions: MockPermissionProvider(),
+            audioEngine: MockAudioEngineProvider()
+        )
         #expect(vm.activeMidiNotes.isEmpty)
     }
 
     @Test("Initial error message is nil")
-    @MainActor
     func initialErrorMessageNil() {
-        let vm = PitchDetectionViewModel()
+        let vm = PitchDetectionViewModel(
+            permissions: MockPermissionProvider(),
+            audioEngine: MockAudioEngineProvider()
+        )
         #expect(vm.errorMessage == nil)
     }
 
     @Test("Initial chord result is nil")
-    @MainActor
     func initialChordResultNil() {
-        let vm = PitchDetectionViewModel()
+        let vm = PitchDetectionViewModel(
+            permissions: MockPermissionProvider(),
+            audioEngine: MockAudioEngineProvider()
+        )
         #expect(vm.currentChordResult == nil)
     }
 
     @Test("Initial live amplitude is zero")
-    @MainActor
     func initialLiveAmplitudeZero() {
-        let vm = PitchDetectionViewModel()
+        let vm = PitchDetectionViewModel(
+            permissions: MockPermissionProvider(),
+            audioEngine: MockAudioEngineProvider()
+        )
         #expect(vm.liveAmplitude == 0)
     }
 
@@ -107,17 +127,116 @@ struct PitchDetectionViewModelTests {
         #expect(note1.id != note2.id)
     }
 
-    // MARK: - stopListening
+    // MARK: - stopListening (with DI)
 
-    @Test("stopListening resets state without prior start")
-    @MainActor
+    @Test("stopListening resets state and calls engine stop/removeMicTap")
     func stopListeningResetsState() {
-        let vm = PitchDetectionViewModel()
-        // Should not crash even when called without prior start
+        let engine = MockAudioEngineProvider()
+        let vm = PitchDetectionViewModel(
+            permissions: MockPermissionProvider(),
+            audioEngine: engine
+        )
         vm.stopListening()
         #expect(vm.isListening == false)
         #expect(vm.debugStatus == "Stopped")
         #expect(vm.currentChordResult == nil)
         #expect(vm.currentExpression == nil)
+        #expect(engine.stopCallCount == 1)
+    }
+
+    // MARK: - DI: micStatus reflects injected provider
+
+    @Test("micStatus reflects injected permission provider status")
+    func micStatusReflectsPermissionProvider() {
+        let mock = MockPermissionProvider()
+        mock.microphoneStatus = .denied
+        let vm = PitchDetectionViewModel(
+            permissions: mock,
+            audioEngine: MockAudioEngineProvider()
+        )
+        #expect(vm.micStatus == .denied)
+    }
+
+    @Test("micStatus returns authorized when provider says authorized")
+    func micStatusAuthorized() {
+        let mock = MockPermissionProvider()
+        mock.microphoneStatus = .authorized
+        let vm = PitchDetectionViewModel(
+            permissions: mock,
+            audioEngine: MockAudioEngineProvider()
+        )
+        #expect(vm.micStatus == .authorized)
+    }
+
+    @Test("settingsURL reflects injected permission provider URL")
+    func settingsURLReflectsProvider() {
+        let mock = MockPermissionProvider()
+        mock.settingsURL = URL(string: "test://settings")
+        let vm = PitchDetectionViewModel(
+            permissions: mock,
+            audioEngine: MockAudioEngineProvider()
+        )
+        #expect(vm.settingsURL == URL(string: "test://settings"))
+    }
+
+    @Test("settingsURL returns nil when provider returns nil")
+    func settingsURLNil() {
+        let mock = MockPermissionProvider()
+        mock.settingsURL = nil
+        let vm = PitchDetectionViewModel(
+            permissions: mock,
+            audioEngine: MockAudioEngineProvider()
+        )
+        #expect(vm.settingsURL == nil)
+    }
+
+    // MARK: - DI: startListening uses injected dependencies
+
+    @Test("startListening sets error when permission denied")
+    func startListeningPermissionDenied() async {
+        let permMock = MockPermissionProvider()
+        permMock.requestMicrophoneAccessResult = false
+        let vm = PitchDetectionViewModel(
+            permissions: permMock,
+            audioEngine: MockAudioEngineProvider()
+        )
+        await vm.startListening()
+        #expect(permMock.updateMicrophoneStatusCallCount >= 1)
+        #expect(permMock.requestMicrophoneAccessCallCount == 1)
+        #expect(vm.isListening == false)
+        #expect(vm.errorMessage != nil)
+    }
+
+    @Test("startListening sets error when engine fails to start")
+    func startListeningEngineFailure() async {
+        let permMock = MockPermissionProvider()
+        permMock.requestMicrophoneAccessResult = true
+        permMock.microphoneStatus = .notDetermined
+        let engineMock = MockAudioEngineProvider()
+        engineMock.shouldThrowOnStart = true
+        let vm = PitchDetectionViewModel(
+            permissions: permMock,
+            audioEngine: engineMock
+        )
+        await vm.startListening()
+        #expect(engineMock.startCallCount == 1)
+        #expect(vm.isListening == false)
+        #expect(vm.errorMessage != nil)
+    }
+
+    @Test("startListening installs mic tap when permission granted and engine starts")
+    func startListeningSuccess() async {
+        let permMock = MockPermissionProvider()
+        permMock.requestMicrophoneAccessResult = true
+        permMock.microphoneStatus = .notDetermined
+        let engineMock = MockAudioEngineProvider()
+        let vm = PitchDetectionViewModel(
+            permissions: permMock,
+            audioEngine: engineMock
+        )
+        await vm.startListening()
+        #expect(engineMock.startCallCount == 1)
+        #expect(engineMock.installMicTapCallCount == 1)
+        #expect(vm.isListening == true)
     }
 }

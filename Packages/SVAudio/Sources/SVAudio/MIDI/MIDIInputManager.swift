@@ -1,5 +1,6 @@
 import CoreMIDI
 import Foundation
+import Synchronization
 import os
 
 /// Thread-safe box holding an `AsyncStream` continuation of any type.
@@ -81,7 +82,8 @@ private final class NoteCallbackBox: Sendable {
 ///
 /// The correct architecture (per Apple docs and Swift 6 concurrency):
 /// - The I/O manager itself is a plain `nonisolated Sendable` class.
-/// - All mutable state is protected by `NSLock`.
+/// - All mutable state is consolidated into a single `Mutex<MIDIState>` struct
+///   (ARCH-003), replacing 6 individual `nonisolated(unsafe)` properties + NSLock.
 /// - Observable UI state (`isConnected`, `connectedDeviceName`) is annotated
 ///   `@MainActor` so the compiler verifies they are only **read** on the main
 ///   actor and only **written** via `Task { @MainActor in }`.
@@ -121,13 +123,18 @@ public final class MIDIInputManager: MIDIInputProviding {
     /// Note-off events (velocity == 0) are filtered out — consumers only
     /// see new key presses, not key releases.
     public var noteOnStream: AsyncStream<MIDIInputEvent> {
-        lock.lock()
-        defer { lock.unlock() }
-        if let stream = _noteOnStream { return stream }
-        let (stream, cont) = AsyncStream<MIDIInputEvent>.makeStream()
-        _noteOnStream = stream
-        continuationBox.set(cont)
-        return stream
+        // Two-phase to avoid nested lock: Mutex holds state, continuationBox has its own lock.
+        let result: (stream: AsyncStream<MIDIInputEvent>, newCont: AsyncStream<MIDIInputEvent>.Continuation?) =
+            state.withLock { s in
+                if let stream = s.noteOnStream { return (stream, nil) }
+                let (stream, cont) = AsyncStream<MIDIInputEvent>.makeStream()
+                s.noteOnStream = stream
+                return (stream, cont)
+            }
+        if let cont = result.newCont {
+            continuationBox.set(cont)
+        }
+        return result.stream
     }
 
     // MARK: - Connection State Stream
@@ -137,13 +144,18 @@ public final class MIDIInputManager: MIDIInputProviding {
     ///
     /// Consumers use this to reactively update UI without polling `isConnected`.
     public var connectionStateStream: AsyncStream<Bool> {
-        lock.lock()
-        defer { lock.unlock() }
-        if let stream = _connectionStateStream { return stream }
-        let (stream, cont) = AsyncStream<Bool>.makeStream()
-        _connectionStateStream = stream
-        connectionBox.set(cont)
-        return stream
+        // Two-phase to avoid nested lock: Mutex holds state, connectionBox has its own lock.
+        let result: (stream: AsyncStream<Bool>, newCont: AsyncStream<Bool>.Continuation?) =
+            state.withLock { s in
+                if let stream = s.connectionStateStream { return (stream, nil) }
+                let (stream, cont) = AsyncStream<Bool>.makeStream()
+                s.connectionStateStream = stream
+                return (stream, cont)
+            }
+        if let cont = result.newCont {
+            connectionBox.set(cont)
+        }
+        return result.stream
     }
 
     // MARK: - Direct Low-Latency Callback
@@ -164,28 +176,30 @@ public final class MIDIInputManager: MIDIInputProviding {
 
     // MARK: - Private State
 
-    /// Lock protecting all mutable state on this class.
+    /// All mutable MIDI state consolidated into a single Mutex-protected struct.
     ///
-    /// AUD-033: The private `ContinuationBox` and `NoteCallbackBox` locks were
-    /// upgraded to `OSAllocatedUnfairLock` for lower overhead on CoreMIDI's
-    /// high-priority thread. This main instance lock remains `NSLock` because
-    /// it is used with the manual `lock()`/`unlock()` pattern in sections that
-    /// may do non-trivial work (source enumeration, stream creation) where
-    /// the unfair lock's non-recursive contract would be harder to audit.
+    /// Replaces 6 individual `nonisolated(unsafe)` properties + manual NSLock
+    /// (ARCH-003). `Mutex.withLock` provides scoped, deadlock-safe access per
+    /// Apple's Synchronization framework (WWDC 2024).
     ///
-    /// Used for: `_midiClient`, `_inputPort`, `_connectedSources`, `_isStarted`,
-    /// `_noteOnStream`, `_connectionStateStream`. CoreMIDI callbacks only touch
-    /// `continuationBox` (which has its own internal lock).
-    private let lock = NSLock()
+    /// Thread safety: CoreMIDI callbacks access state via `withLock` closures.
+    /// No property is accessed outside a lock scope.
+    private let state = Mutex(MIDIState())
 
-    // All mutable state is protected by `lock`. `nonisolated(unsafe)` tells Swift 6
-    // that we take manual responsibility for synchronization (via NSLock).
-    nonisolated(unsafe) private var _midiClient: MIDIClientRef = 0
-    nonisolated(unsafe) private var _inputPort: MIDIPortRef = 0
-    nonisolated(unsafe) private var _connectedSources: [MIDIEndpointRef] = []
-    nonisolated(unsafe) private var _isStarted = false
-    nonisolated(unsafe) private var _noteOnStream: AsyncStream<MIDIInputEvent>?
-    nonisolated(unsafe) private var _connectionStateStream: AsyncStream<Bool>?
+    /// Consolidated mutable state for MIDIInputManager.
+    ///
+    /// All fields were previously individual `nonisolated(unsafe)` properties
+    /// protected by a manual `NSLock`. Grouping them into a single struct
+    /// inside `Mutex` eliminates all `nonisolated(unsafe)` annotations and
+    /// ensures every access is scoped to a `withLock` closure.
+    private struct MIDIState: Sendable {
+        var midiClient: MIDIClientRef = 0
+        var inputPort: MIDIPortRef = 0
+        var connectedSources: [MIDIEndpointRef] = []
+        var isStarted = false
+        var noteOnStream: AsyncStream<MIDIInputEvent>?
+        var connectionStateStream: AsyncStream<Bool>?
+    }
 
     /// Sendable box shared with the CoreMIDI read callback.
     ///
@@ -220,22 +234,30 @@ public final class MIDIInputManager: MIDIInputProviding {
     /// sources, and begins delivering events. Safe to call multiple times —
     /// returns immediately if already started.
     public func start() {
-        lock.lock()
-        let alreadyStarted = _isStarted
-        // Ensure streams are created before CoreMIDI callbacks can fire.
-        if _noteOnStream == nil {
-            let (stream, cont) = AsyncStream<MIDIInputEvent>.makeStream()
-            _noteOnStream = stream
-            continuationBox.set(cont)
-        }
-        if _connectionStateStream == nil {
-            let (stream, cont) = AsyncStream<Bool>.makeStream()
-            _connectionStateStream = stream
-            connectionBox.set(cont)
-        }
-        lock.unlock()
+        // Two-phase to avoid nested lock: extract continuations inside Mutex,
+        // then set them on their boxes outside the Mutex scope.
+        let snapshot: (started: Bool, noteCont: AsyncStream<MIDIInputEvent>.Continuation?, connCont: AsyncStream<Bool>.Continuation?) =
+            state.withLock { s in
+                let started = s.isStarted
+                var noteCont: AsyncStream<MIDIInputEvent>.Continuation?
+                var connCont: AsyncStream<Bool>.Continuation?
+                // Ensure streams are created before CoreMIDI callbacks can fire.
+                if s.noteOnStream == nil {
+                    let (stream, cont) = AsyncStream<MIDIInputEvent>.makeStream()
+                    s.noteOnStream = stream
+                    noteCont = cont
+                }
+                if s.connectionStateStream == nil {
+                    let (stream, cont) = AsyncStream<Bool>.makeStream()
+                    s.connectionStateStream = stream
+                    connCont = cont
+                }
+                return (started, noteCont, connCont)
+            }
+        if let cont = snapshot.noteCont { continuationBox.set(cont) }
+        if let cont = snapshot.connCont { connectionBox.set(cont) }
 
-        guard !alreadyStarted else { return }
+        guard !snapshot.started else { return }
 
         var clientRef: MIDIClientRef = 0
         var portRef: MIDIPortRef = 0
@@ -284,11 +306,11 @@ public final class MIDIInputManager: MIDIInputProviding {
             return
         }
 
-        lock.lock()
-        _midiClient = clientRef
-        _inputPort = portRef
-        _isStarted = true
-        lock.unlock()
+        state.withLock { s in
+            s.midiClient = clientRef
+            s.inputPort = portRef
+            s.isStarted = true
+        }
 
         Self.logger.info("MIDIInputManager started")
         refreshSources()
@@ -300,23 +322,39 @@ public final class MIDIInputManager: MIDIInputProviding {
     /// the `noteOnStream`. After calling `stop()`, call `start()` again to
     /// resume — a new stream will be created.
     public func stop() {
-        lock.lock()
-        guard _isStarted else {
-            lock.unlock()
+        /// Snapshot of MIDI state captured inside `Mutex.withLock` for teardown.
+        struct StopSnapshot: Sendable {
+            var sources: [MIDIEndpointRef] = []
+            var port: MIDIPortRef = 0
+            var client: MIDIClientRef = 0
+        }
+
+        let snapshot = state.withLock { s -> StopSnapshot in
+            guard s.isStarted else { return StopSnapshot() }
+
+            var snap = StopSnapshot()
+            snap.sources = s.connectedSources
+            snap.port = s.inputPort
+            snap.client = s.midiClient
+
+            s.connectedSources.removeAll()
+            s.inputPort = 0
+            s.midiClient = 0
+            s.isStarted = false
+            s.noteOnStream = nil
+            s.connectionStateStream = nil
+
+            return snap
+        }
+
+        // Early return if we were not started.
+        guard snapshot.port != 0 || snapshot.client != 0 || !snapshot.sources.isEmpty else {
             return
         }
 
-        let sourcesToDisconnect = _connectedSources
-        let portToDispose = _inputPort
-        let clientToDispose = _midiClient
-
-        _connectedSources.removeAll()
-        _inputPort = 0
-        _midiClient = 0
-        _isStarted = false
-        _noteOnStream = nil
-        _connectionStateStream = nil
-        lock.unlock()
+        let sourcesToDisconnect = snapshot.sources
+        let portToDispose = snapshot.port
+        let clientToDispose = snapshot.client
 
         for source in sourcesToDisconnect {
             MIDIPortDisconnectSource(portToDispose, source)
@@ -361,10 +399,9 @@ public final class MIDIInputManager: MIDIInputProviding {
     /// `MIDIPortConnectSource`) are thread-safe. Observable UI state is
     /// updated via `Task { @MainActor in }` at the end.
     private func refreshSources() {
-        lock.lock()
-        let port = _inputPort
-        let prevSources = _connectedSources
-        lock.unlock()
+        let (port, prevSources) = state.withLock { s in
+            (s.inputPort, s.connectedSources)
+        }
 
         let sourceCount = MIDIGetNumberOfSources()
         Self.logger.info("refreshSources: \(sourceCount) source(s) total")
@@ -374,9 +411,7 @@ public final class MIDIInputManager: MIDIInputProviding {
         }
 
         guard sourceCount > 0, port != 0 else {
-            lock.lock()
-            _connectedSources.removeAll()
-            lock.unlock()
+            state.withLock { s in s.connectedSources.removeAll() }
             connectionBox.yield(false)
             Task { @MainActor [weak self] in
                 self?.isConnected = false
@@ -409,9 +444,7 @@ public final class MIDIInputManager: MIDIInputProviding {
             }
         }
 
-        lock.lock()
-        _connectedSources = newSources
-        lock.unlock()
+        state.withLock { s in s.connectedSources = newSources }
 
         let connected = !newSources.isEmpty
         let deviceName = firstName

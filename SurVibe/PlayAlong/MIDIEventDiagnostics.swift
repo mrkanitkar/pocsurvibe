@@ -35,6 +35,11 @@ nonisolated final class MIDIEventDiagnostics: Sendable {
     nonisolated private static let logger = Logger(subsystem: "com.survibe", category: "MIDIDiagnostics")
 
     /// Set to false to disable all logging with zero overhead.
+    ///
+    /// `nonisolated(unsafe)` is safe because:
+    /// 1. Written only at session boundaries (reset/init) on known threads.
+    /// 2. Read atomically by CoreMIDI callbacks (Bool is naturally atomic on ARM64).
+    /// 3. A stale read (seeing old value) is benign — at worst logs one extra event.
     nonisolated(unsafe) var isEnabled: Bool = false
 
     // MARK: - Thread-safe state

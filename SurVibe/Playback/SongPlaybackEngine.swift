@@ -1,32 +1,33 @@
+import AVFoundation
 import Foundation
 import SVAudio
 import SVCore
 import os.log
 
-/// Drives song playback by scheduling MIDI notes through SoundFontManager
-/// and tracking position for notation highlighting.
+/// Drives song playback using AVAudioSequencer for sample-accurate MIDI
+/// scheduling and tracks position for notation highlighting.
 ///
-/// SongPlaybackEngine loads MIDI data from a Song model, parses it into
-/// timed note events, and schedules playback using Task-based delays.
-/// A 30 Hz Timer updates the current position and note index for UI
-/// consumers (e.g., notation scroll views, progress bars).
+/// SongPlaybackEngine loads MIDI data from a Song model, configures an
+/// AVAudioSequencer routed to AudioEngineManager's sampler, and parses
+/// events via MIDIParser for display. A 30 Hz Task loop updates the
+/// current position and note index for UI consumers (e.g., notation
+/// scroll views, progress bars).
 ///
 /// ## Lifecycle
 /// ```
 /// load(song:) → play() → pause()/resume() → stop()
 /// ```
 ///
-/// ## Note Scheduling Strategy
-/// Rather than using audio-thread scheduling, the engine creates
-/// individual Swift Tasks that sleep until each note's scheduled time.
-/// This trades sub-millisecond accuracy for simplicity and full
-/// integration with Swift concurrency. For piano learning purposes,
-/// the resulting timing accuracy (~10ms) is more than sufficient.
+/// ## Note Scheduling Strategy (ARCH-005)
+/// Uses AVAudioSequencer for sample-accurate MIDI playback, replacing
+/// the previous Task.sleep-based scheduling. The sequencer runs on the
+/// audio render thread, eliminating the ~10ms jitter of wall-clock
+/// scheduling. MIDIParser events are still used for UI note highlighting.
 ///
 /// ## Thread Safety
-/// All mutable state is isolated to `@MainActor`. The only off-main
-/// work is the `Task.sleep` inside note-scheduling tasks, which
-/// re-enters MainActor for SoundFontManager calls.
+/// All mutable state is isolated to `@MainActor`. The sequencer is
+/// created and controlled from MainActor; its internal scheduling
+/// runs on the audio render thread.
 @Observable
 @MainActor
 final class SongPlaybackEngine {
@@ -64,24 +65,15 @@ final class SongPlaybackEngine {
 
     // MARK: - Private Properties
 
-    /// Wall-clock reference for computing elapsed playback time.
-    /// Adjusted on resume to account for time spent paused.
-    private var playbackStartTime: Date?
-
-    /// Accumulated playback time before the most recent pause.
-    /// Used to offset `playbackStartTime` on resume so the position
-    /// continues seamlessly.
-    private var pauseOffset: TimeInterval = 0
+    /// AVAudioSequencer for sample-accurate MIDI playback (ARCH-005).
+    /// Replaces Task.sleep scheduling for sub-millisecond timing accuracy.
+    /// Created during `load(song:)` and routed to AudioEngineManager's sampler.
+    private var sequencer: AVAudioSequencer?
 
     /// AUD-010: Task-based display loop replaces `Timer` + `Task { @MainActor }`.
     /// A single Task sleeping 33 ms (~30 Hz) avoids the extra actor hop that
     /// `Timer` + `Task { @MainActor in }` incurred per tick.
     private var displayLinkTask: Task<Void, Never>?
-
-    /// AUD-035: Single sequential playback Task replaces per-note Task array.
-    /// Eliminates O(n) task-object allocation at `scheduleNotes(from:)` call time
-    /// and reduces cancellation cost from O(n) to O(1).
-    private var playbackTask: Task<Void, Never>?
 
     /// AUD-030: Forward-only cursor for O(1) note lookup during playback.
     /// Monotonically advanced; never reset during active playback.
@@ -103,9 +95,10 @@ final class SongPlaybackEngine {
 
     /// Load a song's MIDI data and prepare for playback.
     ///
-    /// Parses the song's binary MIDI data via `MIDIParser`, populates
-    /// `midiEvents` and `duration`, and transitions to `.idle` on success
-    /// or `.error` on failure.
+    /// Creates an AVAudioSequencer routed to the shared sampler for
+    /// sample-accurate playback (ARCH-005). Also parses the MIDI data
+    /// via `MIDIParser` to populate `midiEvents` for UI highlighting.
+    /// Transitions to `.idle` on success or `.error` on failure.
     ///
     /// - Parameter song: The Song model whose `midiData` will be parsed.
     ///   If `midiData` is nil or empty, stays in `.idle` (notation-only mode).
@@ -124,7 +117,7 @@ final class SongPlaybackEngine {
             currentPosition = 0
             currentNoteIndex = nil
             nextNoteIndex = nil
-            pauseOffset = 0
+            sequencer = nil
             playbackState = .idle
 
             Self.logger.info(
@@ -133,29 +126,31 @@ final class SongPlaybackEngine {
             return
         }
 
+        // Parse MIDI events for UI note highlighting (forward-only cursor).
         let result = MIDIParser.parse(data: midiData)
 
         switch result {
         case .success(let events):
             midiEvents = events
-            if let lastEvent = events.last {
-                duration = lastEvent.timestamp + lastEvent.duration
-            } else {
-                duration = 0
-            }
             currentPosition = 0
             currentNoteIndex = nil
             nextNoteIndex = events.isEmpty ? nil : 0
-            pauseOffset = 0
 
             // Start the audio engine and load the bundled piano SoundFont
-            // so that playNote() calls actually produce sound.
+            // so that the sequencer's routed sampler produces sound.
             do {
                 try await SoundFontManager.shared.loadBundledPiano()
             } catch {
                 Self.logger.error(
                     "SoundFont load failed: \(error.localizedDescription)"
                 )
+            }
+
+            // ARCH-005: Configure AVAudioSequencer for sample-accurate playback.
+            do {
+                try configureSequencer(midiData: midiData, events: events)
+            } catch {
+                return
             }
 
             playbackState = .idle
@@ -167,6 +162,7 @@ final class SongPlaybackEngine {
         case .failure(let error):
             midiEvents = []
             duration = 0
+            sequencer = nil
             playbackState = .error(
                 error.errorDescription ?? "Unknown MIDI parse error"
             )
@@ -177,11 +173,12 @@ final class SongPlaybackEngine {
         }
     }
 
-    /// Begin playback from the current position.
+    /// Begin playback from the beginning of the song.
     ///
     /// Transitions from `.idle` or `.stopped` to `.playing`.
-    /// Records a wall-clock start time, starts the 30 Hz display timer,
-    /// and schedules all MIDI notes from the current offset.
+    /// Resets the sequencer position to zero and starts it for
+    /// sample-accurate MIDI playback. Starts the 30 Hz display loop
+    /// for UI position tracking.
     ///
     /// Fires `songPlaybackStarted` analytics event.
     func play() {
@@ -195,14 +192,25 @@ final class SongPlaybackEngine {
             Self.logger.warning("play() called with no MIDI events loaded")
             return
         }
+        guard let sequencer else {
+            Self.logger.warning("play() called with no sequencer configured")
+            return
+        }
 
-        pauseOffset = 0
         positionCursor = 0
-        playbackStartTime = Date()
-        playbackState = .playing
+        sequencer.currentPositionInSeconds = 0
 
+        do {
+            try sequencer.start()
+        } catch {
+            let audioError = AudioError.sequencerError(underlying: error.localizedDescription)
+            playbackState = .error(audioError.errorDescription ?? error.localizedDescription)
+            Self.logger.error("Sequencer start failed: \(error.localizedDescription)")
+            return
+        }
+
+        playbackState = .playing
         startDisplayLink()
-        scheduleNotes(from: 0)
 
         AnalyticsManager.shared.track(
             .songPlaybackStarted,
@@ -214,9 +222,9 @@ final class SongPlaybackEngine {
 
     /// Pause playback at the current position.
     ///
-    /// Records the elapsed time in `pauseOffset`, cancels all pending
-    /// note tasks, and stops all sounding notes. The position is preserved
-    /// so `resume()` can continue from where playback left off.
+    /// Stops the sequencer (preserving its position) and stops all
+    /// sounding notes. The position is preserved so `resume()` can
+    /// continue from where playback left off.
     ///
     /// Fires `songPlaybackPaused` analytics event.
     func pause() {
@@ -227,14 +235,10 @@ final class SongPlaybackEngine {
             return
         }
 
-        if let startTime = playbackStartTime {
-            pauseOffset = Date().timeIntervalSince(startTime)
-        }
-
+        sequencer?.stop()
         playbackState = .paused
 
         stopDisplayLink()
-        cancelScheduledNotes()
         SoundFontManager.shared.stopAllNotes()
 
         AnalyticsManager.shared.track(
@@ -243,14 +247,14 @@ final class SongPlaybackEngine {
         )
 
         Self.logger.info(
-            "Playback paused at \(String(format: "%.1f", self.pauseOffset))s"
+            "Playback paused at \(String(format: "%.1f", self.currentPosition))s"
         )
     }
 
     /// Resume playback from the paused position.
     ///
-    /// Adjusts the wall-clock start time to account for the pause duration,
-    /// restarts the display timer, and reschedules remaining MIDI notes.
+    /// Restarts the sequencer from its preserved position and
+    /// resumes the display loop for UI updates.
     func resume() {
         guard playbackState == .paused else {
             Self.logger.warning(
@@ -258,23 +262,32 @@ final class SongPlaybackEngine {
             )
             return
         }
+        guard let sequencer else {
+            Self.logger.warning("resume() called with no sequencer configured")
+            return
+        }
 
-        positionCursor = 0  // scheduleNotes resets this, but zero here for clarity
-        playbackStartTime = Date().addingTimeInterval(-pauseOffset)
+        do {
+            try sequencer.start()
+        } catch {
+            let audioError = AudioError.sequencerError(underlying: error.localizedDescription)
+            playbackState = .error(audioError.errorDescription ?? error.localizedDescription)
+            Self.logger.error("Sequencer resume failed: \(error.localizedDescription)")
+            return
+        }
+
         playbackState = .playing
-
         startDisplayLink()
-        scheduleNotes(from: pauseOffset)
 
         Self.logger.info(
-            "Playback resumed from \(String(format: "%.1f", self.pauseOffset))s"
+            "Playback resumed from \(String(format: "%.1f", self.currentPosition))s"
         )
     }
 
     /// Stop playback and reset position to the beginning.
     ///
-    /// Cancels all pending note tasks, stops all sounding notes,
-    /// and resets the position to zero.
+    /// Stops the sequencer, resets its position to zero, stops all
+    /// sounding notes, and transitions to `.stopped`.
     func stop() {
         guard playbackState == .playing || playbackState == .paused else {
             Self.logger.warning(
@@ -283,18 +296,61 @@ final class SongPlaybackEngine {
             return
         }
 
+        sequencer?.stop()
+        sequencer?.currentPositionInSeconds = 0
+
         stopDisplayLink()
-        cancelScheduledNotes()
         SoundFontManager.shared.stopAllNotes()
 
         currentPosition = 0
         currentNoteIndex = nil
         nextNoteIndex = midiEvents.isEmpty ? nil : 0
-        pauseOffset = 0
-        playbackStartTime = nil
         playbackState = .stopped
 
         Self.logger.info("Playback stopped")
+    }
+
+    // MARK: - Private Methods — Sequencer Setup
+
+    /// Create and configure the AVAudioSequencer from raw MIDI data.
+    ///
+    /// Loads the MIDI data, routes all tracks to the shared sampler,
+    /// and derives the playback duration. On failure, transitions to
+    /// `.error` state and throws to signal the caller to bail out.
+    ///
+    /// - Parameters:
+    ///   - midiData: Raw Standard MIDI File bytes.
+    ///   - events: Parsed MIDIEvent array for fallback duration calculation.
+    /// - Throws: `AudioError.sequencerError` if the sequencer fails to load.
+    private func configureSequencer(midiData: Data, events: [MIDIEvent]) throws {
+        do {
+            let seq = AVAudioSequencer(audioEngine: AudioEngineManager.shared.engine)
+            try seq.load(from: midiData, options: .smf_ChannelsToTracks)
+
+            // Route all tracks to the shared sampler so notes play through
+            // the SoundFont piano instead of the default General MIDI synth.
+            for track in seq.tracks {
+                track.destinationAudioUnit = AudioEngineManager.shared.sampler
+            }
+
+            seq.prepareToPlay()
+
+            // Derive duration from sequencer track lengths (most accurate source).
+            duration = seq.tracks.reduce(0) { max($0, $1.lengthInSeconds) }
+
+            // Fall back to parsed event duration if sequencer reports zero
+            // (can happen with malformed tempo maps).
+            if duration <= 0, let lastEvent = events.last {
+                duration = lastEvent.timestamp + lastEvent.duration
+            }
+
+            sequencer = seq
+        } catch {
+            let audioError = AudioError.sequencerError(underlying: error.localizedDescription)
+            playbackState = .error(audioError.errorDescription ?? error.localizedDescription)
+            Self.logger.error("Sequencer load failed: \(error.localizedDescription)")
+            throw audioError
+        }
     }
 
     // MARK: - Private Methods — Display Link
@@ -321,21 +377,18 @@ final class SongPlaybackEngine {
         displayLinkTask = nil
     }
 
-    /// Compute the current playback position from wall-clock elapsed time,
+    /// Read the current playback position from the sequencer,
     /// update `currentNoteIndex` and `nextNoteIndex` for UI highlighting,
     /// and detect playback completion.
     ///
     /// AUD-030: Uses forward-only `positionCursor` for O(1) amortised note
     /// lookup — advances past expired events, breaks at first future event.
     private func updatePlaybackPosition() {
-        guard playbackState == .playing,
-            let startTime = playbackStartTime
-        else {
+        guard playbackState == .playing, let sequencer else {
             return
         }
 
-        let elapsed = Date().timeIntervalSince(startTime)
-        currentPosition = min(elapsed, duration)
+        currentPosition = min(sequencer.currentPositionInSeconds, duration)
 
         // AUD-030: Advance cursor past events whose end time has passed.
         while positionCursor < midiEvents.count,
@@ -362,22 +415,20 @@ final class SongPlaybackEngine {
         nextNoteIndex = foundNext
 
         // Detect playback completion.
-        if elapsed >= duration {
+        if currentPosition >= duration {
             handlePlaybackCompletion()
         }
     }
 
     /// Handle natural end-of-song: fire analytics, clean up, transition to idle.
     private func handlePlaybackCompletion() {
+        sequencer?.stop()
         stopDisplayLink()
-        cancelScheduledNotes()
         SoundFontManager.shared.stopAllNotes()
 
         currentPosition = duration
         currentNoteIndex = nil
         nextNoteIndex = nil
-        pauseOffset = 0
-        playbackStartTime = nil
         playbackState = .idle
 
         AnalyticsManager.shared.track(
@@ -391,72 +442,5 @@ final class SongPlaybackEngine {
         Self.logger.info(
             "Playback completed: \(self.songTitle) (\(Int(self.duration))s)"
         )
-    }
-
-    // MARK: - Private Methods — Note Scheduling
-
-    /// Schedule MIDI note playback from the given time offset.
-    ///
-    /// AUD-035: Replaced per-note Task array with a single sequential Task loop
-    /// matching `PlayAlongViewModel.runPlaybackLoop`. Eliminates O(n) task-object
-    /// allocation and reduces cancellation cost from O(n) to O(1).
-    ///
-    /// Uses `ContinuousClock.sleep(until:)` for absolute-time scheduling to avoid
-    /// drift from accumulated relative sleeps.
-    ///
-    /// - Parameter offset: Time offset in seconds. Events before this point are skipped.
-    private func scheduleNotes(from offset: TimeInterval) {
-        cancelScheduledNotes()
-        positionCursor = 0  // reset forward cursor when (re-)scheduling from offset
-
-        let events = midiEvents
-        let startDate = playbackStartTime ?? Date()
-
-        playbackTask = Task { [weak self] in
-            let clock = ContinuousClock()
-            let taskStart = clock.now
-
-            for event in events {
-                guard !Task.isCancelled else { return }
-                guard event.timestamp >= offset else { continue }
-
-                // Absolute-time sleep — no drift from cumulative relative sleeps.
-                let targetDelay = event.timestamp - offset
-                let wakePoint = taskStart.advanced(by: .seconds(targetDelay))
-                try? await clock.sleep(until: wakePoint)
-                guard !Task.isCancelled else { return }
-
-                guard let self else { return }
-                guard self.playbackState == .playing else { return }
-
-                SoundFontManager.shared.playNote(
-                    midiNote: event.noteNumber,
-                    velocity: event.velocity
-                )
-
-                // Schedule note-off via a lightweight nested sleep (not added to task array).
-                let duration = event.duration
-                let noteNumber = event.noteNumber
-                Task {
-                    try? await Task.sleep(for: .seconds(duration))
-                    SoundFontManager.shared.stopNote(midiNote: noteNumber)
-                }
-            }
-
-            // All notes scheduled — wait for the song end, then complete.
-            guard let self, !Task.isCancelled else { return }
-            let endDelay = (events.last.map { $0.timestamp + $0.duration } ?? 0) - offset
-            let endPoint = taskStart.advanced(by: .seconds(max(endDelay, 0)))
-            try? await ContinuousClock().sleep(until: endPoint)
-            guard !Task.isCancelled else { return }
-            _ = startDate  // silence unused warning
-            await MainActor.run { [weak self] in self?.handlePlaybackCompletion() }
-        }
-    }
-
-    /// Cancel the single sequential playback task.
-    private func cancelScheduledNotes() {
-        playbackTask?.cancel()
-        playbackTask = nil
     }
 }

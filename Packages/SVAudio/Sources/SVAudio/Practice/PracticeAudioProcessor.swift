@@ -1,7 +1,8 @@
 import AVFoundation
 import Accelerate
-import os.log
+import SVCore
 import Synchronization
+import os.log
 
 // File-private logger accessible from nonisolated static methods.
 // Logger is Sendable so this is safe to use from any isolation context.
@@ -387,15 +388,23 @@ public final class PracticeAudioProcessor {
 }
 
 /// Errors from the practice audio processor.
-public enum PracticeAudioProcessorError: Error, Sendable, LocalizedError {
+public enum PracticeAudioProcessorError: SurVibeError {
     /// The microphone tap could not be installed.
     case micTapFailed
+
+    public var domain: String { "SVAudio" }
+
+    public var code: String {
+        switch self {
+        case .micTapFailed: "mic_tap_failed"
+        }
+    }
 
     /// A localized description of the error.
     public var errorDescription: String? {
         switch self {
         case .micTapFailed:
-            "Failed to install microphone tap for practice mode"
+            String(localized: "Failed to install microphone tap for practice mode")
         }
     }
 }
