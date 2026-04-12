@@ -97,8 +97,8 @@ final class PracticeSessionRecorder {
             songProgress.markCompleted()
         }
 
-        // 3. Update UserProfile XP
-        updateUserXP(xp)
+        // Note: XP is now awarded by GamificationService in PracticeSessionViewModel.completePractice().
+        // PracticeSessionRecorder only handles RiyazEntry + SongProgress persistence.
 
         Self.logger.info(
             "Session recorded: song=\(songInfo.songId) accuracy=\(accuracy) xp=\(xp) notes=\(noteScores.count)"

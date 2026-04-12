@@ -28,6 +28,9 @@ struct SongDetailView: View {
     @Environment(\.modelContext)
     private var modelContext
 
+    @Environment(GamificationService.self)
+    private var gamificationService: GamificationService?
+
     /// Whether the practice session full-screen cover is shown.
     @State private var showPractice = false
 
@@ -87,7 +90,11 @@ struct SongDetailView: View {
             .padding()
         }
         .fullScreenCover(isPresented: $showPractice) {
-            PracticeSessionView(song: song, modelContext: modelContext)
+            PracticeSessionView(
+                song: song,
+                modelContext: modelContext,
+                gamificationService: gamificationService
+            )
         }
         .fullScreenCover(isPresented: $showPlayAlong) {
             NavigationStack {

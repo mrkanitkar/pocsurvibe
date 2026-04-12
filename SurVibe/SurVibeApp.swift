@@ -30,6 +30,10 @@ struct SurVibeApp: App {
             modelContainer = Self.createProductionContainer(schema: schema)
         }
 
+        // Gamification service with dedicated context from the same container.
+        let gamContext = ModelContext(modelContainer)
+        _gamificationService = State(wrappedValue: GamificationService(modelContext: gamContext))
+
         Self.configureAnalytics()
         CrashReportingManager.shared.activate()
 
@@ -180,6 +184,13 @@ struct SurVibeApp: App {
     /// Onboarding manager injected into the view hierarchy.
     @State private var onboardingManager = OnboardingManager()
 
+    /// Gamification service managing XP, Rang, Achievements, and Streaks.
+    ///
+    /// Uses a dedicated `ModelContext` from the same `ModelContainer`.
+    /// All critical writes call `save()`, keeping it in sync with the
+    /// view hierarchy's auto-saving context.
+    @State private var gamificationService: GamificationService
+
     // MARK: - Body
 
     var body: some Scene {
@@ -187,6 +198,7 @@ struct SurVibeApp: App {
             ContentView()
                 .environment(onboardingManager)
                 .environment(AuthManager.shared)
+                .environment(gamificationService)
         }
         .modelContainer(modelContainer)
     }

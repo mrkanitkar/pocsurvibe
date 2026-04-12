@@ -8,31 +8,20 @@ import SwiftUI
 /// practice streaks, stats grid, and recent achievements. Below that, the
 /// existing auth and settings sections are preserved.
 ///
-/// Managers are created lazily in `.task {}` from the SwiftData model context
-/// because they require `ModelContext` which is only available at view runtime.
+/// Reads gamification data from the shared `GamificationService` injected
+/// via `.environment()` at the app root. Refreshes streak on appear.
 struct ProfileTab: View {
     // MARK: - Properties
 
     @Environment(\.modelContext) private var modelContext
     @Environment(AuthManager.self) private var authManager
     @Environment(OnboardingManager.self) private var onboardingManager
+    @Environment(GamificationService.self) private var gamificationService: GamificationService?
 
     @State private var languageManager = LanguageManager()
 
     /// Controls the sign-in prompt sheet.
     @State private var signInTrigger: SignInTrigger?
-
-    /// XP manager for reading total XP and today's XP.
-    @State private var xpManager: XPManager?
-
-    /// Rang system for level progression and progress-to-next calculations.
-    @State private var rangSystem: RangSystem?
-
-    /// Streak tracker for consecutive practice day tracking.
-    @State private var streakTracker: StreakTracker?
-
-    /// Achievement manager for earned achievements and trigger checks.
-    @State private var achievementManager: AchievementManager?
 
     // MARK: - Body
 
@@ -52,8 +41,8 @@ struct ProfileTab: View {
                 if destination == "languages" {
                     LanguageSelectorView()
                 } else if destination == "achievements" {
-                    if let achievementManager {
-                        AchievementGalleryView(achievementManager: achievementManager)
+                    if let am = gamificationService?.achievementManager {
+                        AchievementGalleryView(achievementManager: am)
                     }
                 }
             }
@@ -61,7 +50,11 @@ struct ProfileTab: View {
                 SignInPromptView(trigger: trigger)
             }
             .task {
-                initializeManagers()
+                // Refresh streak and achievements on each profile visit
+                gamificationService?.refreshStreak()
+                gamificationService?.achievementManager.checkTriggers(
+                    context: buildProfileAchievementContext()
+                )
             }
         }
         .accessibilityLabel(AccessibilityHelper.tabLabel(for: "Profile"))
@@ -74,7 +67,7 @@ struct ProfileTab: View {
         Section {
             ProfileHeaderView(
                 displayName: displayName,
-                rang: rangSystem?.currentRang ?? .neel
+                rang: gamificationService?.rangSystem.currentRang ?? .neel
             )
         }
     }
@@ -83,11 +76,11 @@ struct ProfileTab: View {
     private var xpProgressSection: some View {
         Section {
             XPProgressCard(
-                totalXP: xpManager?.totalXP ?? 0,
-                xpToday: xpManager?.xpToday ?? 0,
-                progressToNextRang: rangSystem?.progressToNextRang ?? 0.0,
-                xpToNextRang: rangSystem?.xpToNextRang ?? 0,
-                currentRang: rangSystem?.currentRang ?? .neel
+                totalXP: gamificationService?.xpManager.totalXP ?? 0,
+                xpToday: gamificationService?.xpManager.xpToday ?? 0,
+                progressToNextRang: gamificationService?.rangSystem.progressToNextRang ?? 0.0,
+                xpToNextRang: gamificationService?.rangSystem.xpToNextRang ?? 0,
+                currentRang: gamificationService?.rangSystem.currentRang ?? .neel
             )
         }
     }
@@ -99,7 +92,7 @@ struct ProfileTab: View {
                 totalPracticeMinutes: totalPracticeMinutes,
                 songsPlayed: songsPlayedCount,
                 lessonsComplete: lessonsCompleteCount,
-                bestStreak: streakTracker?.longestStreak ?? 0
+                bestStreak: gamificationService?.streakTracker.longestStreak ?? 0
             )
         }
     }
@@ -108,8 +101,8 @@ struct ProfileTab: View {
     private var streakSection: some View {
         Section {
             StreakSectionView(
-                currentStreak: streakTracker?.currentStreak ?? 0,
-                practicedToday: streakTracker?.practicedToday ?? false
+                currentStreak: gamificationService?.streakTracker.currentStreak ?? 0,
+                practicedToday: gamificationService?.streakTracker.practicedToday ?? false
             )
         }
     }
@@ -117,10 +110,10 @@ struct ProfileTab: View {
     /// Preview of latest 3 achievements with "See All" navigation.
     private var achievementPreviewSection: some View {
         Section {
-            if let achievementManager {
+            if let am = gamificationService?.achievementManager {
                 AchievementPreviewSection(
-                    recentAchievements: Array(achievementManager.earnedAchievements.prefix(3)),
-                    achievementManager: achievementManager
+                    recentAchievements: Array(am.earnedAchievements.prefix(3)),
+                    achievementManager: am
                 )
             } else {
                 Text("Loading achievements...")
@@ -279,21 +272,22 @@ struct ProfileTab: View {
 
     // MARK: - Private Methods
 
-    /// Creates all gamification managers from the model context.
+    /// Builds an `AchievementContext` from current profile state for passive achievement checks.
     ///
-    /// Called once in `.task {}` when the view appears. Also triggers
-    /// an initial streak recomputation to ensure values are fresh.
-    private func initializeManagers() {
-        let xp = XPManager(modelContext: modelContext)
-        xpManager = xp
-
-        rangSystem = RangSystem(modelContext: modelContext)
-
-        let streak = StreakTracker(modelContext: modelContext)
-        streak.recompute()
-        streakTracker = streak
-
-        achievementManager = AchievementManager(modelContext: modelContext, xpManager: xp)
+    /// Called on ProfileTab appear to evaluate achievements that may have been
+    /// earned while the profile was not visible (e.g., streak milestones).
+    private func buildProfileAchievementContext() -> AchievementContext {
+        AchievementContext(
+            totalXP: gamificationService?.xpManager.totalXP ?? 0,
+            currentStreak: gamificationService?.streakTracker.currentStreak ?? 0,
+            songsCompleted: songsPlayedCount,
+            lessonsCompleted: lessonsCompleteCount,
+            totalPracticeSessions: totalPracticeMinutes,
+            latestQuizScore: nil,
+            newRangLevel: nil,
+            firstPitchDetected: false,
+            hasMasteredSong: false
+        )
     }
 }
 

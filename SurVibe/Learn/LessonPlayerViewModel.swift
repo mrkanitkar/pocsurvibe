@@ -67,6 +67,9 @@ final class LessonPlayerViewModel {
     /// Progress manager for persistence.
     private let progressManager: LessonProgressManager
 
+    /// Gamification service for XP awards, rang progression, and achievements.
+    private let gamificationService: GamificationService?
+
     /// Timestamp when the current session started.
     private var sessionStartTime: Date = Date()
 
@@ -139,10 +142,16 @@ final class LessonPlayerViewModel {
     /// - Parameters:
     ///   - lesson: The lesson to play.
     ///   - progressManager: The progress manager for persistence.
-    init(lesson: Lesson, progressManager: LessonProgressManager) {
+    ///   - gamificationService: Optional gamification service for XP/achievement wiring.
+    init(
+        lesson: Lesson,
+        progressManager: LessonProgressManager,
+        gamificationService: GamificationService? = nil
+    ) {
         self.lesson = lesson
         self.steps = lesson.decodedSteps ?? []
         self.progressManager = progressManager
+        self.gamificationService = gamificationService
     }
 
     // MARK: - Lifecycle
@@ -200,6 +209,14 @@ final class LessonPlayerViewModel {
             totalSteps: totalSteps
         )
 
+        // Award XP for completing this step
+        let completedStepType = steps[index].stepType
+        gamificationService?.handleStepCompleted(
+            lessonId: lesson.lessonId,
+            stepType: completedStepType,
+            quizScore: completedStepType == "quiz" ? quizScore : nil
+        )
+
         if isLastStep {
             // Complete the lesson
             let elapsed = Date().timeIntervalSince(sessionStartTime)
@@ -207,6 +224,11 @@ final class LessonPlayerViewModel {
                 lessonId: lesson.lessonId,
                 quizScore: quizScore,
                 timeSpent: elapsed
+            )
+            // Award bonus XP for full lesson completion
+            gamificationService?.handleLessonCompleted(
+                lessonId: lesson.lessonId,
+                quizScore: quizScore
             )
             // Reset so onDisappear doesn't double-count
             sessionStartTime = Date()

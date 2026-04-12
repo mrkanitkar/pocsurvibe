@@ -15,10 +15,13 @@ struct PracticeSessionView: View {
 
     let song: Song
 
-    init(song: Song, modelContext: ModelContext) {
+    init(song: Song, modelContext: ModelContext, gamificationService: GamificationService? = nil) {
         self.song = song
         _viewModel = State(
-            initialValue: PracticeSessionViewModel(modelContext: modelContext)
+            initialValue: PracticeSessionViewModel(
+                modelContext: modelContext,
+                gamificationService: gamificationService
+            )
         )
     }
 

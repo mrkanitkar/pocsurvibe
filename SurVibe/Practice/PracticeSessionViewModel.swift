@@ -139,6 +139,9 @@ final class PracticeSessionViewModel {
     /// Recorder for persisting practice results to SwiftData.
     private var recorder: PracticeSessionRecorder?
 
+    /// Gamification service for XP awards, rang progression, and achievements.
+    private var gamificationService: GamificationService?
+
     /// Task that consumes the pitch stream and scores notes.
     private var pitchMonitoringTask: Task<Void, Never>?
 
@@ -147,6 +150,9 @@ final class PracticeSessionViewModel {
 
     /// Wall-clock time when practice started, used for elapsed time.
     private var practiceStartTime: Date?
+
+    /// Whether first-pitch achievement has been fired this session.
+    private var hasTrackedFirstPitch: Bool = false
 
     private static let logger = Logger(
         subsystem: "com.survibe",
@@ -157,10 +163,13 @@ final class PracticeSessionViewModel {
 
     /// Create a practice session view model.
     ///
-    /// - Parameter modelContext: SwiftData model context for persisting results.
-    init(modelContext: ModelContext) {
+    /// - Parameters:
+    ///   - modelContext: SwiftData model context for persisting results.
+    ///   - gamificationService: Optional gamification service for XP/achievement wiring.
+    init(modelContext: ModelContext, gamificationService: GamificationService? = nil) {
         self.metronomeEngine = MetronomeEngine(bpm: 60.0, volume: 0.5)
         self.recorder = PracticeSessionRecorder(modelContext: modelContext)
+        self.gamificationService = gamificationService
     }
 
     // MARK: - Session Lifecycle
@@ -359,6 +368,14 @@ final class PracticeSessionViewModel {
             noteScores: noteScores
         )
 
+        // Award XP via gamification service (creates XPEntry records + triggers rang/achievements)
+        let songMastered = starRating >= 3
+        gamificationService?.handlePracticeCompleted(
+            xp: xpEarned,
+            songId: song?.slugId ?? "",
+            songMastered: songMastered
+        )
+
         phase = .completed
 
         AnalyticsManager.shared.track(
@@ -478,6 +495,13 @@ final class PracticeSessionViewModel {
                 guard enrichedPitch.amplitude >= PracticeConstants.silenceThreshold,
                       enrichedPitch.confidence >= PracticeConstants.confidenceThreshold
                 else { continue }
+
+                // Track first valid pitch for "First Note" achievement
+                if !self.hasTrackedFirstPitch {
+                    self.hasTrackedFirstPitch = true
+                    self.gamificationService?.handleFirstPitchDetected()
+                }
+
                 if self.processDetectedPitch(enrichedPitch) { break }
             }
         }

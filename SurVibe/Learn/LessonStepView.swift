@@ -35,6 +35,8 @@ struct LessonStepView: View {
     private var reduceMotion
     @Environment(\.modelContext)
     private var modelContext
+    @Environment(GamificationService.self)
+    private var gamificationService: GamificationService?
 
     /// The lesson player view model managing state and progression.
     @State
@@ -84,7 +86,8 @@ struct LessonStepView: View {
         .onAppear {
             let vm = LessonPlayerViewModel(
                 lesson: lesson,
-                progressManager: progressManager
+                progressManager: progressManager,
+                gamificationService: gamificationService
             )
             vm.onAppear()
             viewModel = vm
