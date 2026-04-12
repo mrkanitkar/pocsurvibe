@@ -36,6 +36,10 @@ final class AchievementManager {
     /// Cache of earned achievement type IDs to avoid repeated fetches.
     private var earnedCache: Set<String> = []
 
+    /// The most recently unlocked achievement, used to trigger the toast UI.
+    /// Set by `unlock()`, cleared by the view after displaying.
+    var lastUnlockedAchievement: AchievementDefinitions.Definition?
+
     // MARK: - Initialization
 
     /// Creates an AchievementManager.
@@ -148,6 +152,9 @@ final class AchievementManager {
 
         // Update cache
         earnedCache.insert(definition.id)
+
+        // Trigger toast notification in the UI
+        lastUnlockedAchievement = definition
 
         Self.logger.info(
             "Achievement unlocked: '\(definition.title)' (+\(definition.xpBonus) XP)"
