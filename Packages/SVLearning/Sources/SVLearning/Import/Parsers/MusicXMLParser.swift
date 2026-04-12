@@ -1,4 +1,7 @@
 import Foundation
+import os
+
+private let musicXMLLogger = Logger.survibe(category: "MusicXMLParser")
 
 /// Parses MusicXML documents into a `ParsedNotation` using Foundation's `XMLParser`.
 ///
@@ -27,6 +30,7 @@ public struct MusicXMLParser: NotationParserProtocol {
         guard !trimmed.isEmpty else { throw ImportError.emptyInput }
 
         guard let data = trimmed.data(using: .utf8) else {
+            musicXMLLogger.error("Could not encode MusicXML as UTF-8")
             throw ImportError.parsingFailed("Could not encode MusicXML as UTF-8.")
         }
 
@@ -36,12 +40,18 @@ public struct MusicXMLParser: NotationParserProtocol {
         let success = xmlParser.parse()
 
         if !success, let error = xmlParser.parserError {
+            musicXMLLogger.error("XML parse error: \(error.localizedDescription, privacy: .public)")
             throw ImportError.parsingFailed("XML parse error: \(error.localizedDescription)")
         }
 
         guard !delegate.notes.isEmpty else {
+            musicXMLLogger.error("No notes found in MusicXML document")
             throw ImportError.parsingFailed("No notes found in MusicXML document.")
         }
+
+        musicXMLLogger.info(
+            "MusicXML parse complete: \(delegate.notes.count, privacy: .public) notes extracted"
+        )
 
         return ParsedNotation(
             format: .musicXML,
