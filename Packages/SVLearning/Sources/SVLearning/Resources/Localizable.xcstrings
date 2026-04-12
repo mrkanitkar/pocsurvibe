@@ -21,6 +21,9 @@
         }
       }
     },
+    "Could not detect the notation format. Try selecting a format manually." : {
+
+    },
     "Lesson Content" : {
       "localizations" : {
         "hi" : {
@@ -30,6 +33,15 @@
           }
         }
       }
+    },
+    "MIDI synthesis failed: %@" : {
+
+    },
+    "No valid notes were found after normalisation." : {
+
+    },
+    "Parsing failed: %@" : {
+
     },
     "Practice Mode" : {
       "localizations" : {
@@ -51,6 +63,9 @@
         }
       }
     },
+    "Required field '%@' is missing." : {
+
+    },
     "Song Library" : {
       "localizations" : {
         "hi" : {
@@ -60,6 +75,9 @@
           }
         }
       }
+    },
+    "The notation input is empty." : {
+
     }
   },
   "version" : "1.0"

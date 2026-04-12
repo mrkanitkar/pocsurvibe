@@ -11,6 +11,25 @@
         }
       }
     },
+    "Audio engine failed to start: %@" : {
+
+    },
+    "Audio engine is not running." : {
+
+    },
+    "Audio session configuration failed: %@" : {
+
+    },
+    "Audio session failed. Primary: %@. Fallback: %@" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Audio session failed. Primary: %1$@. Fallback: %2$@"
+          }
+        }
+      }
+    },
     "Beginner" : {
       "localizations" : {
         "hi" : {
@@ -150,6 +169,9 @@
           }
         }
       }
+    },
+    "MIDI sequencer error: %@" : {
+
     },
     "Ni, the seventh note" : {
       "localizations" : {
