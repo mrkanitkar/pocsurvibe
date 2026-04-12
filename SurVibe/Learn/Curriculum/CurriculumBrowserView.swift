@@ -83,7 +83,8 @@ struct CurriculumBrowserView: View {
     private func lessonsForCurriculum(_ curriculum: Curriculum) -> [Lesson] {
         guard let lessonIds = curriculum.decodedLessonIds else { return [] }
         let lessonMap = Dictionary(
-            uniqueKeysWithValues: allLessons.map { ($0.lessonId, $0) }
+            allLessons.map { ($0.lessonId, $0) },
+            uniquingKeysWith: { first, _ in first }
         )
         return lessonIds.compactMap { lessonMap[$0] }
     }
