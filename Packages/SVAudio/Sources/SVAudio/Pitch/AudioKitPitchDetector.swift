@@ -1,10 +1,13 @@
 import AVFoundation
 import Accelerate
 import Synchronization
-import os.log
+import os
 
 /// Module-level logger — not actor-isolated, safe to use from any context.
 private let pitchLogger = Logger.survibe(category: "PitchDetector")
+
+/// Module-level signposter for Instruments pitch detection intervals.
+private let pitchSignposter = OSSignposter(subsystem: "com.survibe", category: "PitchDetection")
 
 /// Autocorrelation-based pitch detector using Accelerate/vDSP.
 ///
@@ -226,10 +229,13 @@ public final class AudioKitPitchDetector: PitchDetectorProtocol {
                 processedCount += 1
                 #endif
 
+                let signpostID = pitchSignposter.makeSignpostID()
+                let state = pitchSignposter.beginInterval("PitchDetection", id: signpostID)
                 let result = Self.processWorkBuffer(
                     workBuf, bufferSize: bufferSize,
                     refPitch: refPitch, minFreq: minFreq, maxFreq: maxFreq
                 )
+                pitchSignposter.endInterval("PitchDetection", state)
 
                 #if DEBUG
                 if processedCount % 50 == 1 {

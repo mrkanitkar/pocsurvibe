@@ -81,6 +81,13 @@ public enum ChromagramDSP {
     /// Minimum match score for chord template matching.
     static let minChordMatchScore: Double = 0.6
 
+    // MARK: - Signposter
+
+    /// Signposter for Instruments profiling of FFT and chord matching.
+    static let chromaSignposter = OSSignposter(
+        subsystem: "com.survibe", category: "ChromagramDSP"
+    )
+
     // MARK: - Caches (AUD-026, AUD-032)
 
     /// Cache for `vDSP_FFTSetup` objects keyed by log2(fftSize).
@@ -181,6 +188,9 @@ public enum ChromagramDSP {
         }
         // No defer { vDSP_destroy_fftsetup } — setup is kept alive in fftCache.
 
+        let signpostID = chromaSignposter.makeSignpostID()
+        let state = chromaSignposter.beginInterval("FFTComputation", id: signpostID)
+
         let halfN = fftSize / 2
 
         // Zero-pad input to fftSize
@@ -226,6 +236,8 @@ public enum ChromagramDSP {
                 vDSP_zvabs(&splitComplex, 1, &magnitudes, 1, vDSP_Length(halfN))
             }
         }
+
+        chromaSignposter.endInterval("FFTComputation", state)
 
         return magnitudes
     }

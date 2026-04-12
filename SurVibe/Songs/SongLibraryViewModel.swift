@@ -19,6 +19,9 @@ final class SongLibraryViewModel {
 
     private static let logger = Logger.survibe(category: "SongLibrary")
 
+    /// Signposter for Instruments SwiftData fetch intervals.
+    private static let signposter = OSSignposter(subsystem: "com.survibe", category: "SwiftDataFetch")
+
     // MARK: - Properties
 
     /// All songs fetched from SwiftData.
@@ -110,7 +113,10 @@ final class SongLibraryViewModel {
             let descriptor = FetchDescriptor<Song>(
                 sortBy: [SortDescriptor(\Song.sortOrder)]
             )
+            let signpostID = Self.signposter.makeSignpostID()
+            let state = Self.signposter.beginInterval("SongFetch", id: signpostID)
             allSongs = try modelContext.fetch(descriptor)
+            Self.signposter.endInterval("SongFetch", state)
             Self.logger.info("Loaded \(self.allSongs.count, privacy: .public) songs")
         } catch {
             Self.logger.error("Song fetch failed: \(error.localizedDescription, privacy: .public)")
