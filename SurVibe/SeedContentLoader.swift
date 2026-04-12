@@ -59,6 +59,16 @@ final class SeedContentLoader {
         }
     }
 
+    /// Resets the seed content version flag after a schema migration.
+    ///
+    /// Called by `SurVibeApp` when `deleteSwiftDataStore()` wipes the store,
+    /// ensuring seed content is re-imported into the empty store. Safe to call
+    /// in both Debug and Release builds.
+    static func resetForSchemaMigration() {
+        UserDefaults.standard.removeObject(forKey: seedContentVersionKey)
+        logger.info("Seed content version reset for schema migration")
+    }
+
     /// Resets the seed content version flag (for testing/debug).
     ///
     /// - Warning: Use only in debug builds or testing contexts.

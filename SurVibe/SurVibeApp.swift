@@ -81,6 +81,8 @@ struct SurVibeApp: App {
                 "Schema version changed (\(previousVersion) → \(currentSchemaVersion)). Resetting store."
             )
             deleteSwiftDataStore()
+            // Reset seed content version so SeedContentLoader re-imports after store wipe
+            SeedContentLoader.resetForSchemaMigration()
         }
         UserDefaults.standard.set(currentSchemaVersion, forKey: "survibe_schema_version")
 
