@@ -33,6 +33,8 @@ struct LessonStepView: View {
     private var dismiss
     @Environment(\.accessibilityReduceMotion)
     private var reduceMotion
+    @Environment(\.modelContext)
+    private var modelContext
 
     /// The lesson player view model managing state and progression.
     @State
@@ -226,18 +228,20 @@ struct LessonStepView: View {
     /// - Returns: The step-type-specific content view.
     @ViewBuilder
     private func stepTypeContent(step: LessonStep, viewModel: LessonPlayerViewModel) -> some View {
+        let song = resolveSong(for: step.songId)
+
         switch step.stepType {
         case "intro", "read":
             introReadContent(step: step)
 
         case "listen":
-            listenContent(step: step, viewModel: viewModel)
+            listenContent(step: step, song: song, viewModel: viewModel)
 
         case "sing":
-            singContent(step: step, viewModel: viewModel)
+            singContent(step: step, song: song, viewModel: viewModel)
 
         case "exercise", "practice":
-            exerciseContent(step: step, viewModel: viewModel)
+            exerciseContent(step: step, song: song, viewModel: viewModel)
 
         case "quiz":
             quizContent(step: step, viewModel: viewModel)
@@ -247,6 +251,20 @@ struct LessonStepView: View {
                 .font(.body)
                 .lineSpacing(6)
         }
+    }
+
+    /// Resolves a `LessonStep.songId` to a `Song` from the model context.
+    ///
+    /// Returns `nil` if the step has no song ID or if no matching song exists.
+    ///
+    /// - Parameter songId: The optional song UUID from a `LessonStep`.
+    /// - Returns: The matching `Song`, or `nil`.
+    private func resolveSong(for songId: UUID?) -> Song? {
+        guard let songId else { return nil }
+        let descriptor = FetchDescriptor<Song>(
+            predicate: #Predicate { $0.id == songId }
+        )
+        return try? modelContext.fetch(descriptor).first
     }
 }
 

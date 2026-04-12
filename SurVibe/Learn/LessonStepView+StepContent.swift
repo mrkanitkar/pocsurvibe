@@ -20,203 +20,68 @@ extension LessonStepView {
 
     /// Content view for listen step type.
     ///
-    /// Displays the step content with an audio playback placeholder.
-    /// The gate unlocks when the learner taps the "Mark as Listened" button.
+    /// Delegates to `ListenStepView` with the resolved song and gate callback.
     ///
     /// - Parameters:
     ///   - step: The lesson step to display.
     ///   - viewModel: The view model for gate callbacks.
-    /// - Returns: A view with text and audio controls.
-    func listenContent(step: LessonStep, viewModel: LessonPlayerViewModel) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(verbatim: step.content)
-                .font(.body)
-                .lineSpacing(6)
-
-            placeholderCard(
-                icon: "headphones",
-                title: "Audio Playback",
-                description: "Audio playback will be available soon"
-            )
-
-            if viewModel.gateStatus != .unlocked {
-                Button {
-                    viewModel.listenCompleted()
-                } label: {
-                    Label("Mark as Listened", systemImage: "checkmark.circle")
-                        .font(.subheadline)
-                        .fontWeight(.medium)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 10)
-                        .foregroundStyle(.white)
-                        .background(
-                            RoundedRectangle(cornerRadius: 10)
-                                .fill(Color.purple)
-                        )
-                }
-                .accessibilityLabel(Text("Mark as listened"))
-                .accessibilityHint(
-                    Text("Double tap to mark this step as listened and unlock the next step")
-                )
-            }
+    /// - Returns: The listen step view.
+    func listenContent(step: LessonStep, song: Song?, viewModel: LessonPlayerViewModel) -> some View {
+        ListenStepView(step: step, song: song) {
+            viewModel.listenCompleted()
         }
     }
 
     /// Content view for sing step type.
     ///
-    /// Displays the step content with a singing placeholder.
-    /// The gate unlocks when accuracy >= 0.60 or the learner taps "Skip".
+    /// Delegates to `SingStepView` with the resolved song, accuracy callback, and skip callback.
     ///
     /// - Parameters:
     ///   - step: The lesson step to display.
     ///   - viewModel: The view model for gate callbacks.
-    /// - Returns: A view with text and singing controls.
-    func singContent(step: LessonStep, viewModel: LessonPlayerViewModel) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(verbatim: step.content)
-                .font(.body)
-                .lineSpacing(6)
-
-            placeholderCard(
-                icon: "waveform",
-                title: "Sing Along",
-                description: "Sing along mode will be available soon"
-            )
-
-            if viewModel.gateStatus != .unlocked {
-                HStack(spacing: 12) {
-                    Button {
-                        viewModel.singManualAdvance()
-                    } label: {
-                        Text("Skip")
-                            .font(.subheadline)
-                            .fontWeight(.medium)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 10)
-                            .foregroundStyle(.secondary)
-                            .background(
-                                RoundedRectangle(cornerRadius: 10)
-                                    .fill(Color(.tertiarySystemBackground))
-                            )
-                    }
-                    .accessibilityLabel(Text("Skip singing"))
-                    .accessibilityHint(
-                        Text("Double tap to skip the singing step and continue")
-                    )
-
-                    Button {
-                        viewModel.singCompleted(accuracy: 1.0)
-                    } label: {
-                        Label("Done Singing", systemImage: "checkmark.circle")
-                            .font(.subheadline)
-                            .fontWeight(.medium)
-                            .frame(maxWidth: .infinity)
-                            .padding(.vertical, 10)
-                            .foregroundStyle(.white)
-                            .background(
-                                RoundedRectangle(cornerRadius: 10)
-                                    .fill(Color.pink)
-                            )
-                    }
-                    .accessibilityLabel(Text("Done singing"))
-                    .accessibilityHint(
-                        Text("Double tap to mark singing as complete")
-                    )
-                }
+    /// - Returns: The sing step view.
+    func singContent(step: LessonStep, song: Song?, viewModel: LessonPlayerViewModel) -> some View {
+        SingStepView(
+            step: step,
+            song: song,
+            onComplete: { accuracy in
+                viewModel.singCompleted(accuracy: accuracy)
+            },
+            onManualAdvance: {
+                viewModel.singManualAdvance()
             }
-        }
+        )
     }
 
     /// Content view for exercise and practice step types.
     ///
-    /// Displays the step content with an exercise placeholder.
-    /// The gate unlocks when the learner completes the exercise.
+    /// Delegates to `ExerciseStepView` with the resolved song and gate callback.
     ///
     /// - Parameters:
     ///   - step: The lesson step to display.
     ///   - viewModel: The view model for gate callbacks.
-    /// - Returns: A view with text and exercise controls.
+    /// - Returns: The exercise step view.
     func exerciseContent(
         step: LessonStep,
+        song: Song?,
         viewModel: LessonPlayerViewModel
     ) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(verbatim: step.content)
-                .font(.body)
-                .lineSpacing(6)
-
-            placeholderCard(
-                icon: step.stepType == "practice" ? "music.mic" : "hand.tap",
-                title: step.stepType == "practice" ? "Practice Mode" : "Interactive Exercise",
-                description: step.stepType == "practice"
-                    ? "Practice mode will be available soon"
-                    : "Interactive exercises will be available soon"
-            )
-
-            if viewModel.gateStatus != .unlocked {
-                Button {
-                    viewModel.exerciseCompleted()
-                } label: {
-                    Label("Mark as Complete", systemImage: "checkmark.circle")
-                        .font(.subheadline)
-                        .fontWeight(.medium)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 10)
-                        .foregroundStyle(.white)
-                        .background(
-                            RoundedRectangle(cornerRadius: 10)
-                                .fill(Color.green)
-                        )
-                }
-                .accessibilityLabel(Text("Mark exercise as complete"))
-                .accessibilityHint(
-                    Text("Double tap to mark the exercise as complete and unlock the next step")
-                )
-            }
+        ExerciseStepView(step: step, song: song) {
+            viewModel.exerciseCompleted()
         }
     }
 
     /// Content view for quiz step type.
     ///
-    /// Displays the step content with a quiz placeholder.
-    /// The gate unlocks when the learner completes the quiz.
+    /// Delegates to `QuizStepView` which decodes JSON questions and runs the quiz engine.
     ///
     /// - Parameters:
     ///   - step: The lesson step to display.
     ///   - viewModel: The view model for gate callbacks.
-    /// - Returns: A view with text and quiz controls.
+    /// - Returns: The quiz step view.
     func quizContent(step: LessonStep, viewModel: LessonPlayerViewModel) -> some View {
-        VStack(alignment: .leading, spacing: 12) {
-            Text(verbatim: step.content)
-                .font(.body)
-                .lineSpacing(6)
-
-            placeholderCard(
-                icon: "questionmark.circle",
-                title: "Quiz",
-                description: "Quizzes will be available soon"
-            )
-
-            if viewModel.gateStatus != .unlocked {
-                Button {
-                    viewModel.quizCompleted(score: 1.0)
-                } label: {
-                    Label("Complete Quiz", systemImage: "checkmark.circle")
-                        .font(.subheadline)
-                        .fontWeight(.medium)
-                        .frame(maxWidth: .infinity)
-                        .padding(.vertical, 10)
-                        .foregroundStyle(.white)
-                        .background(
-                            RoundedRectangle(cornerRadius: 10)
-                                .fill(Color.yellow)
-                        )
-                }
-                .accessibilityLabel(Text("Complete quiz"))
-                .accessibilityHint(
-                    Text("Double tap to mark the quiz as complete and unlock the next step")
-                )
-            }
+        QuizStepView(step: step) { score in
+            viewModel.quizCompleted(score: score)
         }
     }
 }
