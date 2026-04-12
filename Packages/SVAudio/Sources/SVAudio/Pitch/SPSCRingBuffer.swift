@@ -1,4 +1,8 @@
+import os
 import Synchronization
+
+/// Module-level logger for SPSCRingBuffer (Sendable type — cannot use static stored property).
+private let spscLogger = Logger.survibe(category: "SPSCRingBuffer")
 
 /// A lock-free, single-producer single-consumer ring buffer for audio samples.
 ///
@@ -60,9 +64,13 @@ public final class SPSCRingBuffer: Sendable {
         self.storage.initialize(repeating: 0.0)
         self._writeIndex = Atomic<Int>(0)
         self._totalWritten = Atomic<Int>(0)
+        spscLogger.info(
+            "SPSCRingBuffer init: requested \(capacity, privacy: .public), actual \(roundedCapacity, privacy: .public)"
+        )
     }
 
     deinit {
+        spscLogger.debug("SPSCRingBuffer deallocated")
         storage.deallocate()
     }
 
@@ -77,6 +85,7 @@ public final class SPSCRingBuffer: Sendable {
     ///   The pointer is only valid for the duration of the audio callback — this method
     ///   copies the data before returning.
     public func write(_ samples: UnsafeBufferPointer<Float>) {
+        // CRITICAL: ZERO logging here — this runs on the real-time audio thread.
         let count = min(samples.count, capacity)
         guard count > 0, let src = samples.baseAddress else { return }
 
@@ -107,12 +116,13 @@ public final class SPSCRingBuffer: Sendable {
     /// occurs inside this method.
     ///
     /// - Parameters:
-    ///   - count: Number of samples to read. Must be ≤ capacity.
+    ///   - count: Number of samples to read. Must be <= capacity.
     ///   - dest: Pre-allocated destination. Must have room for at least `count` elements.
     /// - Returns: `true` if enough samples were available; `false` if the buffer
     ///   has received fewer than `count` samples total (ring is not yet full enough).
     @discardableResult
     public func readLatest(count: Int, into dest: UnsafeMutableBufferPointer<Float>) -> Bool {
+        // CRITICAL: ZERO logging here — this runs on the real-time audio thread.
         guard count > 0, count <= capacity, let dst = dest.baseAddress else { return false }
 
         // Acquire load: see all writes that happened before the store(releasing) in write().

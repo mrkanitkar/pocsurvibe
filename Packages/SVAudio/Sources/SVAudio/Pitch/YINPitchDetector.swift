@@ -1,6 +1,10 @@
 import Foundation
 import AVFoundation
 import Accelerate
+import os
+
+/// Module-level logger for YINPitchDetector (nonisolated static methods need module-level access).
+private let yinLogger = Logger.survibe(category: "YINPitchDetector")
 
 /// Fallback YIN autocorrelation pitch detector using Accelerate/vDSP.
 /// Uses direct AVAudioEngine installTap for buffer access.
@@ -32,6 +36,7 @@ public final class YINPitchDetector: PitchDetectorProtocol {
     public init() {}
 
     public func start() -> AsyncStream<PitchResult> {
+        yinLogger.info("YIN pitch detector started")
         let stream = AsyncStream<PitchResult> { [weak self] continuation in
             guard let self else {
                 continuation.finish()
@@ -74,6 +79,7 @@ public final class YINPitchDetector: PitchDetectorProtocol {
     ///
     /// The audio render thread only performs: RMS check + Array copy + queue.async.
     /// All O(n²) YIN computation runs on `processingQueue`.
+    /// CRITICAL: No logging here — audio thread callback.
     nonisolated private static func handleMicTap(
         buffer: AVAudioPCMBuffer,
         context: TapContext
@@ -143,6 +149,7 @@ public final class YINPitchDetector: PitchDetectorProtocol {
     }
 
     public func stop() {
+        yinLogger.info("YIN pitch detector stopped")
         isDetecting = false
         status = "Stopped"
         AudioEngineManager.shared.removeMicTap()
