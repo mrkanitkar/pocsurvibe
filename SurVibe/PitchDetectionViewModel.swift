@@ -1,5 +1,5 @@
-import Accelerate
 import AVFoundation
+import Accelerate
 import Foundation
 import Observation
 import SVAudio
@@ -85,7 +85,11 @@ final class PitchDetectionViewModel {
     /// Error message to display.
     var errorMessage: String?
     /// Detection history for the last few notes (rolling buffer, pre-allocated).
-    var recentNotes: [DetectedNote] = { var a = [DetectedNote](); a.reserveCapacity(14); return a }()
+    var recentNotes: [DetectedNote] = {
+        var a = [DetectedNote]()
+        a.reserveCapacity(14)
+        return a
+    }()
     /// Debug status string for UI feedback.
     var debugStatus: String = "Not started"
     /// Number of pitch detections received.
@@ -93,7 +97,7 @@ final class PitchDetectionViewModel {
     /// Absolute MIDI note number (36-96) for keyboard highlighting.
     var activeMidiNote: Int? {
         guard let result = currentResult,
-              let swar = Swar.allCases.first(where: { $0.rawValue == result.noteName })
+            let swar = Swar.allCases.first(where: { $0.rawValue == result.noteName })
         else { return nil }
         return 60 + (result.octave - 4) * 12 + swar.midiOffset
     }
@@ -151,7 +155,7 @@ final class PitchDetectionViewModel {
         do {
             try AudioNodeAdapter.shared.connect()
         } catch {
-            vmLogger.error("AudioNodeAdapter connection failed: \(error.localizedDescription)")
+            vmLogger.error("AudioNodeAdapter connection failed: \(error.localizedDescription, privacy: .public)")
         }
 
         let context = prepareTapContext()
@@ -162,7 +166,7 @@ final class PitchDetectionViewModel {
 
         if tapInstalled {
             debugStatus = "Listening (\(context.mode.displayName)) — play a note"
-            vmLogger.info("Mic tap installed, mode=\(context.mode.rawValue), listening")
+            vmLogger.info("Mic tap installed, mode=\(context.mode.rawValue, privacy: .public), listening")
         } else {
             isListening = false
             stopFlag = nil
@@ -202,9 +206,9 @@ final class PitchDetectionViewModel {
 
 // MARK: - Listening Setup Helpers
 
-private extension PitchDetectionViewModel {
+extension PitchDetectionViewModel {
     /// Request microphone permission. Returns `true` if granted.
-    func requestMicPermission() async -> Bool {
+    fileprivate func requestMicPermission() async -> Bool {
         permissions.updateMicrophoneStatus()
         let granted = await permissions.requestMicrophoneAccess()
         if !granted {
@@ -217,7 +221,7 @@ private extension PitchDetectionViewModel {
     }
 
     /// Start the audio engine. Returns `true` if running.
-    func startEngine() async -> Bool {
+    fileprivate func startEngine() async -> Bool {
         debugStatus = "Starting audio engine..."
         vmLogger.info("Mic permission granted, starting engine")
 
@@ -226,7 +230,7 @@ private extension PitchDetectionViewModel {
         } catch {
             errorMessage = String(localized: "Could not start audio: \(error.localizedDescription)")
             debugStatus = "Engine failed: \(error.localizedDescription)"
-            vmLogger.error("Engine start failed: \(error.localizedDescription)")
+            vmLogger.error("Engine start failed: \(error.localizedDescription, privacy: .public)")
             return false
         }
 
@@ -242,7 +246,7 @@ private extension PitchDetectionViewModel {
     }
 
     /// Captures needed for the mic tap closure, bundled to avoid multi-field capture.
-    struct TapContext: Sendable {
+    fileprivate struct TapContext: Sendable {
         let mode: DetectionMode
         let refPitch: Double
         let realSamples: Int
@@ -254,7 +258,7 @@ private extension PitchDetectionViewModel {
     }
 
     /// Prepare the ring buffer and capture context for the mic tap.
-    func prepareTapContext() -> TapContext {
+    fileprivate func prepareTapContext() -> TapContext {
         let mode = detectionMode
         let preset = latencyPreset
 
@@ -280,11 +284,12 @@ private extension PitchDetectionViewModel {
     }
 
     /// Build the mic tap handler closure from a prepared context.
-    func buildMicTapHandler(context: TapContext) -> @Sendable (AVAudioPCMBuffer, AVAudioTime) -> Void {
+    fileprivate func buildMicTapHandler(context: TapContext) -> @Sendable (AVAudioPCMBuffer, AVAudioTime) -> Void {
         { buffer, _ in
             guard !context.flag.isSet,
-                  let channelData = buffer.floatChannelData?[0],
-                  buffer.frameLength > 0 else { return }
+                let channelData = buffer.floatChannelData?[0],
+                buffer.frameLength > 0
+            else { return }
             let frameLength = Int(buffer.frameLength)
             let sampleRate = buffer.format.sampleRate
             let samples = Array(UnsafeBufferPointer(start: channelData, count: frameLength))
@@ -301,63 +306,105 @@ private extension PitchDetectionViewModel {
     }
 }
 
-private extension PitchDetectionViewModel {
+extension PitchDetectionViewModel {
     /// Run melody and/or chord DSP, then dispatch results to MainActor.
-    nonisolated static func processDSP(
-        samples: [Float], sampleRate: Double, bufNum: Int, context: TapContext
+    nonisolated fileprivate static func processDSP(
+        samples: [Float],
+        sampleRate: Double,
+        bufNum: Int,
+        context: TapContext
     ) {
         let amplitude = PitchDSP.calculateRMS(samples)
-        if bufNum % 50 == 1 { PitchDSP.logger.info("Buf #\(bufNum) amp=\(String(format: "%.6f", amplitude))") }
+        if bufNum % 50 == 1 {
+            PitchDSP.logger.info("Buf #\(bufNum) amp=\(String(format: "%.6f", amplitude), privacy: .public)")
+        }
         let melody = runMelodyPipeline(
-            samples: samples, sampleRate: sampleRate,
-            amplitude: amplitude, mode: context.mode, refPitch: context.refPitch)
+            samples: samples,
+            sampleRate: sampleRate,
+            amplitude: amplitude,
+            mode: context.mode,
+            refPitch: context.refPitch
+        )
         let chord = runChordPipeline(
-            mode: context.mode, ringBuf: context.ringBuf,
-            realSamples: context.realSamples, sampleRate: sampleRate, refPitch: context.refPitch)
-        let weakRef = context.weakRef, mode = context.mode
+            mode: context.mode,
+            ringBuf: context.ringBuf,
+            realSamples: context.realSamples,
+            sampleRate: sampleRate,
+            refPitch: context.refPitch
+        )
+        let weakRef = context.weakRef
+        let mode = context.mode
         Task { @MainActor in
             guard let vm = weakRef.vm, vm.isListening else { return }
-            vm.applyResults(amplitude: amplitude, melodyResult: melody,
-                            chordDetection: chord, centsForExpression: melody?.cents, mode: mode)
+            vm.applyResults(
+                amplitude: amplitude,
+                melodyResult: melody,
+                chordDetection: chord,
+                centsForExpression: melody?.cents,
+                mode: mode
+            )
         }
     }
 
     /// Autocorrelation melody detection. Returns nil if below threshold.
-    nonisolated static func runMelodyPipeline(
-        samples: [Float], sampleRate: Double,
-        amplitude: Double, mode: DetectionMode, refPitch: Double
+    nonisolated fileprivate static func runMelodyPipeline(
+        samples: [Float],
+        sampleRate: Double,
+        amplitude: Double,
+        mode: DetectionMode,
+        refPitch: Double
     ) -> DSPResult? {
         guard mode == .melody || mode == .both, amplitude > 0.002 else { return nil }
         let detection = PitchDSP.detectPitchWithConfidence(samples: samples, sampleRate: sampleRate)
         guard detection.frequency > 0,
-              let (name, oct, cents) = try? SwarUtility.frequencyToNote(
-                  detection.frequency, referencePitch: refPitch)
+            let (name, oct, cents) = try? SwarUtility.frequencyToNote(
+                detection.frequency,
+                referencePitch: refPitch
+            )
         else { return nil }
-        return DSPResult(amplitude: amplitude, frequency: detection.frequency, noteName: name,
-                         westernName: SwarUtility.westernName(for: name),
-                         octave: oct, cents: cents, confidence: detection.confidence)
+        return DSPResult(
+            amplitude: amplitude,
+            frequency: detection.frequency,
+            noteName: name,
+            westernName: SwarUtility.westernName(for: name),
+            octave: oct,
+            cents: cents,
+            confidence: detection.confidence
+        )
     }
 
     /// FFT chromagram chord detection. Returns nil if not in chord mode.
-    nonisolated static func runChordPipeline(
-        mode: DetectionMode, ringBuf: AudioRingBuffer?,
-        realSamples: Int, sampleRate: Double, refPitch: Double
+    nonisolated fileprivate static func runChordPipeline(
+        mode: DetectionMode,
+        ringBuf: AudioRingBuffer?,
+        realSamples: Int,
+        sampleRate: Double,
+        refPitch: Double
     ) -> ChordResult? {
         guard mode == .chord || mode == .both,
-              let ringBuf, let fftSamples = ringBuf.read(count: realSamples) else { return nil }
+            let ringBuf, let fftSamples = ringBuf.read(count: realSamples)
+        else { return nil }
         return ChromagramDSP.analyzeChord(samples: fftSamples, sampleRate: sampleRate, referencePitch: refPitch)
     }
 
     /// Apply DSP results to ViewModel state on MainActor.
-    func applyResults(
-        amplitude: Double, melodyResult: DSPResult?,
-        chordDetection: ChordResult?, centsForExpression: Double?, mode: DetectionMode
+    fileprivate func applyResults(
+        amplitude: Double,
+        melodyResult: DSPResult?,
+        chordDetection: ChordResult?,
+        centsForExpression: Double?,
+        mode: DetectionMode
     ) {
         liveAmplitude = amplitude
         if let r = melodyResult {
-            let pr = PitchResult(frequency: r.frequency, amplitude: r.amplitude,
-                                 noteName: r.noteName, octave: r.octave,
-                                 centsOffset: r.cents, confidence: r.confidence)
+            let pr = PitchResult(
+                frequency: r.frequency,
+                amplitude: r.amplitude,
+                noteName: r.noteName,
+                octave: r.octave,
+                centsOffset: r.cents,
+                confidence: r.confidence
+            )
             detectionCount += 1
             currentResult = pr
             westernNoteName = r.westernName
@@ -380,19 +427,27 @@ private extension PitchDetectionViewModel {
             }
             if centsHistory.count >= 10 {
                 currentExpression = PitchExpressionAnalyzer.analyze(
-                    centsHistory: centsHistory, hopIntervalSeconds: 1024.0 / 44100.0)
+                    centsHistory: centsHistory,
+                    hopIntervalSeconds: 1024.0 / 44100.0
+                )
             }
         }
     }
 
     /// Append a detected note to the rolling history, deduplicating consecutive identical notes.
-    func appendNote(_ result: PitchResult) {
+    fileprivate func appendNote(_ result: PitchResult) {
         let western = SwarUtility.westernName(for: result.noteName)
-        let note = DetectedNote(swarName: result.noteName, westernName: western,
-                                octave: result.octave, centsOffset: result.centsOffset,
-                                frequency: result.frequency, timestamp: result.timestamp)
+        let note = DetectedNote(
+            swarName: result.noteName,
+            westernName: western,
+            octave: result.octave,
+            centsOffset: result.centsOffset,
+            frequency: result.frequency,
+            timestamp: result.timestamp
+        )
         if let last = recentNotes.last,
-           last.swarName == note.swarName && last.octave == note.octave {
+            last.swarName == note.swarName && last.octave == note.octave
+        {
             recentNotes[recentNotes.count - 1] = note
             return
         }
@@ -400,154 +455,5 @@ private extension PitchDetectionViewModel {
         if recentNotes.count > maxRecentNotes {
             recentNotes = Array(recentNotes.suffix(maxRecentNotes))
         }
-    }
-}
-
-/// A detected note for display in the history list.
-struct DetectedNote: Identifiable {
-    let id = UUID()
-    let swarName: String
-    let westernName: String
-    let octave: Int
-    let centsOffset: Double
-    let frequency: Double
-    let timestamp: Date
-}
-
-/// Thread-safe boolean flag using Mutex for compiler-verified Sendable.
-private final class AtomicFlag: Sendable {
-    private let value = Mutex<Bool>(false)
-    // nonisolated: Mutex.withLock is itself nonisolated; safe from any thread.
-    nonisolated var isSet: Bool { value.withLock { $0 } }
-    nonisolated func set() { value.withLock { $0 = true } }
-}
-
-/// Thread-safe counter using Mutex for compiler-verified Sendable.
-private final class AtomicCounter: Sendable {
-    private let value = Mutex<Int>(0)
-    @discardableResult
-    // nonisolated: Mutex.withLock is itself nonisolated; safe from any thread.
-    nonisolated func increment() -> Int { value.withLock { $0 += 1; return $0 } }
-}
-
-/// Stateless DSP functions for pitch detection. Safe to call from any thread.
-/// `nonisolated` on the enum opts out of implicit `@MainActor` isolation
-/// from `SWIFT_DEFAULT_ACTOR_ISOLATION = MainActor` in the app target.
-nonisolated enum PitchDSP {
-    /// Logger for DSP diagnostics — declared here (nonisolated context) so it
-    /// can be used from @Sendable mic tap closures and nonisolated static methods.
-    static let logger = Logger.survibe(category: "PitchDetectionVM")
-
-    /// Result of pitch detection with spectral confidence.
-    struct DetectionResult {
-        let frequency: Double
-        let confidence: Double
-    }
-
-    /// Calculate RMS amplitude from audio samples.
-    static func calculateRMS(_ samples: [Float]) -> Double {
-        var rms: Float = 0
-        samples.withUnsafeBufferPointer { ptr in
-            guard let base = ptr.baseAddress else { return }
-            vDSP_rmsqv(base, 1, &rms, vDSP_Length(samples.count))
-        }
-        return Double(rms)
-    }
-
-    private struct Peak { let lag: Int; let value: Float }
-
-    /// Autocorrelation-based pitch detection using Accelerate vDSP.
-    ///
-    /// Computes dot products at each lag, finds peaks, applies octave correction,
-    /// and refines with parabolic interpolation for sub-sample accuracy.
-    /// Returns frequency only; use `detectPitchWithConfidence` for spectral confidence.
-    static func detectPitch(samples: [Float], sampleRate: Double) -> Double {
-        detectPitchWithConfidence(samples: samples, sampleRate: sampleRate).frequency
-    }
-
-    /// Pitch detection with spectral confidence using peak-to-sidelobe ratio.
-    ///
-    /// Returns both the detected frequency and a spectral confidence value (0.0–1.0)
-    /// derived from the autocorrelation peak prominence rather than raw amplitude.
-    static func detectPitchWithConfidence(samples: [Float], sampleRate: Double) -> DetectionResult {
-        let frameCount = samples.count
-        guard frameCount > 4 else { return DetectionResult(frequency: 0, confidence: 0) }
-        let maxLag = frameCount / 2
-        var ac = computeAutocorrelation(samples: samples, maxLag: maxLag)
-        guard ac[0] > 0 else { return DetectionResult(frequency: 0, confidence: 0) }
-        normalizeInPlace(&ac, maxLag: maxLag)
-        let minLag = max(2, Int(sampleRate / 4000.0))
-        guard minLag < maxLag else { return DetectionResult(frequency: 0, confidence: 0) }
-        let peaks = findPeaks(in: ac, minLag: minLag, maxLag: maxLag)
-        guard let firstPeak = peaks.first else { return DetectionResult(frequency: 0, confidence: 0) }
-        let best = correctForOctaveError(firstPeak: firstPeak, allPeaks: peaks)
-        guard best.value > 0.15 else { return DetectionResult(frequency: 0, confidence: 0) }
-        let refined = refine(lag: best.lag, ac: ac, maxLag: maxLag)
-        guard refined > 0 else { return DetectionResult(frequency: 0, confidence: 0) }
-        let freq = sampleRate / refined
-        guard freq > 50 && freq < 4000 else { return DetectionResult(frequency: 0, confidence: 0) }
-
-        // Compute spectral confidence from autocorrelation peak prominence
-        let confidence = SpectralConfidence.compute(
-            autocorrelation: ac, bestLag: best.lag, minLag: minLag
-        )
-        return DetectionResult(frequency: freq, confidence: confidence)
-    }
-
-    /// Compute raw autocorrelation via vDSP dot products.
-    private static func computeAutocorrelation(samples: [Float], maxLag: Int) -> [Float] {
-        let n = samples.count
-        var ac = [Float](repeating: 0, count: maxLag)
-        samples.withUnsafeBufferPointer { buf in
-            guard let base = buf.baseAddress else { return }
-            for lag in 0..<maxLag {
-                var sum: Float = 0
-                let cnt = vDSP_Length(n - lag)
-                guard cnt > 0 else { continue }
-                vDSP_dotpr(base, 1, base + lag, 1, &sum, cnt)
-                ac[lag] = sum
-            }
-        }
-        return ac
-    }
-
-    /// Normalize autocorrelation in place by zero-lag energy.
-    private static func normalizeInPlace(_ ac: inout [Float], maxLag: Int) {
-        var inv: Float = 1.0 / ac[0]
-        var norm = [Float](repeating: 0, count: maxLag)
-        vDSP_vsmul(&ac, 1, &inv, &norm, 1, vDSP_Length(maxLag))
-        ac = norm
-    }
-
-    /// Find all peaks above confidence threshold.
-    private static func findPeaks(in ac: [Float], minLag: Int, maxLag: Int) -> [Peak] {
-        var peaks: [Peak] = []
-        var declining = true
-        for lag in minLag..<maxLag {
-            if declining && ac[lag] > ac[lag - 1] { declining = false }
-            if !declining && ac[lag] < ac[lag - 1] {
-                if ac[lag - 1] > 0.15 { peaks.append(Peak(lag: lag - 1, value: ac[lag - 1])) }
-                declining = true
-            }
-        }
-        return peaks
-    }
-
-    /// Correct for octave error by checking for sub-octave peak at ~2x lag.
-    private static func correctForOctaveError(firstPeak: Peak, allPeaks: [Peak]) -> Peak {
-        for peak in allPeaks where peak.lag != firstPeak.lag {
-            let ratio = Double(peak.lag) / Double(firstPeak.lag)
-            if ratio > 1.8 && ratio < 2.2 && peak.value >= firstPeak.value * 0.85 { return peak }
-        }
-        return firstPeak
-    }
-
-    /// Refine lag with parabolic interpolation.
-    private static func refine(lag: Int, ac: [Float], maxLag: Int) -> Double {
-        guard lag > 0 && lag < maxLag - 1 else { return Double(lag) }
-        let s0 = Double(ac[lag - 1]), s1 = Double(ac[lag]), s2 = Double(ac[lag + 1])
-        let denom = 2.0 * (2.0 * s1 - s2 - s0)
-        guard abs(denom) > 1e-10 else { return Double(lag) }
-        return Double(lag) + (s2 - s0) / denom
     }
 }

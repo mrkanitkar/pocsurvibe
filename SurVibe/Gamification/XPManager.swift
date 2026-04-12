@@ -12,8 +12,8 @@ enum XPSource: String, Sendable {
     case lessonStep = "lesson_step"
     /// XP earned from a riyaz (practice) session.
     case practice = "practice"
-    /// XP earned from mastering a song (high score threshold).
-    case songMastery = "song_mastery"
+    /// XP earned from achieving proficiency in a song (high score threshold).
+    case songProficiency = "song_mastery"
     /// XP earned from unlocking an achievement.
     case achievement = "achievement"
     /// Bonus XP earned from maintaining a daily practice streak.
@@ -98,7 +98,9 @@ final class XPManager {
             let profiles = try modelContext.fetch(descriptor)
             return profiles.first?.totalXP ?? 0
         } catch {
-            Self.logger.error("Failed to fetch UserProfile for totalXP: \(error.localizedDescription, privacy: .public)")
+            Self.logger.error(
+                "Failed to fetch UserProfile for totalXP: \(error.localizedDescription, privacy: .public)"
+            )
             return 0
         }
     }

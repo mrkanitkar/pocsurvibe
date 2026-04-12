@@ -49,7 +49,41 @@ struct AchievementGalleryView: View {
             })
             : nil
 
-        return VStack(spacing: 8) {
+        return cardContent(definition: definition, isEarned: isEarned, earned: earned)
+            .frame(maxWidth: .infinity)
+            .padding(12)
+            .background(
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(Color(.tertiarySystemBackground))
+                    .opacity(isEarned ? 1.0 : 0.6)
+            )
+            .animation(
+                reduceMotion ? .none : .easeInOut(duration: 0.2),
+                value: isEarned
+            )
+            .accessibilityElement(children: .ignore)
+            .accessibilityLabel(
+                Text(
+                    isEarned
+                        ? "\(definition.title): \(definition.description). Earned."
+                        : "\(definition.title): Locked"
+                )
+            )
+    }
+
+    /// The inner content of an achievement card (icon, title, description, metadata).
+    ///
+    /// - Parameters:
+    ///   - definition: The achievement definition to display.
+    ///   - isEarned: Whether the achievement has been earned.
+    ///   - earned: The earned `Achievement` record, if available.
+    /// - Returns: A `VStack` with the card's text and icon content.
+    private func cardContent(
+        definition: AchievementDefinitions.Definition,
+        isEarned: Bool,
+        earned: Achievement?
+    ) -> some View {
+        VStack(spacing: 8) {
             Image(systemName: isEarned ? "star.circle.fill" : "lock.circle")
                 .font(.system(size: 36))
                 .foregroundStyle(isEarned ? .yellow : .gray)
@@ -80,25 +114,6 @@ struct AchievementGalleryView: View {
                     .foregroundStyle(isEarned ? .green : .gray)
             }
         }
-        .frame(maxWidth: .infinity)
-        .padding(12)
-        .background(
-            RoundedRectangle(cornerRadius: 12)
-                .fill(Color(.tertiarySystemBackground))
-                .opacity(isEarned ? 1.0 : 0.6)
-        )
-        .animation(
-            reduceMotion ? .none : .easeInOut(duration: 0.2),
-            value: isEarned
-        )
-        .accessibilityElement(children: .ignore)
-        .accessibilityLabel(
-            Text(
-                isEarned
-                    ? "\(definition.title): \(definition.description). Earned."
-                    : "\(definition.title): Locked"
-            )
-        )
     }
 
     // MARK: - Private Methods

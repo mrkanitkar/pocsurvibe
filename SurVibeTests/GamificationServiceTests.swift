@@ -97,17 +97,17 @@ struct GamificationServiceTests {
     func practiceCompletionAwardsXP() throws {
         let (service, _) = try makeService()
 
-        service.handlePracticeCompleted(xp: 20, songId: "song-01", songMastered: false)
+        service.handlePracticeCompleted(xp: 20, songId: "song-01", songProficient: false)
 
         #expect(service.xpManager.totalXP == 20)
     }
 
     @Test @MainActor
-    func practiceWithMasteryAwardsBonusXP() throws {
+    func practiceWithProficiencyAwardsBonusXP() throws {
         let (service, _) = try makeService()
 
-        // 20 practice XP + 50 mastery XP = 70 XP
-        service.handlePracticeCompleted(xp: 20, songId: "song-01", songMastered: true)
+        // 20 practice XP + 50 proficiency XP = 70 XP
+        service.handlePracticeCompleted(xp: 20, songId: "song-01", songProficient: true)
 
         #expect(service.xpManager.totalXP == 70)
     }
@@ -198,18 +198,18 @@ struct GamificationServiceTests {
     func practiceCompletionCreatesXPEntries() throws {
         let (service, context) = try makeService()
 
-        service.handlePracticeCompleted(xp: 30, songId: "song-01", songMastered: true)
+        service.handlePracticeCompleted(xp: 30, songId: "song-01", songProficient: true)
 
         let descriptor = FetchDescriptor<XPEntry>(
             sortBy: [SortDescriptor(\.earnedAt)]
         )
         let entries = try context.fetch(descriptor)
-        // 1 practice entry + 1 mastery entry = 2
+        // 1 practice entry + 1 proficiency entry = 2
         #expect(entries.count == 2)
 
         let practiceEntry = entries.first { $0.source == "practice" }
-        let masteryEntry = entries.first { $0.source == "song_mastery" }
+        let proficiencyEntry = entries.first { $0.source == "song_mastery" }
         #expect(practiceEntry?.amount == 30)
-        #expect(masteryEntry?.amount == 50)
+        #expect(proficiencyEntry?.amount == 50)
     }
 }

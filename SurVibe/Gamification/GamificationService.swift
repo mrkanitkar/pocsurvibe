@@ -99,26 +99,26 @@ final class GamificationService {
     /// Called when a practice session finishes.
     ///
     /// Awards practice XP (pre-computed by `PracticeScoring`), optionally awards
-    /// song mastery XP, recomputes streak, and evaluates achievements.
+    /// song proficiency XP, recomputes streak, and evaluates achievements.
     ///
     /// - Parameters:
     ///   - xp: XP earned from practice (from `PracticeScoring.xpEarned`).
     ///   - songId: The practiced song's identifier.
-    ///   - songMastered: Whether the song was mastered (>= 3 stars) in this session.
-    func handlePracticeCompleted(xp: Int, songId: String, songMastered: Bool) {
+    ///   - songProficient: Whether the song reached proficiency (>= 3 stars) in this session.
+    func handlePracticeCompleted(xp: Int, songId: String, songProficient: Bool) {
         xpManager.awardXP(amount: xp, source: .practice, sourceId: songId)
 
-        if songMastered {
-            xpManager.awardXP(amount: 50, source: .songMastery, sourceId: songId)
+        if songProficient {
+            xpManager.awardXP(amount: 50, source: .songProficiency, sourceId: songId)
         }
 
         streakTracker.recompute()
 
         let newRang = rangSystem.recalculate()
-        evaluateAchievements(newRangLevel: newRang, hasMasteredSong: songMastered)
+        evaluateAchievements(newRangLevel: newRang, hasProficientSong: songProficient)
 
         Self.logger.info(
-            "Practice completed: song=\(songId, privacy: .public) xp=\(xp) mastered=\(songMastered)"
+            "Practice completed: song=\(songId, privacy: .public) xp=\(xp) mastered=\(songProficient)"
         )
     }
 
@@ -145,18 +145,18 @@ final class GamificationService {
     ///   - latestQuizScore: Quiz score from the just-completed step, if any.
     ///   - newRangLevel: New rang if a level-up just occurred.
     ///   - firstPitchDetected: Whether this is the user's first pitch detection.
-    ///   - hasMasteredSong: Whether a song was mastered in this session.
+    ///   - hasProficientSong: Whether a song reached proficiency in this session.
     private func evaluateAchievements(
         latestQuizScore: Double? = nil,
         newRangLevel: RangLevel? = nil,
         firstPitchDetected: Bool = false,
-        hasMasteredSong: Bool = false
+        hasProficientSong: Bool = false
     ) {
         let context = buildAchievementContext(
             latestQuizScore: latestQuizScore,
             newRangLevel: newRangLevel,
             firstPitchDetected: firstPitchDetected,
-            hasMasteredSong: hasMasteredSong
+            hasProficientSong: hasProficientSong
         )
         achievementManager.checkTriggers(context: context)
     }
@@ -167,13 +167,13 @@ final class GamificationService {
     ///   - latestQuizScore: Quiz score from the current event.
     ///   - newRangLevel: Rang level if a level-up occurred.
     ///   - firstPitchDetected: First pitch flag.
-    ///   - hasMasteredSong: Song mastery flag.
+    ///   - hasProficientSong: Song proficiency flag.
     /// - Returns: A populated `AchievementContext`.
     private func buildAchievementContext(
         latestQuizScore: Double?,
         newRangLevel: RangLevel?,
         firstPitchDetected: Bool,
-        hasMasteredSong: Bool
+        hasProficientSong: Bool
     ) -> AchievementContext {
         let songsCompleted = fetchCount(
             FetchDescriptor<SongProgress>(
@@ -188,14 +188,14 @@ final class GamificationService {
         let totalPracticeSessions = fetchCount(FetchDescriptor<RiyazEntry>())
 
         // Check if any song has been mastered (best score >= 90)
-        let masteredSongCheck: Bool
-        if hasMasteredSong {
-            masteredSongCheck = true
+        let proficientSongCheck: Bool
+        if hasProficientSong {
+            proficientSongCheck = true
         } else {
-            let masteredDescriptor = FetchDescriptor<SongProgress>(
+            let proficientDescriptor = FetchDescriptor<SongProgress>(
                 predicate: #Predicate { $0.isCompleted == true && $0.bestScore >= 90.0 }
             )
-            masteredSongCheck = fetchCount(masteredDescriptor) > 0
+            proficientSongCheck = fetchCount(proficientDescriptor) > 0
         }
 
         return AchievementContext(
@@ -207,7 +207,7 @@ final class GamificationService {
             latestQuizScore: latestQuizScore,
             newRangLevel: newRangLevel,
             firstPitchDetected: firstPitchDetected,
-            hasMasteredSong: masteredSongCheck
+            hasProficientSong: proficientSongCheck
         )
     }
 
@@ -216,8 +216,10 @@ final class GamificationService {
         do {
             return try modelContext.fetchCount(descriptor)
         } catch {
+            let typeName = String(describing: T.self)
+            let message = error.localizedDescription
             Self.logger.error(
-                "Failed to fetch count for \(String(describing: T.self), privacy: .public): \(error.localizedDescription, privacy: .public)"
+                "Failed to fetch count for \(typeName, privacy: .public): \(message, privacy: .public)"
             )
             return 0
         }

@@ -46,7 +46,9 @@ final class AppRouter {
     /// - Parameter tab: The target tab to select.
     func switchTab(to tab: AppTab) {
         guard currentTab != tab else { return }
-        Self.logger.debug("Tab switch: \(self.currentTab.rawValue, privacy: .public) → \(tab.rawValue, privacy: .public)")
+        Self.logger.debug(
+            "Tab switch: \(self.currentTab.rawValue, privacy: .public) → \(tab.rawValue, privacy: .public)"
+        )
         currentTab = tab
     }
 

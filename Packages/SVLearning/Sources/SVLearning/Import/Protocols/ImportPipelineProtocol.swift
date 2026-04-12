@@ -2,7 +2,7 @@ import Foundation
 
 /// Orchestrates the full 5-stage import pipeline.
 ///
-/// Stages: format detection → parsing → normalisation → validation → MIDI synthesis.
+/// Stages: format detection -> parsing -> normalisation -> validation -> MIDI synthesis.
 /// Progress is reported via `ImportProgressUpdate` values.
 public protocol ImportPipelineProtocol: Sendable {
 
@@ -10,19 +10,11 @@ public protocol ImportPipelineProtocol: Sendable {
     ///
     /// - Parameters:
     ///   - input: The raw notation input from the user.
-    ///   - title: Song title provided by the user.
-    ///   - artist: Artist name provided by the user.
-    ///   - language: ISO 639-1 language code.
-    ///   - difficulty: Difficulty level 1–5.
-    ///   - category: Song category string.
+    ///   - configuration: Bundled song metadata (title, artist, language, difficulty, category).
     /// - Returns: An `AsyncStream` of `ImportPipelineResult` values ending with `.completed` or `.failed`.
     func run(
         input: NotationInput,
-        title: String,
-        artist: String,
-        language: String,
-        difficulty: Int,
-        category: String
+        configuration: ImportConfiguration
     ) -> AsyncStream<ImportPipelineResult>
 }
 
@@ -40,11 +32,11 @@ public enum ImportPipelineResult: Sendable {
 
 /// Progress update emitted during pipeline execution.
 public struct ImportProgressUpdate: Sendable {
-    /// Stage number (1–5).
+    /// Stage number (1-5).
     public let stage: Int
     /// Human-readable stage name.
     public let stageName: String
-    /// Fractional progress 0.0–1.0.
+    /// Fractional progress 0.0-1.0.
     public let fraction: Double
 
     public init(stage: Int, stageName: String, fraction: Double) {

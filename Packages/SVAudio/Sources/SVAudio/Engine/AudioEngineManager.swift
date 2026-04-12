@@ -152,7 +152,9 @@ public final class AudioEngineManager: AudioEngineProviding {
                         try self?.engine.start()
                         Self.logger.info("Engine restarted after interruption")
                     } catch {
-                        Self.logger.error("Engine restart after interruption failed: \(error.localizedDescription, privacy: .public)")
+                        Self.logger.error(
+                            "Engine restart after interruption failed: \(error.localizedDescription, privacy: .public)"
+                        )
                     }
                 }
             }
@@ -189,8 +191,10 @@ public final class AudioEngineManager: AudioEngineProviding {
         // which triggers iOS to reconfigure the format negotiation.
         let newFormat = engine.mainMixerNode.outputFormat(forBus: 0)
         if newFormat.sampleRate == previousRate, newFormat.channelCount == previousChannels {
+            let rate = newFormat.sampleRate
+            let ch = newFormat.channelCount
             Self.logger.info(
-                "Route changed but format unchanged (rate=\(newFormat.sampleRate) ch=\(newFormat.channelCount)) — skipping reconnect"
+                "Route changed, format unchanged (rate=\(rate) ch=\(ch)) — skip reconnect"
             )
             return
         }
@@ -218,7 +222,9 @@ public final class AudioEngineManager: AudioEngineProviding {
             try engine.start()
             Self.logger.info("Engine restarted after route change")
         } catch {
-            Self.logger.error("Engine restart after route change failed: \(error.localizedDescription, privacy: .public)")
+            Self.logger.error(
+                "Engine restart after route change failed: \(error.localizedDescription, privacy: .public)"
+            )
             return
         }
 

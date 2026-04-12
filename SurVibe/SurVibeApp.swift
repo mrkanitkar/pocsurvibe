@@ -135,7 +135,13 @@ struct SurVibeApp: App {
         #endif
         #if !DEBUG
         if apiKey.isEmpty || apiKey.contains("PLACEHOLDER") {
-            preconditionFailure("PostHog API key is not configured. Set POSTHOG_API_KEY in PostHogConfig.xcconfig before building for Release.")
+            preconditionFailure(
+                """
+                PostHog API key is not configured. \
+                Set POSTHOG_API_KEY in PostHogConfig.xcconfig \
+                before building for Release.
+                """
+            )
         }
         #endif
         if !apiKey.isEmpty, !apiKey.contains("PLACEHOLDER") {

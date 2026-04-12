@@ -103,7 +103,7 @@ struct XPManagerTests {
 
         manager.awardXP(amount: 10, source: .lessonStep, sourceId: "lesson-01")
         manager.awardXP(amount: 20, source: .practice, sourceId: "session-01")
-        manager.awardXP(amount: 50, source: .songMastery, sourceId: "song-01")
+        manager.awardXP(amount: 50, source: .songProficiency, sourceId: "song-01")
 
         #expect(manager.totalXP == 80)
 
@@ -198,7 +198,7 @@ struct XPManagerTests {
     func xpSourceRawValues() {
         #expect(XPSource.lessonStep.rawValue == "lesson_step")
         #expect(XPSource.practice.rawValue == "practice")
-        #expect(XPSource.songMastery.rawValue == "song_mastery")
+        #expect(XPSource.songProficiency.rawValue == "song_mastery")
         #expect(XPSource.achievement.rawValue == "achievement")
         #expect(XPSource.streak.rawValue == "streak_bonus")
     }
@@ -227,7 +227,7 @@ struct XPManagerTests {
     func awardXPRecordsCorrectSource() throws {
         let (manager, context) = try makeManager()
 
-        let sources: [XPSource] = [.lessonStep, .practice, .songMastery, .achievement, .streak]
+        let sources: [XPSource] = [.lessonStep, .practice, .songProficiency, .achievement, .streak]
         for source in sources {
             manager.awardXP(amount: 5, source: source)
         }

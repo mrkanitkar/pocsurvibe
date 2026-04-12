@@ -94,19 +94,12 @@ public struct WesternNotationParser: NotationParserProtocol {
         pos = token.index(after: pos)
 
         // 2. Accidental (optional: # or b)
-        var accidental = ""
-        if pos < token.endIndex, token[pos] == "#" {
-            accidental = "#"
-            pos = token.index(after: pos)
-        } else if pos < token.endIndex, token[pos] == "b",
-                  // Distinguish Bb (B-flat) vs 'b' as note name start — only flat if previous was note letter
-                  "ACDFG".contains(noteLetter) || noteLetter == "B" || noteLetter == "E" {
-            // Only treat 'b' as flat if it follows a valid note letter
-            accidental = "b"
-            pos = token.index(after: pos)
-        }
+        let (accidental, posAfterAccidental) = parseAccidental(
+            token: token, pos: pos, noteLetter: noteLetter
+        )
+        pos = posAfterAccidental
 
-        // 3. Octave (optional: 0–9)
+        // 3. Octave (optional: 0-9)
         var octave: Int?
         if pos < token.endIndex, let digit = token[pos].wholeNumberValue {
             octave = digit
@@ -114,17 +107,7 @@ public struct WesternNotationParser: NotationParserProtocol {
         }
 
         // 4. Duration (optional: w h q e s)
-        var durationBeats: Double?
-        if pos < token.endIndex {
-            switch token[pos] {
-            case "w": durationBeats = 4.0
-            case "h": durationBeats = 2.0
-            case "q": durationBeats = 1.0
-            case "e": durationBeats = 0.5
-            case "s": durationBeats = 0.25
-            default: break
-            }
-        }
+        let durationBeats = parseDuration(token: token, pos: pos)
 
         let name = noteLetter + accidental
         let modifier = accidental.isEmpty ? nil : (accidental == "#" ? "sharp" : "flat")
@@ -136,5 +119,33 @@ public struct WesternNotationParser: NotationParserProtocol {
             modifier: modifier,
             index: index
         )
+    }
+
+    /// Extract an accidental character (# or b) from the token at the given position.
+    private func parseAccidental(
+        token: String, pos: String.Index, noteLetter: String
+    ) -> (String, String.Index) {
+        guard pos < token.endIndex else { return ("", pos) }
+        if token[pos] == "#" {
+            return ("#", token.index(after: pos))
+        }
+        if token[pos] == "b",
+           "ACDFG".contains(noteLetter) || noteLetter == "B" || noteLetter == "E" {
+            return ("b", token.index(after: pos))
+        }
+        return ("", pos)
+    }
+
+    /// Map a duration character (w/h/q/e/s) to beat value.
+    private func parseDuration(token: String, pos: String.Index) -> Double? {
+        guard pos < token.endIndex else { return nil }
+        switch token[pos] {
+        case "w": return 4.0
+        case "h": return 2.0
+        case "q": return 1.0
+        case "e": return 0.5
+        case "s": return 0.25
+        default: return nil
+        }
     }
 }

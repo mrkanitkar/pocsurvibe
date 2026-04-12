@@ -59,7 +59,9 @@ final class LessonProgressManager {
                 return existing
             }
         } catch {
-            Self.logger.error("Failed to fetch progress for lesson '\(lessonId, privacy: .public)': \(error, privacy: .public)")
+            Self.logger.error(
+                "Failed to fetch progress for lesson '\(lessonId, privacy: .public)': \(error, privacy: .public)"
+            )
         }
 
         // Not found or fetch failed — create a new record
@@ -330,7 +332,11 @@ final class LessonProgressManager {
             }
 
             Self.logger.warning(
-                "Progress record exists for lesson '\(topProgress.lessonId, privacy: .public)' but no matching Lesson found"
+                """
+                Progress record exists for lesson \
+                '\(topProgress.lessonId, privacy: .public)' \
+                but no matching Lesson found
+                """
             )
             return nil
         } catch {

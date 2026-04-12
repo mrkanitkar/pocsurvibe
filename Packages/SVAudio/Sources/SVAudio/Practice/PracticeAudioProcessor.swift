@@ -258,7 +258,7 @@ public final class PracticeAudioProcessor {
                     let rms = Self.calculateRMS(workBuf)
                     let rmsStr = String(format: "%.4f", rms)
                     Self.logger.info(
-                        "MicDiag DSP: processed=\(processedCount) detected=\(detectedCount) rms=\(rmsStr) frames=\(bufferSize)"
+                        "MicDiag: proc=\(processedCount) det=\(detectedCount) rms=\(rmsStr) fr=\(bufferSize)"
                     )
                 }
                 #endif
@@ -276,7 +276,7 @@ public final class PracticeAudioProcessor {
                     let dspFreqStr = String(format: "%.1f", result.frequency)
                     let dspConfStr = String(format: "%.2f", result.confidence)
                     Self.logger.info(
-                        "MicDiag DSP: pitch=\(result.noteName)\(result.octave) \(dspFreqStr)Hz conf=\(dspConfStr) #\(detectedCount)"
+                        "MicDiag: \(result.noteName)\(result.octave) \(dspFreqStr)Hz cf=\(dspConfStr) #\(detectedCount)"
                     )
                     #endif
                     self?.continuation?.yield(result)

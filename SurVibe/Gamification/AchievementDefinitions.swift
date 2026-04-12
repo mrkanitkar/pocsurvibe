@@ -78,7 +78,7 @@ enum AchievementDefinitions {
             title: "Song Master",
             description: "Fully mastered a song",
             xpBonus: 50,
-            trigger: { $0.songsCompleted >= 1 && $0.hasMasteredSong }
+            trigger: { $0.songsCompleted >= 1 && $0.hasProficientSong }
         ),
         Definition(
             id: "perfect_quiz",
@@ -119,8 +119,8 @@ struct AchievementContext: Sendable {
     let newRangLevel: RangLevel?
     /// Whether the user detected their first pitch in this session.
     let firstPitchDetected: Bool
-    /// Whether any song has been mastered (isCompleted with high score).
-    let hasMasteredSong: Bool
+    /// Whether any song has reached proficiency (isCompleted with high score).
+    let hasProficientSong: Bool
 
     /// Default context with all zeros/nils for testing.
     static let empty = AchievementContext(
@@ -132,6 +132,6 @@ struct AchievementContext: Sendable {
         latestQuizScore: nil,
         newRangLevel: nil,
         firstPitchDetected: false,
-        hasMasteredSong: false
+        hasProficientSong: false
     )
 }

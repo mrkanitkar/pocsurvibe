@@ -57,7 +57,7 @@ struct AchievementManagerTests {
             totalXP: 0, currentStreak: 0, songsCompleted: 0,
             lessonsCompleted: 0, totalPracticeSessions: 0,
             latestQuizScore: nil, newRangLevel: nil,
-            firstPitchDetected: true, hasMasteredSong: false
+            firstPitchDetected: true, hasProficientSong: false
         )
         manager.checkTriggers(context: context)
         #expect(manager.isEarned("first_note") == true)
@@ -70,7 +70,7 @@ struct AchievementManagerTests {
             totalXP: 50, currentStreak: 0, songsCompleted: 0,
             lessonsCompleted: 1, totalPracticeSessions: 0,
             latestQuizScore: nil, newRangLevel: nil,
-            firstPitchDetected: false, hasMasteredSong: false
+            firstPitchDetected: false, hasProficientSong: false
         )
         manager.checkTriggers(context: context)
         #expect(manager.isEarned("first_lesson") == true)
@@ -83,7 +83,7 @@ struct AchievementManagerTests {
             totalXP: 0, currentStreak: 3, songsCompleted: 0,
             lessonsCompleted: 0, totalPracticeSessions: 0,
             latestQuizScore: nil, newRangLevel: nil,
-            firstPitchDetected: false, hasMasteredSong: false
+            firstPitchDetected: false, hasProficientSong: false
         )
         manager.checkTriggers(context: context)
         #expect(manager.isEarned("streak_3") == true)
@@ -96,7 +96,7 @@ struct AchievementManagerTests {
             totalXP: 100, currentStreak: 0, songsCompleted: 0,
             lessonsCompleted: 0, totalPracticeSessions: 0,
             latestQuizScore: nil, newRangLevel: nil,
-            firstPitchDetected: false, hasMasteredSong: false
+            firstPitchDetected: false, hasProficientSong: false
         )
         manager.checkTriggers(context: context)
         #expect(manager.isEarned("xp_100") == true)
@@ -109,7 +109,7 @@ struct AchievementManagerTests {
             totalXP: 0, currentStreak: 0, songsCompleted: 0,
             lessonsCompleted: 0, totalPracticeSessions: 0,
             latestQuizScore: 1.0, newRangLevel: nil,
-            firstPitchDetected: false, hasMasteredSong: false
+            firstPitchDetected: false, hasProficientSong: false
         )
         manager.checkTriggers(context: context)
         #expect(manager.isEarned("perfect_quiz") == true)
@@ -122,7 +122,7 @@ struct AchievementManagerTests {
             totalXP: 500, currentStreak: 0, songsCompleted: 0,
             lessonsCompleted: 0, totalPracticeSessions: 0,
             latestQuizScore: nil, newRangLevel: .hara,
-            firstPitchDetected: false, hasMasteredSong: false
+            firstPitchDetected: false, hasProficientSong: false
         )
         manager.checkTriggers(context: context)
         #expect(manager.isEarned("rang_up") == true)
@@ -137,7 +137,7 @@ struct AchievementManagerTests {
             totalXP: 0, currentStreak: 0, songsCompleted: 0,
             lessonsCompleted: 1, totalPracticeSessions: 0,
             latestQuizScore: nil, newRangLevel: nil,
-            firstPitchDetected: false, hasMasteredSong: false
+            firstPitchDetected: false, hasProficientSong: false
         )
         manager.checkTriggers(context: ctx)
         manager.checkTriggers(context: ctx)
@@ -158,7 +158,7 @@ struct AchievementManagerTests {
             totalXP: 0, currentStreak: 3, songsCompleted: 0,
             lessonsCompleted: 0, totalPracticeSessions: 0,
             latestQuizScore: nil, newRangLevel: nil,
-            firstPitchDetected: false, hasMasteredSong: false
+            firstPitchDetected: false, hasProficientSong: false
         )
         manager.checkTriggers(context: context)
         // streak_3 awards 50 XP bonus
@@ -184,7 +184,7 @@ struct AchievementManagerTests {
             totalXP: 100, currentStreak: 0, songsCompleted: 0,
             lessonsCompleted: 1, totalPracticeSessions: 0,
             latestQuizScore: nil, newRangLevel: nil,
-            firstPitchDetected: true, hasMasteredSong: false
+            firstPitchDetected: true, hasProficientSong: false
         )
         manager.checkTriggers(context: ctx1)
 

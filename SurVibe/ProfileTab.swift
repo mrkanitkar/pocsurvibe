@@ -286,7 +286,7 @@ struct ProfileTab: View {
             latestQuizScore: nil,
             newRangLevel: nil,
             firstPitchDetected: false,
-            hasMasteredSong: false
+            hasProficientSong: false
         )
     }
 }

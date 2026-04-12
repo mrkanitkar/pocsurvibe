@@ -96,35 +96,9 @@ final class StreakTracker {
                 }
             }
 
-            // Walk backward from most recent, counting consecutive days
-            var streak = 1
-            for i in 0..<(uniqueDays.count - 1) {
-                let currentDay = uniqueDays[i]
-                let previousDay = uniqueDays[i + 1]
-
-                // Check if previousDay is exactly one calendar day before currentDay
-                guard let expectedPrevious = calendar.date(byAdding: .day, value: -1, to: currentDay),
-                      calendar.isDate(previousDay, inSameDayAs: expectedPrevious) else {
-                    break
-                }
-                streak += 1
-            }
-
-            // For longestStreak, walk all unique days to find the longest run
-            var longest = 1
-            var run = 1
-            for i in 0..<(uniqueDays.count - 1) {
-                let currentDay = uniqueDays[i]
-                let previousDay = uniqueDays[i + 1]
-
-                if let expectedPrevious = calendar.date(byAdding: .day, value: -1, to: currentDay),
-                   calendar.isDate(previousDay, inSameDayAs: expectedPrevious) {
-                    run += 1
-                    longest = max(longest, run)
-                } else {
-                    run = 1
-                }
-            }
+            let (streak, longest) = computeStreaks(
+                uniqueDays: uniqueDays, calendar: calendar
+            )
 
             currentStreak = streak
             longestStreak = longest
@@ -134,10 +108,61 @@ final class StreakTracker {
                 "Recompute: current=\(streak), longest=\(longest), uniqueDays=\(uniqueDays.count)"
             )
         } catch {
-            Self.logger.error("Failed to fetch RiyazEntry for streak: \(error.localizedDescription, privacy: .public)")
+            Self.logger.error(
+                "Failed to fetch RiyazEntry for streak: \(error.localizedDescription, privacy: .public)"
+            )
             currentStreak = 0
             longestStreak = 0
             lastPracticeDate = nil
         }
+    }
+
+    // MARK: - Private Methods
+
+    /// Compute current and longest consecutive-day streaks from unique days.
+    ///
+    /// Walks the sorted (descending) unique days array twice: once from
+    /// the front to find the current streak, once across all days to find
+    /// the longest historical streak.
+    ///
+    /// - Parameters:
+    ///   - uniqueDays: Calendar days with at least one entry, sorted descending.
+    ///   - calendar: Calendar used for day arithmetic.
+    /// - Returns: Tuple of (currentStreak, longestStreak).
+    private func computeStreaks(
+        uniqueDays: [Date], calendar: Calendar
+    ) -> (current: Int, longest: Int) {
+        guard uniqueDays.count > 1 else { return (1, 1) }
+
+        // Walk backward from most recent, counting consecutive days
+        var streak = 1
+        for i in 0..<(uniqueDays.count - 1) {
+            let currentDay = uniqueDays[i]
+            let previousDay = uniqueDays[i + 1]
+
+            guard let expected = calendar.date(byAdding: .day, value: -1, to: currentDay),
+                  calendar.isDate(previousDay, inSameDayAs: expected) else {
+                break
+            }
+            streak += 1
+        }
+
+        // Walk all unique days to find the longest run
+        var longest = 1
+        var run = 1
+        for i in 0..<(uniqueDays.count - 1) {
+            let currentDay = uniqueDays[i]
+            let previousDay = uniqueDays[i + 1]
+
+            if let expected = calendar.date(byAdding: .day, value: -1, to: currentDay),
+               calendar.isDate(previousDay, inSameDayAs: expected) {
+                run += 1
+                longest = max(longest, run)
+            } else {
+                run = 1
+            }
+        }
+
+        return (streak, longest)
     }
 }

@@ -47,13 +47,13 @@ struct StaffNotationRenderer: View {
 
     // MARK: - Environment
 
-    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.colorScheme) var colorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     // MARK: - Constants
 
     /// Vertical spacing between adjacent staff lines in points.
-    private let staffSpacing: CGFloat = 10.0
+    let staffSpacing: CGFloat = 10.0
 
     /// Height of the staff (4 spaces × spacing).
     private var staffHeight: CGFloat { staffSpacing * 4 }
@@ -217,79 +217,131 @@ struct StaffNotationRenderer: View {
         let centerX = noteInfo.xPosition
         let centerY = yForStaffPosition(noteInfo.staffYOffset, staffTop: staffTop)
 
-        // Playback highlight rectangle — green for correct, red for wrong, accent otherwise.
+        // Background highlights
         if isHighlighted {
-            let highlightRect = CGRect(
-                x: centerX - noteheadWidth,
-                y: centerY - noteheadHeight * 2,
-                width: noteheadWidth * 2,
-                height: noteheadHeight * 4
+            drawPlaybackHighlight(
+                context: &context, centerX: centerX,
+                centerY: centerY, matchState: matchState
             )
-            let highlightColor: Color
-            switch matchState {
-            case .correct: highlightColor = .green.opacity(0.35)
-            case .wrong: highlightColor = .red.opacity(0.35)
-            default: highlightColor = .accentColor.opacity(0.2)
-            }
-            context.fill(Path(roundedRect: highlightRect, cornerRadius: 4), with: .color(highlightColor))
         }
-
-        // Key-press detection highlight (green glow behind notehead)
         if isDetected {
-            let detectedRect = CGRect(
-                x: centerX - noteheadWidth * 1.2,
-                y: centerY - noteheadHeight * 2.5,
-                width: noteheadWidth * 2.4,
-                height: noteheadHeight * 5
+            drawDetectionHighlight(
+                context: &context, centerX: centerX, centerY: centerY
             )
-            context.fill(Path(roundedRect: detectedRect, cornerRadius: 5), with: .color(.green.opacity(0.25)))
         }
 
         // Ledger lines
         drawLedgerLines(context: &context, noteInfo: noteInfo, staffTop: staffTop, centerX: centerX)
 
         // Accidental
-        if let accidental = noteInfo.accidental {
-            let accidentalText = Text(accidental.rawValue)
-                .font(.system(size: 14))
-                .foregroundColor(isHighlighted ? .accentColor : staffSwiftUIColor)
-            let accidentalX = centerX - noteheadWidth - 4
-            context.draw(
-                context.resolve(accidentalText),
-                at: CGPoint(x: accidentalX, y: centerY),
-                anchor: .trailing
-            )
-        }
+        drawAccidental(
+            context: &context, noteInfo: noteInfo,
+            centerX: centerX, centerY: centerY, isHighlighted: isHighlighted
+        )
 
-        // Notehead
+        // Notehead, stem, flags, augmentation dot
+        let noteColor: Color = isDetected ? .green : (isHighlighted ? .accentColor : staffSwiftUIColor)
+        drawNoteheadAndExtras(
+            context: &context, noteInfo: noteInfo,
+            centerX: centerX, centerY: centerY, color: noteColor
+        )
+    }
+
+    /// Draw the playback highlight rectangle behind the active note.
+    private func drawPlaybackHighlight(
+        context: inout GraphicsContext,
+        centerX: CGFloat,
+        centerY: CGFloat,
+        matchState: FallingNotesLayoutEngine.NoteState?
+    ) {
+        let highlightRect = CGRect(
+            x: centerX - noteheadWidth,
+            y: centerY - noteheadHeight * 2,
+            width: noteheadWidth * 2,
+            height: noteheadHeight * 4
+        )
+        let highlightColor: Color
+        switch matchState {
+        case .correct: highlightColor = .green.opacity(0.35)
+        case .wrong: highlightColor = .red.opacity(0.35)
+        default: highlightColor = .accentColor.opacity(0.2)
+        }
+        context.fill(
+            Path(roundedRect: highlightRect, cornerRadius: 4),
+            with: .color(highlightColor)
+        )
+    }
+
+    /// Draw the MIDI key-press detection glow behind the notehead.
+    private func drawDetectionHighlight(
+        context: inout GraphicsContext,
+        centerX: CGFloat,
+        centerY: CGFloat
+    ) {
+        let detectedRect = CGRect(
+            x: centerX - noteheadWidth * 1.2,
+            y: centerY - noteheadHeight * 2.5,
+            width: noteheadWidth * 2.4,
+            height: noteheadHeight * 5
+        )
+        context.fill(
+            Path(roundedRect: detectedRect, cornerRadius: 5),
+            with: .color(.green.opacity(0.25))
+        )
+    }
+
+    /// Draw the accidental symbol to the left of the notehead.
+    private func drawAccidental(
+        context: inout GraphicsContext,
+        noteInfo: StaffNoteInfo,
+        centerX: CGFloat,
+        centerY: CGFloat,
+        isHighlighted: Bool
+    ) {
+        guard let accidental = noteInfo.accidental else { return }
+        let accidentalText = Text(accidental.rawValue)
+            .font(.system(size: 14))
+            .foregroundColor(isHighlighted ? .accentColor : staffSwiftUIColor)
+        let accidentalX = centerX - noteheadWidth - 4
+        context.draw(
+            context.resolve(accidentalText),
+            at: CGPoint(x: accidentalX, y: centerY),
+            anchor: .trailing
+        )
+    }
+
+    /// Draw the notehead ellipse, stem, flags, and augmentation dot.
+    private func drawNoteheadAndExtras(
+        context: inout GraphicsContext,
+        noteInfo: StaffNoteInfo,
+        centerX: CGFloat,
+        centerY: CGFloat,
+        color: Color
+    ) {
         let noteheadRect = CGRect(
             x: centerX - noteheadWidth / 2,
             y: centerY - noteheadHeight / 2,
             width: noteheadWidth,
             height: noteheadHeight
         )
-
-        let noteColor: Color = isDetected ? .green : (isHighlighted ? .accentColor : staffSwiftUIColor)
         let ellipse = Path(ellipseIn: noteheadRect)
 
         if noteInfo.noteheadType.isFilled {
-            context.fill(ellipse, with: .color(noteColor))
+            context.fill(ellipse, with: .color(color))
         } else {
-            context.stroke(ellipse, with: .color(noteColor), lineWidth: 1.5)
+            context.stroke(ellipse, with: .color(color), lineWidth: 1.5)
         }
 
-        // Stem and flags
         drawStemAndFlags(
             context: &context, noteInfo: noteInfo,
-            centerX: centerX, centerY: centerY, color: noteColor
+            centerX: centerX, centerY: centerY, color: color
         )
 
-        // Augmentation dot
         if noteInfo.isDotted {
             let dotX = centerX + noteheadWidth / 2 + 4
             let dotY = centerY - (noteInfo.staffYOffset % 2 == 0 ? staffSpacing / 4 : 0)
             let dotRect = CGRect(x: dotX - 1.5, y: dotY - 1.5, width: 3, height: 3)
-            context.fill(Path(ellipseIn: dotRect), with: .color(noteColor))
+            context.fill(Path(ellipseIn: dotRect), with: .color(color))
         }
     }
 
@@ -442,38 +494,4 @@ private extension StaffNotationRenderer {
             context.stroke(p, with: .color(beamColor), lineWidth: 3.0)
         }
     }
-
-    /// Convert a staff position to a Y coordinate.
-    func yForStaffPosition(_ position: Int, staffTop: CGFloat) -> CGFloat {
-        staffTop + CGFloat(8 - position) * (staffSpacing / 2)
-    }
-
-    /// Foreground color for current color scheme.
-    var staffColor: Color { colorScheme == .dark ? .white.opacity(0.85) : .black.opacity(0.85) }
-
-    /// SwiftUI Color for text elements within the canvas.
-    var staffSwiftUIColor: Color { colorScheme == .dark ? .white.opacity(0.85) : .black.opacity(0.85) }
-}
-
-// MARK: - Preview
-
-#Preview("Staff Notation - C Major") {
-    StaffNotationRenderer(
-        notes: [
-            WesternNote(note: "C4", duration: 1.0, midiNumber: 60),
-            WesternNote(note: "D4", duration: 1.0, midiNumber: 62),
-            WesternNote(note: "E4", duration: 1.0, midiNumber: 64),
-            WesternNote(note: "F4", duration: 1.0, midiNumber: 65),
-            WesternNote(note: "G4", duration: 1.0, midiNumber: 67),
-            WesternNote(note: "A4", duration: 1.0, midiNumber: 69),
-            WesternNote(note: "B4", duration: 1.0, midiNumber: 71),
-            WesternNote(note: "C5", duration: 1.0, midiNumber: 72),
-        ],
-        currentNoteIndex: 2,
-        keySignature: .cMajor,
-        timeSignature: .fourFour,
-        zoomScale: 1.0
-    )
-    .frame(height: 120)
-    .padding()
 }

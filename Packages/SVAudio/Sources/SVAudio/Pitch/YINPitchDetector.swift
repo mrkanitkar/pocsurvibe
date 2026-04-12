@@ -41,15 +41,15 @@ public final class YINPitchDetector: PitchDetectorProtocol {
             self.isDetecting = true
             self.status = "Listening"
 
-            let refPitch = self.referencePitch
-            let yinThreshold = self.threshold
-            let queue = self.processingQueue
+            let tapContext = TapContext(
+                queue: self.processingQueue,
+                continuation: continuation,
+                refPitch: self.referencePitch,
+                yinThreshold: self.threshold
+            )
 
             AudioEngineManager.shared.installMicTap { buffer, _ in
-                Self.handleMicTap(
-                    buffer: buffer, queue: queue, continuation: continuation,
-                    refPitch: refPitch, yinThreshold: yinThreshold
-                )
+                Self.handleMicTap(buffer: buffer, context: tapContext)
             }
 
             continuation.onTermination = { _ in
@@ -62,16 +62,21 @@ public final class YINPitchDetector: PitchDetectorProtocol {
         return stream
     }
 
+    /// Captures needed for mic tap dispatch to avoid exceeding parameter limits.
+    private struct TapContext: Sendable {
+        let queue: DispatchQueue
+        let continuation: AsyncStream<PitchResult>.Continuation
+        let refPitch: Double
+        let yinThreshold: Double
+    }
+
     /// Copy samples from the mic tap and dispatch YIN to the DSP queue (AUD-004).
     ///
     /// The audio render thread only performs: RMS check + Array copy + queue.async.
     /// All O(n²) YIN computation runs on `processingQueue`.
     nonisolated private static func handleMicTap(
         buffer: AVAudioPCMBuffer,
-        queue: DispatchQueue,
-        continuation: AsyncStream<PitchResult>.Continuation,
-        refPitch: Double,
-        yinThreshold: Double
+        context: TapContext
     ) {
         guard let channelData = buffer.floatChannelData?[0] else { return }
         let frameLength = Int(buffer.frameLength)
@@ -83,7 +88,7 @@ public final class YINPitchDetector: PitchDetectorProtocol {
         let amplitude = Double(rms)
 
         guard amplitude > 0.002 else {
-            continuation.yield(silenceResult(amplitude: amplitude))
+            context.continuation.yield(silenceResult(amplitude: amplitude))
             return
         }
 
@@ -91,10 +96,10 @@ public final class YINPitchDetector: PitchDetectorProtocol {
         let samples = Array(UnsafeBufferPointer(start: channelData, count: frameLength))
         let sampleRate = buffer.format.sampleRate
 
-        queue.async {
+        context.queue.async {
             processYIN(
                 samples: samples, amplitude: amplitude, sampleRate: sampleRate,
-                continuation: continuation, refPitch: refPitch, yinThreshold: yinThreshold
+                context: context
             )
         }
     }
@@ -104,24 +109,22 @@ public final class YINPitchDetector: PitchDetectorProtocol {
         samples: [Float],
         amplitude: Double,
         sampleRate: Double,
-        continuation: AsyncStream<PitchResult>.Continuation,
-        refPitch: Double,
-        yinThreshold: Double
+        context: TapContext
     ) {
         let detection = detectPitchWithConfidence(
-            samples: samples, sampleRate: sampleRate, threshold: yinThreshold
+            samples: samples, sampleRate: sampleRate, threshold: context.yinThreshold
         )
 
         guard detection.frequency > 0,
               let (noteName, octave, cents) = try? SwarUtility.frequencyToNote(
-                  detection.frequency, referencePitch: refPitch
+                  detection.frequency, referencePitch: context.refPitch
               )
         else {
-            continuation.yield(silenceResult(amplitude: amplitude))
+            context.continuation.yield(silenceResult(amplitude: amplitude))
             return
         }
 
-        continuation.yield(PitchResult(
+        context.continuation.yield(PitchResult(
             frequency: detection.frequency, amplitude: amplitude,
             noteName: noteName, octave: octave,
             centsOffset: cents, confidence: detection.confidence

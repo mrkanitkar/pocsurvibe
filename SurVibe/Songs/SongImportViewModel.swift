@@ -107,95 +107,24 @@ final class SongImportViewModel {
     /// dispatched back to `@MainActor` to avoid blocking the main thread.
     /// Emits analytics events for start, completion, and failure.
     func startImport() {
-        let notationText: String
-        let format: NotationInput.Format
+        guard let (notationText, format) = resolveNotationInput() else { return }
 
-        switch selectedTab {
-        case .sargam:
-            notationText = sargamText
-            format = .sargam
-        case .western:
-            notationText = westernText
-            format = .western
-        case .musicXML:
-            notationText = musicXMLText
-            format = .musicXML
-        case .mySongs:
-            return // My Songs tab does not trigger import
-        }
+        guard validateImportFields(notationText: notationText) else { return }
 
-        guard !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            importError = "Please enter a song title."
-            return
-        }
-
-        guard !notationText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            importError = "Please enter notation text."
-            return
-        }
-
-        isImporting = true
-        progress = 0.0
-        progressStageName = ""
-        importError = nil
-        pendingWarnings = []
+        resetPipelineState()
 
         AnalyticsManager.shared.track(.songImportStarted, properties: [
             "format": format.rawValue,
             "title_length": title.count,
         ])
 
-        // Capture value types before crossing isolation boundary
-        let capturedTitle = title
-        let capturedArtist = artist
-        let capturedLanguage = language
-        let capturedDifficulty = difficulty
-        let capturedCategory = category
-
-        let input = NotationInput(text: notationText, filenameHint: nil, declaredFormat: format)
-        let stream = pipeline.run(
-            input: input,
-            title: capturedTitle,
-            artist: capturedArtist,
-            language: capturedLanguage,
-            difficulty: capturedDifficulty,
-            category: capturedCategory
+        let stream = buildPipelineStream(
+            notationText: notationText, format: format
         )
 
-        // Consume the stream on a background task — dispatch UI updates to main actor.
-        // This prevents blocking the main thread and keeps the UI responsive.
-        // @MainActor is used for all state mutations; `self` is a class so capture is safe.
         Task {
             for await result in stream {
-                switch result {
-                case .progress(let update):
-                    progress = update.fraction
-                    progressStageName = update.stageName
-
-                case .warningsGenerated(let warnings):
-                    pendingWarnings = warnings
-                    showWarnings = true
-                    AnalyticsManager.shared.track(.songImportWarningDisplayed, properties: [
-                        "warning_count": warnings.count,
-                    ])
-
-                case .completed(let dto):
-                    saveToSwiftData(dto)
-                    importSucceeded = true
-                    AnalyticsManager.shared.track(.songImportCompleted, properties: [
-                        "format": format.rawValue,
-                        "note_count": dto.sargamNotationData?.count ?? dto.westernNotationData?.count ?? 0,
-                        "has_midi": dto.midiData != nil,
-                    ])
-
-                case .failed(let error):
-                    importError = error.localizedDescription
-                    AnalyticsManager.shared.track(.songImportFailed, properties: [
-                        "format": format.rawValue,
-                        "error": error.localizedDescription,
-                    ])
-                }
-                // Yield to the run loop so UI can update between pipeline stages
+                handleImportResult(result, format: format)
                 await Task.yield()
             }
             isImporting = false
@@ -243,73 +172,19 @@ final class SongImportViewModel {
     ///
     /// - Parameter onComplete: Called on the main actor with the finished DTO when the pipeline succeeds.
     func startEdit(onComplete: @escaping @MainActor (ImportedSongDTO) -> Void) {
-        let notationText: String
-        let format: NotationInput.Format
+        guard let (notationText, format) = resolveNotationInput() else { return }
 
-        switch selectedTab {
-        case .sargam:
-            notationText = sargamText
-            format = .sargam
-        case .western:
-            notationText = westernText
-            format = .western
-        case .musicXML:
-            notationText = musicXMLText
-            format = .musicXML
-        case .mySongs:
-            return
-        }
+        guard validateImportFields(notationText: notationText) else { return }
 
-        guard !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            importError = "Please enter a song title."
-            return
-        }
+        resetPipelineState()
 
-        guard !notationText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            importError = "Please enter notation text."
-            return
-        }
-
-        isImporting = true
-        progress = 0.0
-        progressStageName = ""
-        importError = nil
-        pendingWarnings = []
-
-        let capturedTitle = title
-        let capturedArtist = artist
-        let capturedLanguage = language
-        let capturedDifficulty = difficulty
-        let capturedCategory = category
-
-        let input = NotationInput(text: notationText, filenameHint: nil, declaredFormat: format)
-        let stream = pipeline.run(
-            input: input,
-            title: capturedTitle,
-            artist: capturedArtist,
-            language: capturedLanguage,
-            difficulty: capturedDifficulty,
-            category: capturedCategory
+        let stream = buildPipelineStream(
+            notationText: notationText, format: format
         )
 
         Task {
             for await result in stream {
-                switch result {
-                case .progress(let update):
-                    progress = update.fraction
-                    progressStageName = update.stageName
-
-                case .warningsGenerated(let warnings):
-                    pendingWarnings = warnings
-                    showWarnings = true
-
-                case .completed(let dto):
-                    onComplete(dto)
-                    importSucceeded = true
-
-                case .failed(let error):
-                    importError = error.localizedDescription
-                }
+                handleEditResult(result, onComplete: onComplete)
                 await Task.yield()
             }
             isImporting = false
@@ -336,6 +211,121 @@ final class SongImportViewModel {
     }
 
     // MARK: - Private Methods
+
+    /// Resolve the notation text and format from the currently selected tab.
+    ///
+    /// Returns `nil` for the `.mySongs` tab, which does not trigger imports.
+    private func resolveNotationInput() -> (String, NotationInput.Format)? {
+        switch selectedTab {
+        case .sargam: return (sargamText, .sargam)
+        case .western: return (westernText, .western)
+        case .musicXML: return (musicXMLText, .musicXML)
+        case .mySongs: return nil
+        }
+    }
+
+    /// Validate that title and notation text are non-empty.
+    private func validateImportFields(notationText: String) -> Bool {
+        guard !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            importError = "Please enter a song title."
+            return false
+        }
+        guard !notationText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            importError = "Please enter notation text."
+            return false
+        }
+        return true
+    }
+
+    /// Reset transient pipeline state before starting a run.
+    private func resetPipelineState() {
+        isImporting = true
+        progress = 0.0
+        progressStageName = ""
+        importError = nil
+        pendingWarnings = []
+    }
+
+    /// Build and return the pipeline async stream from current form fields.
+    private func buildPipelineStream(
+        notationText: String,
+        format: NotationInput.Format
+    ) -> AsyncStream<ImportPipelineResult> {
+        let input = NotationInput(
+            text: notationText, filenameHint: nil, declaredFormat: format
+        )
+        let configuration = ImportConfiguration(
+            title: title,
+            artist: artist,
+            language: language,
+            difficulty: difficulty,
+            category: category
+        )
+        return pipeline.run(
+            input: input,
+            configuration: configuration
+        )
+    }
+
+    /// Handle a single pipeline result during import.
+    private func handleImportResult(
+        _ result: ImportPipelineResult,
+        format: NotationInput.Format
+    ) {
+        switch result {
+        case .progress(let update):
+            progress = update.fraction
+            progressStageName = update.stageName
+
+        case .warningsGenerated(let warnings):
+            pendingWarnings = warnings
+            showWarnings = true
+            AnalyticsManager.shared.track(
+                .songImportWarningDisplayed,
+                properties: ["warning_count": warnings.count]
+            )
+
+        case .completed(let dto):
+            saveToSwiftData(dto)
+            importSucceeded = true
+            AnalyticsManager.shared.track(.songImportCompleted, properties: [
+                "format": format.rawValue,
+                "note_count": dto.sargamNotationData?.count
+                    ?? dto.westernNotationData?.count ?? 0,
+                "has_midi": dto.midiData != nil,
+            ])
+
+        case .failed(let error):
+            importError = error.localizedDescription
+            AnalyticsManager.shared.track(.songImportFailed, properties: [
+                "format": format.rawValue,
+                "error": error.localizedDescription,
+            ])
+        }
+    }
+
+    /// Handle a single pipeline result during edit.
+    private func handleEditResult(
+        _ result: ImportPipelineResult,
+        onComplete: @escaping @MainActor (ImportedSongDTO) -> Void
+    ) {
+        switch result {
+        case .progress(let update):
+            progress = update.fraction
+            progressStageName = update.stageName
+
+        case .warningsGenerated(let warnings):
+            pendingWarnings = warnings
+            showWarnings = true
+
+        case .completed(let dto):
+            onComplete(dto)
+            importSucceeded = true
+
+        case .failed(let error):
+            importError = error.localizedDescription
+        }
+    }
 
     /// Saves the completed DTO as a `Song` @Model into SwiftData.
     ///

@@ -86,7 +86,7 @@ final class ContentImportManager {
         importCurricula(from: bundle, into: context, summary: &summary)
 
         try context.save()
-        logger.info("Seed content saved: \(summary.description)")
+        logger.info("Seed content saved: \(summary.description, privacy: .public)")
         return summary
     }
 
@@ -110,7 +110,7 @@ final class ContentImportManager {
             let count = summary.songCount
             logger.info("Imported \(count) songs")
         } catch {
-            logger.error("Error reading seed-songs.json: \(error)")
+            logger.error("Error reading seed-songs.json: \(error, privacy: .public)")
             summary.errorDescriptions.append("Songs: \(error.localizedDescription)")
         }
     }
@@ -135,7 +135,7 @@ final class ContentImportManager {
             let count = summary.lessonCount
             logger.info("Imported \(count) lessons")
         } catch {
-            logger.error("Error reading seed-lessons.json: \(error)")
+            logger.error("Error reading seed-lessons.json: \(error, privacy: .public)")
             summary.errorDescriptions.append("Lessons: \(error.localizedDescription)")
         }
     }
@@ -160,7 +160,7 @@ final class ContentImportManager {
             let count = summary.curriculumCount
             logger.info("Imported \(count) curricula")
         } catch {
-            logger.error("Error reading seed-curricula.json: \(error)")
+            logger.error("Error reading seed-curricula.json: \(error, privacy: .public)")
             summary.errorDescriptions.append("Curricula: \(error.localizedDescription)")
         }
     }
@@ -177,7 +177,7 @@ final class ContentImportManager {
             }
             logger.info("Deleted \(songs.count) existing songs before re-import")
         } catch {
-            logger.warning("Failed to fetch existing songs for deletion: \(error)")
+            logger.warning("Failed to fetch existing songs for deletion: \(error, privacy: .public)")
         }
 
         do {
@@ -187,7 +187,7 @@ final class ContentImportManager {
             }
             logger.info("Deleted \(lessons.count) existing lessons before re-import")
         } catch {
-            logger.warning("Failed to fetch existing lessons for deletion: \(error)")
+            logger.warning("Failed to fetch existing lessons for deletion: \(error, privacy: .public)")
         }
 
         do {
@@ -197,7 +197,7 @@ final class ContentImportManager {
             }
             logger.info("Deleted \(curricula.count) existing curricula before re-import")
         } catch {
-            logger.warning("Failed to fetch existing curricula for deletion: \(error)")
+            logger.warning("Failed to fetch existing curricula for deletion: \(error, privacy: .public)")
         }
     }
 

@@ -53,79 +53,107 @@ actor NoteMatchingActor {
         ragaScoringContext: RagaScoringContext?,
         waitModeMatch: Bool?
     ) -> ScoringDiff {
-        let detectedSwarName = Self.swarNameFromMIDI(UInt8(clamping: midiNote))
         let isCorrectMIDI = Int(expectedEvent.midiNote) == midiNote
+        let inputs = ScoringInputs(
+            expectedEvent: expectedEvent,
+            detectedSwarName: Self.swarNameFromMIDI(UInt8(clamping: midiNote)),
+            centsDeviation: Self.computeCentsDeviation(
+                pitch: currentPitch, isCorrectMIDI: isCorrectMIDI
+            ),
+            ragaPitchCents: currentPitch?.ragaCentsOffset.map { abs($0) },
+            ragaScoringContext: ragaScoringContext
+        )
 
-        let centsDeviation: Double
-        if let pitch = currentPitch {
-            centsDeviation = abs(pitch.ragaCentsOffset ?? pitch.centsOffset)
-        } else {
-            centsDeviation = isCorrectMIDI ? 0 : 50
-        }
-
-        // Wait mode path: caller has already evaluated the match on @MainActor.
+        // Wait mode path: caller already evaluated the match on @MainActor.
         if let matched = waitModeMatch {
-            if matched {
-                let score = NoteScoreCalculator.score(
-                    expectedNote: expectedEvent.swarName,
-                    detectedNote: detectedSwarName,
-                    pitchDeviationCents: centsDeviation,
-                    timingDeviationSeconds: 0,
-                    durationDeviation: 0,
-                    ragaPitchDeviationCents: currentPitch?.ragaCentsOffset.map { abs($0) },
-                    ragaContext: ragaScoringContext
-                )
-                return ScoringDiff(
-                    noteEventID: expectedEvent.id,
-                    newState: .correct,
-                    score: score,
-                    streakOutcome: .hit(grade: score.grade)
-                )
-            } else {
-                return ScoringDiff(
-                    noteEventID: expectedEvent.id,
-                    newState: .wrong,
-                    score: nil,
-                    streakOutcome: .noChange
-                )
-            }
+            return evaluateWaitMode(matched: matched, inputs: inputs)
         }
 
         // Standard mode: immediate scoring based on MIDI correctness.
-        if isCorrectMIDI {
-            let score = NoteScoreCalculator.score(
-                expectedNote: expectedEvent.swarName,
-                detectedNote: detectedSwarName,
-                pitchDeviationCents: centsDeviation,
-                timingDeviationSeconds: 0,
-                durationDeviation: 0,
-                ragaPitchDeviationCents: currentPitch?.ragaCentsOffset.map { abs($0) },
-                ragaContext: ragaScoringContext
-            )
-            return ScoringDiff(
-                noteEventID: expectedEvent.id,
-                newState: .correct,
-                score: score,
-                streakOutcome: .hit(grade: score.grade)
-            )
-        } else {
-            let score = NoteScoreCalculator.score(
-                expectedNote: expectedEvent.swarName,
-                detectedNote: detectedSwarName,
-                pitchDeviationCents: 50,
-                timingDeviationSeconds: 0,
-                durationDeviation: 0
-            )
-            return ScoringDiff(
-                noteEventID: expectedEvent.id,
-                newState: .wrong,
-                score: score,
-                streakOutcome: .miss
-            )
-        }
+        return evaluateStandardMode(
+            isCorrectMIDI: isCorrectMIDI, inputs: inputs
+        )
     }
 
     // MARK: - Private Helpers
+
+    /// Compute cents deviation from the pitch result or a fallback.
+    private static func computeCentsDeviation(
+        pitch: PitchResult?,
+        isCorrectMIDI: Bool
+    ) -> Double {
+        if let pitch {
+            return abs(pitch.ragaCentsOffset ?? pitch.centsOffset)
+        }
+        return isCorrectMIDI ? 0 : 50
+    }
+
+    /// Bundles the pre-computed scoring inputs shared across evaluation paths.
+    private struct ScoringInputs {
+        let expectedEvent: NoteEvent
+        let detectedSwarName: String
+        let centsDeviation: Double
+        let ragaPitchCents: Double?
+        let ragaScoringContext: RagaScoringContext?
+    }
+
+    /// Evaluate a note input under wait-mode rules.
+    private func evaluateWaitMode(
+        matched: Bool, inputs: ScoringInputs
+    ) -> ScoringDiff {
+        guard matched else {
+            return ScoringDiff(
+                noteEventID: inputs.expectedEvent.id,
+                newState: .wrong, score: nil,
+                streakOutcome: .noChange
+            )
+        }
+        let score = NoteScoreCalculator.score(
+            expectedNote: inputs.expectedEvent.swarName,
+            detectedNote: inputs.detectedSwarName,
+            pitchDeviationCents: inputs.centsDeviation,
+            timingDeviationSeconds: 0, durationDeviation: 0,
+            ragaPitchDeviationCents: inputs.ragaPitchCents,
+            ragaContext: inputs.ragaScoringContext
+        )
+        return ScoringDiff(
+            noteEventID: inputs.expectedEvent.id,
+            newState: .correct, score: score,
+            streakOutcome: .hit(grade: score.grade)
+        )
+    }
+
+    /// Evaluate a note input under standard (non-wait) mode rules.
+    private func evaluateStandardMode(
+        isCorrectMIDI: Bool, inputs: ScoringInputs
+    ) -> ScoringDiff {
+        if isCorrectMIDI {
+            let score = NoteScoreCalculator.score(
+                expectedNote: inputs.expectedEvent.swarName,
+                detectedNote: inputs.detectedSwarName,
+                pitchDeviationCents: inputs.centsDeviation,
+                timingDeviationSeconds: 0, durationDeviation: 0,
+                ragaPitchDeviationCents: inputs.ragaPitchCents,
+                ragaContext: inputs.ragaScoringContext
+            )
+            return ScoringDiff(
+                noteEventID: inputs.expectedEvent.id,
+                newState: .correct, score: score,
+                streakOutcome: .hit(grade: score.grade)
+            )
+        }
+        let score = NoteScoreCalculator.score(
+            expectedNote: inputs.expectedEvent.swarName,
+            detectedNote: inputs.detectedSwarName,
+            pitchDeviationCents: 50,
+            timingDeviationSeconds: 0, durationDeviation: 0
+        )
+        return ScoringDiff(
+            noteEventID: inputs.expectedEvent.id,
+            newState: .wrong, score: score,
+            streakOutcome: .miss
+        )
+    }
 
     /// Derive the full swar name from a MIDI note number.
     ///

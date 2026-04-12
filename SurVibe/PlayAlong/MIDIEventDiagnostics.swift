@@ -232,7 +232,13 @@ nonisolated final class MIDIEventDiagnostics: Sendable {
             fileHandle?.seekToEndOfFile()
             Self.logger.info("[DIAG] Log file opened at \(url.path, privacy: .private)")
         } catch {
-            Self.logger.error("[DIAG] Failed to open log file: \(error.localizedDescription, privacy: .public) path=\(url.path, privacy: .private)")
+            Self.logger.error(
+                """
+                [DIAG] Failed to open log file: \
+                \(error.localizedDescription, privacy: .public) \
+                path=\(url.path, privacy: .private)
+                """
+            )
         }
     }
 

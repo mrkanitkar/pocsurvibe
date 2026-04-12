@@ -103,71 +103,89 @@ final class SongPlaybackEngine {
         playbackState = .loading
         songTitle = song.title
 
-        Self.logger.info("Loading song: \(song.title)")
+        Self.logger.info("Loading song: \(song.title, privacy: .public)")
 
-        // Songs may not have MIDI binary data (seed songs use sargam/western
-        // notation arrays instead). Treat nil/empty MIDI as "no playback
-        // available" — stay idle so the notation is still viewable.
         guard let midiData = song.midiData, !midiData.isEmpty else {
-            midiEvents = []
-            duration = TimeInterval(song.durationSeconds)
-            currentPosition = 0
-            currentNoteIndex = nil
-            nextNoteIndex = nil
-            sequencer = nil
-            playbackState = .idle
-
-            Self.logger.info(
-                "Song '\(song.title)' has no MIDI data — notation-only mode"
-            )
+            setNotationOnlyMode(song: song)
             return
         }
 
-        // Parse MIDI events for UI note highlighting (forward-only cursor).
         let result = MIDIParser.parse(data: midiData)
 
         switch result {
         case .success(let events):
-            midiEvents = events
-            currentPosition = 0
-            currentNoteIndex = nil
-            nextNoteIndex = events.isEmpty ? nil : 0
-
-            // Start the audio engine and load the bundled piano SoundFont
-            // so that the sequencer's routed sampler produces sound.
-            do {
-                try await SoundFontManager.shared.loadBundledPiano()
-            } catch {
-                Self.logger.error(
-                    "SoundFont load failed: \(error.localizedDescription)"
-                )
-            }
-
-            // ARCH-005: Configure AVAudioSequencer for sample-accurate playback.
-            do {
-                try configureSequencer(midiData: midiData, events: events)
-            } catch {
-                return
-            }
-
-            playbackState = .idle
-
-            Self.logger.info(
-                "Song loaded: \(events.count) events, duration=\(String(format: "%.1f", self.duration))s"
-            )
+            await handleParsedEvents(events, midiData: midiData)
 
         case .failure(let error):
-            midiEvents = []
-            duration = 0
-            sequencer = nil
-            playbackState = .error(
-                error.errorDescription ?? "Unknown MIDI parse error"
-            )
+            handleParseFailure(error, songTitle: song.title)
+        }
+    }
 
+    /// Configure for notation-only mode when no MIDI data is available.
+    private func setNotationOnlyMode(song: Song) {
+        midiEvents = []
+        duration = TimeInterval(song.durationSeconds)
+        currentPosition = 0
+        currentNoteIndex = nil
+        nextNoteIndex = nil
+        sequencer = nil
+        playbackState = .idle
+
+        Self.logger.info(
+            "Song '\(song.title, privacy: .public)' has no MIDI data — notation-only mode"
+        )
+    }
+
+    /// Set up playback state from successfully parsed MIDI events.
+    private func handleParsedEvents(
+        _ events: [MIDIEvent], midiData: Data
+    ) async {
+        midiEvents = events
+        currentPosition = 0
+        currentNoteIndex = nil
+        nextNoteIndex = events.isEmpty ? nil : 0
+
+        do {
+            try await SoundFontManager.shared.loadBundledPiano()
+        } catch {
             Self.logger.error(
-                "Failed to load song '\(song.title)': \(error.localizedDescription)"
+                "SoundFont load failed: \(error.localizedDescription, privacy: .public)"
             )
         }
+
+        do {
+            try configureSequencer(midiData: midiData, events: events)
+        } catch {
+            return
+        }
+
+        playbackState = .idle
+
+        Self.logger.info(
+            """
+            Song loaded: \(events.count) events, \
+            duration=\(String(format: "%.1f", self.duration), privacy: .public)s
+            """
+        )
+    }
+
+    /// Handle a MIDI parse failure by transitioning to error state.
+    private func handleParseFailure(
+        _ error: MIDIParseError, songTitle: String
+    ) {
+        midiEvents = []
+        duration = 0
+        sequencer = nil
+        playbackState = .error(
+            error.errorDescription ?? "Unknown MIDI parse error"
+        )
+
+        Self.logger.error(
+            """
+            Failed to load song '\(songTitle, privacy: .public)': \
+            \(error.localizedDescription, privacy: .public)
+            """
+        )
     }
 
     /// Begin playback from the beginning of the song.
@@ -181,7 +199,7 @@ final class SongPlaybackEngine {
     func play() {
         guard playbackState == .idle || playbackState == .stopped else {
             Self.logger.warning(
-                "play() called in invalid state: \(String(describing: self.playbackState))"
+                "play() called in invalid state: \(String(describing: self.playbackState), privacy: .public)"
             )
             return
         }
@@ -202,7 +220,7 @@ final class SongPlaybackEngine {
         } catch {
             let audioError = AudioError.sequencerError(underlying: error.localizedDescription)
             playbackState = .error(audioError.errorDescription ?? error.localizedDescription)
-            Self.logger.error("Sequencer start failed: \(error.localizedDescription)")
+            Self.logger.error("Sequencer start failed: \(error.localizedDescription, privacy: .public)")
             return
         }
 
@@ -214,7 +232,7 @@ final class SongPlaybackEngine {
             properties: ["song_title": songTitle]
         )
 
-        Self.logger.info("Playback started: \(self.songTitle)")
+        Self.logger.info("Playback started: \(self.songTitle, privacy: .public)")
     }
 
     /// Pause playback at the current position.
@@ -227,7 +245,7 @@ final class SongPlaybackEngine {
     func pause() {
         guard playbackState == .playing else {
             Self.logger.warning(
-                "pause() called in invalid state: \(String(describing: self.playbackState))"
+                "pause() called in invalid state: \(String(describing: self.playbackState), privacy: .public)"
             )
             return
         }
@@ -244,7 +262,7 @@ final class SongPlaybackEngine {
         )
 
         Self.logger.info(
-            "Playback paused at \(String(format: "%.1f", self.currentPosition))s"
+            "Playback paused at \(String(format: "%.1f", self.currentPosition), privacy: .public)s"
         )
     }
 
@@ -255,7 +273,7 @@ final class SongPlaybackEngine {
     func resume() {
         guard playbackState == .paused else {
             Self.logger.warning(
-                "resume() called in invalid state: \(String(describing: self.playbackState))"
+                "resume() called in invalid state: \(String(describing: self.playbackState), privacy: .public)"
             )
             return
         }
@@ -269,7 +287,7 @@ final class SongPlaybackEngine {
         } catch {
             let audioError = AudioError.sequencerError(underlying: error.localizedDescription)
             playbackState = .error(audioError.errorDescription ?? error.localizedDescription)
-            Self.logger.error("Sequencer resume failed: \(error.localizedDescription)")
+            Self.logger.error("Sequencer resume failed: \(error.localizedDescription, privacy: .public)")
             return
         }
 
@@ -277,7 +295,7 @@ final class SongPlaybackEngine {
         startDisplayLink()
 
         Self.logger.info(
-            "Playback resumed from \(String(format: "%.1f", self.currentPosition))s"
+            "Playback resumed from \(String(format: "%.1f", self.currentPosition), privacy: .public)s"
         )
     }
 
@@ -288,7 +306,7 @@ final class SongPlaybackEngine {
     func stop() {
         guard playbackState == .playing || playbackState == .paused else {
             Self.logger.warning(
-                "stop() called in invalid state: \(String(describing: self.playbackState))"
+                "stop() called in invalid state: \(String(describing: self.playbackState), privacy: .public)"
             )
             return
         }
@@ -345,7 +363,7 @@ final class SongPlaybackEngine {
         } catch {
             let audioError = AudioError.sequencerError(underlying: error.localizedDescription)
             playbackState = .error(audioError.errorDescription ?? error.localizedDescription)
-            Self.logger.error("Sequencer load failed: \(error.localizedDescription)")
+            Self.logger.error("Sequencer load failed: \(error.localizedDescription, privacy: .public)")
             throw audioError
         }
     }
@@ -437,7 +455,7 @@ final class SongPlaybackEngine {
         )
 
         Self.logger.info(
-            "Playback completed: \(self.songTitle) (\(Int(self.duration))s)"
+            "Playback completed: \(self.songTitle, privacy: .public) (\(Int(self.duration))s)"
         )
     }
 }

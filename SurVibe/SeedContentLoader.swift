@@ -56,7 +56,9 @@ final class SeedContentLoader {
             UserDefaults.standard.set(currentContentVersion, forKey: seedContentVersionKey)
             logger.info("Seed content loaded successfully (v\(currentContentVersion)): \(summary.description, privacy: .public)")
         } catch {
-            logger.error("Seed content loading failed: \(error, privacy: .public). App will continue without seed data.")
+            logger.error(
+                "Seed content loading failed: \(error, privacy: .public). App will continue without seed data."
+            )
         }
     }
 

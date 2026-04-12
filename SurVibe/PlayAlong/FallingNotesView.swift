@@ -139,8 +139,6 @@ struct FallingNotesView: View {
         viewportHeight: CGFloat,
         currentTime: TimeInterval
     ) {
-        // Use hitLineY as the effective viewport height so notes fall toward
-        // the hit line at 85% rather than the absolute bottom edge.
         let hitLineY = size.height * hitLineFraction
         let pps = FallingNotesLayoutEngine.pixelsPerSecond(
             viewportHeight: hitLineY,
@@ -159,67 +157,60 @@ struct FallingNotesView: View {
                 pixelsPerSecond: pps
             )
 
-            // Viewport culling — skip off-screen notes (use full viewportHeight so
-            // notes above the hit line but below the canvas bottom are still culled).
             guard FallingNotesLayoutEngine.isNoteVisible(
-                noteY: y,
-                noteHeight: height,
-                viewportHeight: viewportHeight
-            ) else {
-                continue
-            }
+                noteY: y, noteHeight: height, viewportHeight: viewportHeight
+            ) else { continue }
 
-            // Horizontal alignment with the piano key.
-            // Pass size.width so the fallback geometry uses the actual canvas width
-            // on first render, before keyPositions is populated via preference.
             guard let centerX = FallingNotesLayoutEngine.noteX(
                 midiNote: event.midiNote,
                 keyPositionMap: keyPositionMap,
                 viewWidth: size.width
-            ) else {
-                continue
-            }
+            ) else { continue }
 
-            let state = noteStates[event.id] ?? .upcoming
-            let color = FallingNotesLayoutEngine.noteColor(state: state, swarName: event.swarName)
-
-            // Note rectangle — y is the TOP edge of the note.
             let noteRect = CGRect(
                 x: centerX - noteWidth / 2,
                 y: y - height,
                 width: noteWidth,
                 height: height
             )
-            let roundedPath = Path(
-                roundedRect: noteRect,
-                cornerRadius: noteCornerRadius
-            )
-
-            context.fill(roundedPath, with: .color(color))
-
-            // Active note highlight ring (replaces blur glow — blur requires a
-            // separate GPU render pass per note per frame, ~15ms at 200 BPM).
-            if state == .active && !reduceMotion {
-                context.stroke(
-                    roundedPath,
-                    with: .color(color.opacity(0.85)),
-                    lineWidth: 3
-                )
-            }
-
-            // Note label.
-            let label = FallingNotesLayoutEngine.noteLabel(
-                swarName: event.swarName,
-                westernName: event.westernName,
-                mode: notationMode
-            )
-            drawLabel(
-                label,
-                in: noteRect,
-                context: &context,
-                state: state
+            let state = noteStates[event.id] ?? .upcoming
+            drawSingleNote(
+                context: &context, event: event,
+                rect: noteRect, state: state
             )
         }
+    }
+
+    /// Draw a single note rectangle, highlight ring, and label.
+    private func drawSingleNote(
+        context: inout GraphicsContext,
+        event: NoteEvent,
+        rect: CGRect,
+        state: FallingNotesLayoutEngine.NoteState
+    ) {
+        let color = FallingNotesLayoutEngine.noteColor(
+            state: state, swarName: event.swarName
+        )
+        let roundedPath = Path(
+            roundedRect: rect, cornerRadius: noteCornerRadius
+        )
+
+        context.fill(roundedPath, with: .color(color))
+
+        if state == .active && !reduceMotion {
+            context.stroke(
+                roundedPath,
+                with: .color(color.opacity(0.85)),
+                lineWidth: 3
+            )
+        }
+
+        let label = FallingNotesLayoutEngine.noteLabel(
+            swarName: event.swarName,
+            westernName: event.westernName,
+            mode: notationMode
+        )
+        drawLabel(label, in: rect, context: &context, state: state)
     }
 
     /// Draw a text label centered within a note rectangle.

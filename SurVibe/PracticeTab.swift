@@ -6,10 +6,10 @@ import SwiftUI
 /// Detects notes played on a piano/keyboard via microphone and displays
 /// both Indian (Swar) and Western note names with tuning accuracy.
 struct PracticeTab: View {
-    @State private var viewModel = PitchDetectionViewModel()
-    @State private var isLatchingEnabled = false
+    @State var viewModel = PitchDetectionViewModel()
+    @State var isLatchingEnabled = false
     @AppStorage("visualizationMode") private var visualizationModeRaw: String = VisualizationMode.tuner.rawValue
-    @State private var keyboardLayout: KeyboardLayoutMode = .piano
+    @State var keyboardLayout: KeyboardLayoutMode = .piano
     @Environment(\.openURL) private var openURL
 
     /// Current visualization mode, derived from persisted raw value.
@@ -234,7 +234,7 @@ struct PracticeTab: View {
 
 // MARK: - Sub-Views & Helpers
 
-private extension PracticeTab {
+extension PracticeTab {
     /// Compact note label showing Western name, octave, and Swar name.
     func activeNoteLabel(_ result: PitchResult) -> some View {
         HStack(spacing: Spacing.sm) {
@@ -406,100 +406,6 @@ private extension PracticeTab {
         .foregroundStyle(expressionColor(expression.type))
         .accessibilityLabel("Expression: \(expression.type.displayName)")
         .accessibilityHint("Current pitch expression detected from your playing")
-    }
-
-    /// Toggle between piano and isomorphic sargam keyboard layouts.
-    var keyboardLayoutToggle: some View {
-        Button {
-            withAnimation(.easeInOut(duration: 0.2)) {
-                keyboardLayout = keyboardLayout == .piano ? .isomorphic : .piano
-            }
-        } label: {
-            Image(systemName: keyboardLayout.systemImage)
-                .font(.title3)
-        }
-        .accessibilityLabel({
-            let target = keyboardLayout == .piano
-                ? KeyboardLayoutMode.isomorphic.displayName
-                : KeyboardLayoutMode.piano.displayName
-            return "Switch to \(target) layout"
-        }())
-        .accessibilityHint("Toggles between piano and sargam keyboard layouts")
-    }
-
-    /// Latching toggle and clear button for chord building mode.
-    @ViewBuilder
-    var latchingControls: some View {
-        Button {
-            isLatchingEnabled.toggle()
-        } label: {
-            Image(systemName: isLatchingEnabled ? "pin.fill" : "pin")
-                .font(.title3)
-                .foregroundStyle(isLatchingEnabled ? .green : .secondary)
-        }
-        .accessibilityLabel(isLatchingEnabled ? "Disable latching" : "Enable latching")
-        .accessibilityHint("When enabled, tapped keys stay held for chord building")
-    }
-
-    /// Toolbar menu for selecting latency preset.
-    var latencyMenu: some View {
-        Menu {
-            ForEach(LatencyPreset.allCases, id: \.self) { preset in
-                Button {
-                    viewModel.latencyPreset = preset
-                    if viewModel.isListening {
-                        viewModel.stopListening()
-                        Task { await viewModel.startListening() }
-                    }
-                } label: {
-                    HStack {
-                        Text(preset.displayName)
-                        if preset == viewModel.latencyPreset { Image(systemName: "checkmark") }
-                    }
-                }
-            }
-        } label: {
-            Image(systemName: "waveform.badge.magnifyingglass").font(.title3)
-        }
-        .accessibilityLabel("Latency preset")
-        .accessibilityHint("Choose detection speed: fast, balanced, or precise")
-    }
-    /// Color based on tuning accuracy.
-    func centsColor(_ cents: Double) -> Color {
-        let absCents = abs(cents)
-        if absCents < 5 { return .green }
-        if absCents < 15 { return .yellow }
-        return .orange
-    }
-
-    /// Text label for cents offset.
-    func centsText(_ cents: Double) -> String {
-        let absCents = abs(cents)
-        if absCents < 5 { return "In Tune" }
-        let direction = cents > 0 ? "sharp" : "flat"
-        return "\(Int(absCents))\u{00A2} \(direction)"
-    }
-
-    /// SF Symbol name for each expression type.
-    func expressionIcon(_ type: ExpressionType) -> String {
-        switch type {
-        case .vibrato: "waveform.path"
-        case .meend: "arrow.right"
-        case .gamaka: "waveform"
-        case .stable: "equal.circle"
-        case .indeterminate: "questionmark.circle"
-        }
-    }
-
-    /// Color for each expression type.
-    func expressionColor(_ type: ExpressionType) -> Color {
-        switch type {
-        case .vibrato: .blue
-        case .meend: .purple
-        case .gamaka: .orange
-        case .stable: .green
-        case .indeterminate: .gray
-        }
     }
 }
 

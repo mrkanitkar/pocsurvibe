@@ -275,7 +275,7 @@ final class PlayAlongViewModel {
 
     /// The last MIDI note that was scored in guided free-play mode.
     /// Used for onset debouncing: only score when the note changes, not on every frame.
-    private var lastGuidedMidiNote: Int? = nil
+    private var lastGuidedMidiNote: Int?
 
     /// Timestamp of the most recent pitch result that passed both amplitude and confidence
     /// thresholds in the melody detection loop. Used by the chord detection task to avoid
@@ -458,27 +458,7 @@ final class PlayAlongViewModel {
         metronome.setBPM(scaledBPM)
         metronome.start()
 
-        // Reset scoring state
-        currentNoteIndex = nil
-        currentTime = 0
-        pauseElapsed = 0
-        noteScores.removeAll()
-        notesHit = 0
-        accuracySum = 0
-        accuracy = 0
-        streak = 0
-        longestStreak = 0
-        starRating = 0
-        xpEarned = 0
-        errorMessage = nil
-        expectedMidiNote = nil
-        guidedPlayState = .waitingForNote
-        isStuck = false
-        patienceTimerTask?.cancel()
-        patienceTimerTask = nil
-        for event in noteEvents {
-            noteStates[event.id] = .upcoming
-        }
+        resetScoringState()
 
         playbackStartTime = clock.now
         // Date reference for FallingNotesView self-timing (no pauseElapsed offset on fresh start)
@@ -734,6 +714,30 @@ final class PlayAlongViewModel {
         accuracy = noteScores.isEmpty ? 0 : accuracySum / Double(noteScores.count)
     }
 
+    /// Reset all scoring, streak, and guided-play state for a fresh session.
+    private func resetScoringState() {
+        currentNoteIndex = nil
+        currentTime = 0
+        pauseElapsed = 0
+        noteScores.removeAll()
+        notesHit = 0
+        accuracySum = 0
+        accuracy = 0
+        streak = 0
+        longestStreak = 0
+        starRating = 0
+        xpEarned = 0
+        errorMessage = nil
+        expectedMidiNote = nil
+        guidedPlayState = .waitingForNote
+        isStuck = false
+        patienceTimerTask?.cancel()
+        patienceTimerTask = nil
+        for event in noteEvents {
+            noteStates[event.id] = .upcoming
+        }
+    }
+
     // MARK: - Private Methods — Pitch Detection
 
     /// Start live MIDI keyboard detection.
@@ -770,22 +774,15 @@ final class PlayAlongViewModel {
             )
         }
 
-        // MIDI callback: two-phase approach for sub-frame key highlighting.
-        //
-        // Phase 1 (CoreMIDI thread, synchronous, ~0 ms):
-        //   Call highlightCoordinator.noteOn/noteOff directly. These methods are
-        //   `nonisolated` and write to a lock-free Bool array — no actor hop,
-        //   no queuing. The CADisplayLink reads the array every ~8–16 ms and
-        //   publishes `activeNotes` to SwiftUI only when changed.
-        //
-        // Phase 2 (MainActor, async, ~1–3 ms):
-        //   Dispatch scoring and detectedMidiNotes bookkeeping to @MainActor.
-        //   This path is non-time-critical for visual feedback because Phase 1
-        //   already guarantees the key highlights before the next rendered frame.
-        //
-        // At 140 BPM with 16th notes (107 ms/note), Phase 1 ensures the key
-        // highlights within the next CADisplayLink tick (~8 ms at 120 Hz) regardless
-        // of main actor load. This matches Simply Piano's architecture.
+        installMIDINoteCallback()
+        startMIDIConnectionMonitoring()
+    }
+
+    /// Install the two-phase MIDI note-on/note-off callback on the MIDI input.
+    ///
+    /// Phase 1 runs on the CoreMIDI thread (lock-free highlight via coordinator).
+    /// Phase 2 dispatches scoring to `@MainActor` via a high-priority Task.
+    private func installMIDINoteCallback() {
 #if DEBUG
         MIDIEventDiagnostics.shared.reset()
         MIDIEventDiagnostics.shared.isEnabled = true
@@ -796,7 +793,6 @@ final class PlayAlongViewModel {
             let midiNote = Int(event.noteNumber)
 
             // Phase 1: CoreMIDI thread — lock-free highlight + diagnostic recording.
-            // Zero actor hops. Runs before any Task is enqueued.
 #if DEBUG
             MIDIEventDiagnostics.shared.recordCoremidi(event: event)
 #endif
@@ -806,10 +802,7 @@ final class PlayAlongViewModel {
                 coordinator.noteOff(midiNote)
             }
 
-            // Phase 2: MainActor — scoring only. detectedMidiNotes is NOT mutated
-            // here because it triggers a full SongPlayAlongView re-render. Key
-            // highlighting is already handled by the coordinator in Phase 1 at
-            // display-link cadence via midiHighlightNotes.
+            // Phase 2: MainActor — scoring only.
             Task(priority: .high) { @MainActor [weak self] in
                 guard let self else { return }
 
@@ -824,19 +817,21 @@ final class PlayAlongViewModel {
                         self.handleGuidedNoteDetected(midiNote: midiNote)
                     }
                 }
-                // Note-off: no @Observable write needed — coordinator manages visual hold.
             }
         }
+    }
 
-        // Reactively update isMIDIConnected / midiDeviceName when the keyboard
-        // is plugged in or removed — no polling, no stale state.
+    /// Start monitoring MIDI keyboard connect/disconnect events.
+    private func startMIDIConnectionMonitoring() {
         midiConnectionTask = Task { [weak self] in
             guard let self else { return }
             for await connected in self.midiInput.connectionStateStream {
                 guard !Task.isCancelled else { return }
                 self.isMIDIConnected = connected
                 self.midiDeviceName = connected ? self.midiInput.connectedDeviceName : nil
-                Self.logger.info("MIDI connection changed: \(connected ? "connected" : "disconnected", privacy: .public)")
+                Self.logger.info(
+                    "MIDI connection changed: \(connected ? "connected" : "disconnected", privacy: .public)"
+                )
             }
         }
     }
@@ -875,7 +870,9 @@ final class PlayAlongViewModel {
                 try audioProcessor.start()
                 Self.logger.info("MicDiag: audioProcessor.start() succeeded")
             } catch {
-                Self.logger.error("MicDiag: audioProcessor.start() FAILED: \(error.localizedDescription, privacy: .public)")
+                Self.logger.error(
+                    "MicDiag: audioProcessor.start() FAILED: \(error.localizedDescription, privacy: .public)"
+                )
                 return
             }
         } else {
@@ -897,68 +894,54 @@ final class PlayAlongViewModel {
             await self?.runMelodyDetectionLoop()
         }
 
-        // --- Chord detection task (FFT chromagram via ChromagramDSP) ---
-        // Runs independently of melody — reads from the ring buffer every 50 ms
-        // and updates detectedMidiNotes with all simultaneously-sounding pitch classes.
-        // Stored so it can be cancelled by cancelPlaybackTasks() and cleanup().
         chordDetectionTask?.cancel()
         chordDetectionTask = Task { [weak self] in
-            guard let self else { return }
-            let buf = self.ringBuffer
-            let realSamples = preset.realSamples
-            let refPitch = 440.0
-            // Minimum RMS to consider a buffer worth analyzing.
-            // Rejects ambient speaker bleed (~0.001–0.003 RMS) while
-            // accepting acoustic instrument playing (typically >0.01 RMS).
-            let amplitudeGate: Float = 0.01
-            while !Task.isCancelled {
-                try? await Task.sleep(for: .milliseconds(50))
-                guard let buf,
-                      let samples = buf.read(count: realSamples) else { continue }
-                // Gate: skip if the buffer is mostly silence / speaker bleed
-                let rms = Self.calculateRMS(samples)
-                guard rms >= amplitudeGate else { continue }
-                let result = ChromagramDSP.analyzeChord(
-                    samples: samples,
-                    sampleRate: 44100,
-                    referencePitch: refPitch
-                )
-                guard !result.detectedPitches.isEmpty else { continue }
+            await self?.runChordDetectionLoop(realSamples: preset.realSamples)
+        }
+    }
 
-                guard !self.isMIDIConnected else { continue }
+    /// Poll the ring buffer for chromagram chord analysis and route to scoring.
+    ///
+    /// Runs every 50 ms, gated on minimum RMS amplitude to reject speaker bleed.
+    /// Falls back to scoring only when the melody autocorrelation path has not
+    /// handled a note in the last 80 ms (avoids double-scoring).
+    private func runChordDetectionLoop(realSamples: Int) async {
+        let buf = ringBuffer
+        let refPitch = 440.0
+        let amplitudeGate: Float = 0.01
+        while !Task.isCancelled {
+            try? await Task.sleep(for: .milliseconds(50))
+            guard let buf,
+                  let samples = buf.read(count: realSamples) else { continue }
+            let rms = Self.calculateRMS(samples)
+            guard rms >= amplitudeGate else { continue }
+            let result = ChromagramDSP.analyzeChord(
+                samples: samples,
+                sampleRate: 44100,
+                referencePitch: refPitch
+            )
+            guard !result.detectedPitches.isEmpty else { continue }
+            guard !isMIDIConnected else { continue }
 
-                // Update keyboard highlights with all detected pitches (polyphonic display).
-                let midiNotes = Set(result.detectedPitches.map { $0.midiNote })
-                self.detectedMidiNotes = midiNotes
-                self.updateDetectedSwarInfo(from: midiNotes)
+            let midiNotes = Set(result.detectedPitches.map { $0.midiNote })
+            detectedMidiNotes = midiNotes
+            updateDetectedSwarInfo(from: midiNotes)
 
-                // --- Chord-path scoring fallback ---
-                // The autocorrelation melody path runs every ~23ms but can fail when
-                // both hands play simultaneously (polyphonic signal confuses the
-                // monophonic peak-picker). The chromagram FFT is more robust to
-                // polyphonic input because it sums energy per pitch class.
-                //
-                // Strategy: pick the single highest-confidence pitch from the chromagram
-                // result and route it to scoring — but ONLY if the melody path has not
-                // already scored a note in the last 80ms (two chord polling cycles).
-                // This prevents double-scoring on notes the autocorrelation caught.
-                //
-                // 80ms window = slightly more than one chord polling interval (50ms),
-                // giving the melody path priority without missing notes it dropped.
-                let melodyAge = Date().timeIntervalSince(self.lastMelodyDetectionDate)
-                guard melodyAge > 0.080 else { continue }
-
-                // Pick the highest-confidence pitch as the dominant melody note.
-                guard let dominant = result.detectedPitches.max(by: { $0.confidence < $1.confidence }) else {
-                    continue
-                }
-                let dominantMidi = dominant.midiNote
-                if self.playbackState == .playing {
-                    self.handleNoteDetected(midiNote: dominantMidi)
-                } else if self.playbackState == .idle || self.playbackState == .paused {
-                    self.handleGuidedNoteDetected(midiNote: dominantMidi)
-                }
+            let melodyAge = Date().timeIntervalSince(lastMelodyDetectionDate)
+            guard melodyAge > 0.080 else { continue }
+            guard let dominant = result.detectedPitches.max(by: { $0.confidence < $1.confidence }) else {
+                continue
             }
+            routeNoteToScoring(midiNote: dominant.midiNote)
+        }
+    }
+
+    /// Route a detected MIDI note to timed scoring or guided free-play.
+    private func routeNoteToScoring(midiNote: Int) {
+        if playbackState == .playing {
+            handleNoteDetected(midiNote: midiNote)
+        } else if playbackState == .idle || playbackState == .paused {
+            handleGuidedNoteDetected(midiNote: midiNote)
         }
     }
 
@@ -995,36 +978,42 @@ final class PlayAlongViewModel {
 
             if enriched.amplitude >= PracticeConstants.silenceThreshold,
                enriched.confidence >= PracticeConstants.confidenceThreshold {
-                self.currentPitch = enriched
-                // Mark that the melody path handled this frame so the chord fallback
-                // (50ms polling) can skip scoring to avoid double-counting.
-                self.lastMelodyDetectionDate = Date()
-                let midiNote = Self.midiNoteFromFrequency(enriched.frequency)
-                if !self.isMIDIConnected {
-                    Self.logger.info("MicDiag: highlight note=\(midiNote) (\(enriched.noteName, privacy: .public)\(enriched.octave))")
-                    self.detectedMidiNotes = [midiNote]
-                    self.updateDetectedSwarInfo(from: self.detectedMidiNotes)
-                } else {
-                    Self.logger.info("MicDiag: MIDI connected — skipping detectedMidiNotes update")
-                }
-                if self.playbackState == .playing {
-                    self.handleNoteDetected(midiNote: midiNote)
-                } else if self.playbackState == .idle || self.playbackState == .paused {
-                    self.handleGuidedNoteDetected(midiNote: midiNote)
-                }
+                processMelodyPitch(enriched)
             } else {
                 belowThresholdCount += 1
-                self.currentPitch = nil
-                if !self.isMIDIConnected {
-                    self.detectedMidiNotes = []
-                    self.highlightState.detectedSwarInfo = nil
-                }
-                self.lastGuidedMidiNote = nil
+                clearMelodyHighlight()
             }
         }
         Self.logger.info(
             "MicDiag: melody task stream ended (results=\(pitchResultCount) belowThresh=\(belowThresholdCount))"
         )
+    }
+
+    /// Process a pitch that passed amplitude and confidence thresholds.
+    private func processMelodyPitch(_ enriched: PitchResult) {
+        currentPitch = enriched
+        lastMelodyDetectionDate = Date()
+        let midiNote = Self.midiNoteFromFrequency(enriched.frequency)
+        if !isMIDIConnected {
+            Self.logger.info(
+                "MicDiag: highlight note=\(midiNote) (\(enriched.noteName, privacy: .public)\(enriched.octave))"
+            )
+            detectedMidiNotes = [midiNote]
+            updateDetectedSwarInfo(from: detectedMidiNotes)
+        } else {
+            Self.logger.info("MicDiag: MIDI connected — skipping detectedMidiNotes update")
+        }
+        routeNoteToScoring(midiNote: midiNote)
+    }
+
+    /// Clear melody highlight state when pitch falls below threshold.
+    private func clearMelodyHighlight() {
+        currentPitch = nil
+        if !isMIDIConnected {
+            detectedMidiNotes = []
+            highlightState.detectedSwarInfo = nil
+        }
+        lastGuidedMidiNote = nil
     }
 
     /// Calculate RMS amplitude from audio samples.
@@ -1071,59 +1060,68 @@ final class PlayAlongViewModel {
         }
 
         if isCorrect {
-            noteStates[expectedEvent.id] = .correct
-            let score = NoteScoreCalculator.score(
-                expectedNote: expectedEvent.swarName,
-                detectedNote: detectedSwarName,
-                pitchDeviationCents: centsDeviation,
-                timingDeviationSeconds: 0,
-                durationDeviation: 0,
-                ragaPitchDeviationCents: currentPitch?.ragaCentsOffset.map { abs($0) },
-                ragaContext: ragaScoringContext
+            handleGuidedCorrectNote(
+                event: expectedEvent,
+                index: index,
+                detectedSwarName: detectedSwarName,
+                centsDeviation: centsDeviation
             )
-            appendScore(score)
-            updateStreakForHit(grade: score.grade)
-            accuracy = noteScores.isEmpty ? 0 : accuracySum / Double(noteScores.count)
-            guidedPlayState = .correct
-
-            // Reset debounce immediately so the next note can be detected without
-            // waiting for the feedback delay. At high BPM (>140), keeping the gate
-            // locked for 400 ms causes queued notes to be silently dropped.
-            lastGuidedMidiNote = nil
-
-            // Advance to next note after brief visual feedback delay.
-            // 150 ms is long enough to see the green flash (one rendered frame at 60 Hz
-            // is ~16 ms; 150 ms is ~9 frames — clearly perceptible). Previously 400 ms
-            // was blocking the pipeline at 140+ BPM where inter-note time is 107 ms.
-            let nextIndex = index + 1
-            Task { [weak self] in
-                guard let self else { return }
-                try? await Task.sleep(for: .milliseconds(150))
-                if nextIndex < self.noteEvents.count {
-                    self.currentNoteIndex = nextIndex
-                    self.updateExpectedMidiNote()
-                    self.guidedPlayState = .waitingForNote
-                    self.isStuck = false
-                    self.startPatienceTimer()
-                } else {
-                    // All notes played in guided mode
-                    self.currentNoteIndex = nil
-                    self.expectedMidiNote = nil
-                    self.guidedPlayState = .waitingForNote
-                }
-            }
         } else {
-            noteStates[expectedEvent.id] = .wrong
-            guidedPlayState = .wrong
-            // Reset debounce immediately after wrong so the user can replay without
-            // waiting. Previously 300 ms — too long at >180 BPM (133 ms inter-note).
-            lastGuidedMidiNote = nil
-            Task { [weak self] in
-                guard let self else { return }
-                try? await Task.sleep(for: .milliseconds(100))
-                if self.guidedPlayState == .wrong {
-                    self.guidedPlayState = .waitingForNote
-                }
+            handleGuidedWrongNote(event: expectedEvent)
+        }
+    }
+
+    /// Score a correct guided-mode note and advance to the next event.
+    private func handleGuidedCorrectNote(
+        event: NoteEvent,
+        index: Int,
+        detectedSwarName: String,
+        centsDeviation: Double
+    ) {
+        noteStates[event.id] = .correct
+        let score = NoteScoreCalculator.score(
+            expectedNote: event.swarName,
+            detectedNote: detectedSwarName,
+            pitchDeviationCents: centsDeviation,
+            timingDeviationSeconds: 0,
+            durationDeviation: 0,
+            ragaPitchDeviationCents: currentPitch?.ragaCentsOffset.map { abs($0) },
+            ragaContext: ragaScoringContext
+        )
+        appendScore(score)
+        updateStreakForHit(grade: score.grade)
+        accuracy = noteScores.isEmpty ? 0 : accuracySum / Double(noteScores.count)
+        guidedPlayState = .correct
+        lastGuidedMidiNote = nil
+
+        let nextIndex = index + 1
+        Task { [weak self] in
+            guard let self else { return }
+            try? await Task.sleep(for: .milliseconds(150))
+            if nextIndex < self.noteEvents.count {
+                self.currentNoteIndex = nextIndex
+                self.updateExpectedMidiNote()
+                self.guidedPlayState = .waitingForNote
+                self.isStuck = false
+                self.startPatienceTimer()
+            } else {
+                self.currentNoteIndex = nil
+                self.expectedMidiNote = nil
+                self.guidedPlayState = .waitingForNote
+            }
+        }
+    }
+
+    /// Flash wrong feedback and reset debounce for the next attempt.
+    private func handleGuidedWrongNote(event: NoteEvent) {
+        noteStates[event.id] = .wrong
+        guidedPlayState = .wrong
+        lastGuidedMidiNote = nil
+        Task { [weak self] in
+            guard let self else { return }
+            try? await Task.sleep(for: .milliseconds(100))
+            if self.guidedPlayState == .wrong {
+                self.guidedPlayState = .waitingForNote
             }
         }
     }
@@ -1275,60 +1273,76 @@ final class PlayAlongViewModel {
 
             guard !Task.isCancelled else { return }
 
-            // Play the note sound
-            if isSoundEnabled {
-                soundFont.playNote(
-                    midiNote: event.midiNote,
-                    velocity: event.velocity,
-                    channel: 0
-                )
-
-                // Schedule note-off after the note's scaled duration
-                let scaledDuration = event.duration / tempoScale
-                Task { [weak self] in
-                    guard let self else { return }
-                    try? await self.clock.sleep(for: .seconds(scaledDuration))
-                    self.soundFont.stopNote(midiNote: event.midiNote, channel: 0)
-                }
-            }
+            playNoteSound(event: event)
 
             currentNoteIndex = index
             noteStates[event.id] = .active
+            markPreviousNotesAsMissed(beforeIndex: index)
 
-            // Mark previous active notes as missed if they were not scored
-            for prevIndex in 0..<index {
-                let prevEvent = noteEvents[prevIndex]
-                if noteStates[prevEvent.id] == .active {
-                    noteStates[prevEvent.id] = .missed
-                    appendScore(NoteScoreCalculator.missedNote(expectedNote: prevEvent.swarName))
-                    updateStreakForMiss()
+            do {
+                if try await awaitWaitModeResolution(index: index) {
+                    return // Task was cancelled during wait
                 }
-            }
-
-            // If wait mode is enabled, set the wait controller
-            if isWaitModeEnabled, let waitCtrl = waitController {
-                waitCtrl.setCurrentNoteIndex(index)
-                // Wait mode: pause loop until note is resolved
-                while waitCtrl.isWaitingForNote, !Task.isCancelled {
-                    try? await clock.sleep(for: .milliseconds(50))
-                }
-                guard !Task.isCancelled else { return }
+            } catch {
+                return // Task was cancelled during wait
             }
         }
 
-        // All notes scheduled — wait for the last note to finish, then complete
-        if let last = noteEvents.last {
-            let endTime = (last.timestamp + last.duration) / tempoScale
-            let startTime = playbackStartTime ?? clock.now
-            let targetEnd = startTime.advanced(by: .seconds(endTime))
-            let remaining = targetEnd - clock.now
-            if remaining > .zero {
-                try? await clock.sleep(for: remaining)
-            }
-        }
-
+        await awaitLastNoteCompletion()
         guard !Task.isCancelled else { return }
         completeSession()
+    }
+
+    /// Play SoundFont note-on and schedule note-off after scaled duration.
+    private func playNoteSound(event: NoteEvent) {
+        guard isSoundEnabled else { return }
+        soundFont.playNote(
+            midiNote: event.midiNote,
+            velocity: event.velocity,
+            channel: 0
+        )
+        let scaledDuration = event.duration / tempoScale
+        Task { [weak self] in
+            guard let self else { return }
+            try? await self.clock.sleep(for: .seconds(scaledDuration))
+            self.soundFont.stopNote(midiNote: event.midiNote, channel: 0)
+        }
+    }
+
+    /// Mark all prior notes still in `.active` state as missed.
+    private func markPreviousNotesAsMissed(beforeIndex index: Int) {
+        for prevIndex in 0..<index {
+            let prevEvent = noteEvents[prevIndex]
+            if noteStates[prevEvent.id] == .active {
+                noteStates[prevEvent.id] = .missed
+                appendScore(NoteScoreCalculator.missedNote(expectedNote: prevEvent.swarName))
+                updateStreakForMiss()
+            }
+        }
+    }
+
+    /// Block the playback loop in wait mode until the note is resolved.
+    ///
+    /// - Returns: `true` if the Task was cancelled while waiting (caller should return).
+    private func awaitWaitModeResolution(index: Int) async throws -> Bool {
+        guard isWaitModeEnabled, let waitCtrl = waitController else { return false }
+        waitCtrl.setCurrentNoteIndex(index)
+        while waitCtrl.isWaitingForNote, !Task.isCancelled {
+            try? await clock.sleep(for: .milliseconds(50))
+        }
+        return Task.isCancelled
+    }
+
+    /// Sleep until the last note's full duration has elapsed, then return.
+    private func awaitLastNoteCompletion() async {
+        guard let last = noteEvents.last else { return }
+        let endTime = (last.timestamp + last.duration) / tempoScale
+        let startTime = playbackStartTime ?? clock.now
+        let targetEnd = startTime.advanced(by: .seconds(endTime))
+        let remaining = targetEnd - clock.now
+        if remaining > .zero {
+            try? await clock.sleep(for: remaining)
+        }
     }
 
     // MARK: - Private Methods — Display Link
@@ -1505,24 +1519,31 @@ final class PlayAlongViewModel {
         // Print MIDI diagnostics summary to Console.app
         MIDIEventDiagnostics.shared.printSummary()
 
-        // Persist session results to SwiftData
-        if let modelContext, let song {
-            let recorder = PracticeSessionRecorder(modelContext: modelContext)
-            let songInfo = SessionSongInfo(
-                songId: song.slugId.isEmpty ? song.id.uuidString : song.slugId,
-                songTitle: song.title,
-                ragaName: song.ragaName,
-                difficulty: song.difficulty
-            )
-            let durationMinutes = max(1, Int(pauseElapsed / 60))
-            recorder.recordSession(
-                songInfo: songInfo,
-                durationMinutes: durationMinutes,
-                noteScores: noteScores
-            )
-            Self.logger.info("Session persisted to SwiftData")
-        }
+        persistSessionResults()
+        trackSessionCompletion()
+    }
 
+    /// Persist session results to SwiftData via PracticeSessionRecorder.
+    private func persistSessionResults() {
+        guard let modelContext, let song else { return }
+        let recorder = PracticeSessionRecorder(modelContext: modelContext)
+        let songInfo = SessionSongInfo(
+            songId: song.slugId.isEmpty ? song.id.uuidString : song.slugId,
+            songTitle: song.title,
+            ragaName: song.ragaName,
+            difficulty: song.difficulty
+        )
+        let durationMinutes = max(1, Int(pauseElapsed / 60))
+        recorder.recordSession(
+            songInfo: songInfo,
+            durationMinutes: durationMinutes,
+            noteScores: noteScores
+        )
+        Self.logger.info("Session persisted to SwiftData")
+    }
+
+    /// Fire analytics and log for session completion.
+    private func trackSessionCompletion() {
         AnalyticsManager.shared.track(
             .songPlaybackCompleted,
             properties: [
@@ -1534,7 +1555,6 @@ final class PlayAlongViewModel {
                 "view_mode": viewMode.rawValue,
             ]
         )
-
         Self.logger.info(
             "Session completed: accuracy=\(String(format: "%.0f", self.accuracy * 100))%, stars=\(self.starRating)"
         )

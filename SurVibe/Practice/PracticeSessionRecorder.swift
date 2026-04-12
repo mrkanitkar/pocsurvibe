@@ -99,7 +99,10 @@ final class PracticeSessionRecorder {
         // PracticeSessionRecorder only handles RiyazEntry + SongProgress persistence.
 
         Self.logger.info(
-            "Session recorded: song=\(songInfo.songId, privacy: .public) accuracy=\(accuracy) xp=\(xp) notes=\(noteScores.count)"
+            """
+            Session recorded: song=\(songInfo.songId, privacy: .public) \
+            accuracy=\(accuracy) xp=\(xp) notes=\(noteScores.count)
+            """
         )
     }
 
@@ -124,7 +127,13 @@ final class PracticeSessionRecorder {
                 return existing
             }
         } catch {
-            Self.logger.error("Failed to fetch SongProgress for \(songId, privacy: .public): \(error.localizedDescription, privacy: .public)")
+            Self.logger.error(
+                """
+                Failed to fetch SongProgress for \
+                \(songId, privacy: .public): \
+                \(error.localizedDescription, privacy: .public)
+                """
+            )
         }
 
         let progress = SongProgress(songId: songId, songTitle: songTitle)

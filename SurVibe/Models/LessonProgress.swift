@@ -3,7 +3,7 @@ import os
 import SVCore
 import SwiftData
 
-private let lpLogger = Logger.survibe(category: "LessonProgress")
+private let lpLogger = Logger.survibe(category: "LessonProgressModel")
 
 /// Tracks lesson completion progress. One-way flag: once completed, stays completed.
 ///
@@ -81,7 +81,13 @@ final class LessonProgress {
         do {
             return try JSONDecoder().decode([Bool].self, from: data)
         } catch {
-            lpLogger.warning("Failed to decode stepCompletions for lesson \(self.lessonId): \(error.localizedDescription)")
+            lpLogger.warning(
+                """
+                Failed to decode stepCompletions for lesson \
+                \(self.lessonId, privacy: .public): \
+                \(error.localizedDescription, privacy: .public)
+                """
+            )
             return []
         }
     }

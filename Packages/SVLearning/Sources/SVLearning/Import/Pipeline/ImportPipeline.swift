@@ -6,11 +6,11 @@ private let pipelineLogger = Logger.survibe(category: "ImportPipeline")
 /// Orchestrates the full 5-stage song import pipeline.
 ///
 /// ## Pipeline stages
-/// 1. **Format Detection** — Identifies the notation format automatically.
-/// 2. **Parsing** — Delegates to the appropriate format-specific parser.
-/// 3. **Normalisation** — Fills in missing octave and duration values.
-/// 4. **Validation** — Generates smart warnings; emits `.warningsGenerated` if any exist.
-/// 5. **MIDI Synthesis** — Generates MIDI binary data from the normalised notation.
+/// 1. **Format Detection** -- Identifies the notation format automatically.
+/// 2. **Parsing** -- Delegates to the appropriate format-specific parser.
+/// 3. **Normalisation** -- Fills in missing octave and duration values.
+/// 4. **Validation** -- Generates smart warnings; emits `.warningsGenerated` if any exist.
+/// 5. **MIDI Synthesis** -- Generates MIDI binary data from the normalised notation.
 ///
 /// Results are streamed via `AsyncStream<ImportPipelineResult>`. The caller
 /// receives progress updates, optional warnings, and finally either
@@ -19,7 +19,8 @@ private let pipelineLogger = Logger.survibe(category: "ImportPipeline")
 /// ## Usage
 /// ```swift
 /// let pipeline = ImportPipeline()
-/// for await result in pipeline.run(input: input, title: "Raag Yaman", ...) {
+/// let config = ImportConfiguration(title: "Raag Yaman", artist: "", language: "hi", difficulty: 3, category: "classical")
+/// for await result in pipeline.run(input: input, configuration: config) {
 ///     switch result {
 ///     case .progress(let update): updateProgressBar(update.fraction)
 ///     case .warningsGenerated(let warnings): showWarningsUI(warnings)
@@ -55,29 +56,17 @@ public struct ImportPipeline: ImportPipelineProtocol {
     ///
     /// - Parameters:
     ///   - input: Raw notation input from the user.
-    ///   - title: Song title.
-    ///   - artist: Artist or composer name.
-    ///   - language: ISO 639-1 language code (e.g. "hi", "mr", "en").
-    ///   - difficulty: Difficulty level 1–5.
-    ///   - category: Category string (e.g. "folk", "classical").
+    ///   - configuration: Bundled song metadata (title, artist, language, difficulty, category).
     /// - Returns: An `AsyncStream<ImportPipelineResult>` that emits progress, warnings, and the final result.
     public func run(
         input: NotationInput,
-        title: String,
-        artist: String,
-        language: String,
-        difficulty: Int,
-        category: String
+        configuration: ImportConfiguration
     ) -> AsyncStream<ImportPipelineResult> {
         AsyncStream { continuation in
             Task {
                 await runPipeline(
                     input: input,
-                    title: title,
-                    artist: artist,
-                    language: language,
-                    difficulty: difficulty,
-                    category: category,
+                    configuration: configuration,
                     continuation: continuation
                 )
             }
@@ -86,23 +75,46 @@ public struct ImportPipeline: ImportPipelineProtocol {
 
     // MARK: - Private Pipeline Execution
 
+    /// Execute all five pipeline stages sequentially.
     private func runPipeline(
         input: NotationInput,
-        title: String,
-        artist: String,
-        language: String,
-        difficulty: Int,
-        category: String,
+        configuration: ImportConfiguration,
         continuation: AsyncStream<ImportPipelineResult>.Continuation
     ) async {
         // Validate metadata first
-        guard !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+        guard !configuration.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             continuation.yield(.failed(.missingMetadata("title")))
             continuation.finish()
             return
         }
 
-        // Stage 1: Format Detection
+        // Stages 1-2: Detect format and parse
+        let resolvedInput = detectFormat(input: input, continuation: continuation)
+        guard let parsed = parseNotation(input: resolvedInput, continuation: continuation) else { return }
+
+        // Stage 3: Normalise
+        guard let normalised = normaliseNotation(parsed: parsed, continuation: continuation) else { return }
+
+        // Stage 4: Validate
+        let warnings = validateNotation(normalised: normalised, continuation: continuation)
+        if warnings == nil { return }
+
+        // Stage 5: Synthesise MIDI and build DTO
+        await synthesiseAndComplete(
+            normalised: normalised,
+            warnings: warnings ?? [],
+            configuration: configuration,
+            continuation: continuation
+        )
+    }
+
+    // MARK: - Pipeline Stage Helpers
+
+    /// Stage 1: Detect the notation format.
+    private func detectFormat(
+        input: NotationInput,
+        continuation: AsyncStream<ImportPipelineResult>.Continuation
+    ) -> NotationInput {
         continuation.yield(.progress(ImportProgressUpdate(stage: 1, stageName: "Detecting format", fraction: 0.0)))
         let detectedFormat = formatDetector.detect(input)
         let resolvedInput: NotationInput
@@ -115,24 +127,36 @@ public struct ImportPipeline: ImportPipelineProtocol {
             resolvedInput = input
         }
         continuation.yield(.progress(ImportProgressUpdate(stage: 1, stageName: "Detecting format", fraction: 0.2)))
+        return resolvedInput
+    }
 
-        // Stage 2: Parsing
+    /// Stage 2: Parse the notation. Returns nil and finishes stream on failure.
+    private func parseNotation(
+        input: NotationInput,
+        continuation: AsyncStream<ImportPipelineResult>.Continuation
+    ) -> ParsedNotation? {
         continuation.yield(.progress(ImportProgressUpdate(stage: 2, stageName: "Parsing notation", fraction: 0.2)))
         let parsed: ParsedNotation
         do {
-            parsed = try parse(resolvedInput)
+            parsed = try parse(input)
         } catch let error as ImportError {
             continuation.yield(.failed(error))
             continuation.finish()
-            return
+            return nil
         } catch {
             continuation.yield(.failed(.parsingFailed(error.localizedDescription)))
             continuation.finish()
-            return
+            return nil
         }
         continuation.yield(.progress(ImportProgressUpdate(stage: 2, stageName: "Parsing notation", fraction: 0.4)))
+        return parsed
+    }
 
-        // Stage 3: Normalisation
+    /// Stage 3: Normalise parsed notation. Returns nil and finishes stream on failure.
+    private func normaliseNotation(
+        parsed: ParsedNotation,
+        continuation: AsyncStream<ImportPipelineResult>.Continuation
+    ) -> ParsedNotation? {
         continuation.yield(.progress(ImportProgressUpdate(stage: 3, stageName: "Normalising notes", fraction: 0.4)))
         let normalised: ParsedNotation
         do {
@@ -140,29 +164,42 @@ public struct ImportPipeline: ImportPipelineProtocol {
         } catch let error as ImportError {
             continuation.yield(.failed(error))
             continuation.finish()
-            return
+            return nil
         } catch {
             continuation.yield(.failed(.normalisationFailed))
             continuation.finish()
-            return
+            return nil
         }
         continuation.yield(.progress(ImportProgressUpdate(stage: 3, stageName: "Normalising notes", fraction: 0.6)))
+        return normalised
+    }
 
-        // Stage 4: Validation
+    /// Stage 4: Validate notation and emit warnings. Returns nil if blocking errors found.
+    private func validateNotation(
+        normalised: ParsedNotation,
+        continuation: AsyncStream<ImportPipelineResult>.Continuation
+    ) -> [ParseWarning]? {
         continuation.yield(.progress(ImportProgressUpdate(stage: 4, stageName: "Validating", fraction: 0.6)))
         let warnings = validator.validate(normalised)
         if !warnings.isEmpty {
             continuation.yield(.warningsGenerated(warnings))
         }
-        // Blocking errors prevent continuation — emit failed if any .error severity warning exists
         if warnings.contains(where: { $0.severity == .error }) {
             continuation.yield(.failed(.parsingFailed("Validation errors must be resolved before saving.")))
             continuation.finish()
-            return
+            return nil
         }
         continuation.yield(.progress(ImportProgressUpdate(stage: 4, stageName: "Validating", fraction: 0.8)))
+        return warnings
+    }
 
-        // Stage 5: MIDI Synthesis
+    /// Stage 5: Synthesise MIDI, build DTO, and complete the stream.
+    private func synthesiseAndComplete(
+        normalised: ParsedNotation,
+        warnings: [ParseWarning],
+        configuration: ImportConfiguration,
+        continuation: AsyncStream<ImportPipelineResult>.Continuation
+    ) async {
         continuation.yield(.progress(ImportProgressUpdate(stage: 5, stageName: "Generating MIDI", fraction: 0.8)))
         let midiData: Data?
         do {
@@ -178,20 +215,33 @@ public struct ImportPipeline: ImportPipelineProtocol {
         }
         continuation.yield(.progress(ImportProgressUpdate(stage: 5, stageName: "Generating MIDI", fraction: 1.0)))
 
-        // Build final DTO
-        let durationSeconds = normalizer.estimateDurationSeconds(normalised, tempo: normalised.tempo)
+        let dto = buildDTO(
+            normalised: normalised, midiData: midiData,
+            warnings: warnings, configuration: configuration
+        )
+        continuation.yield(.completed(dto))
+        continuation.finish()
+    }
 
-        // Encode notation arrays as JSON Data using format-specific encoders
-        // that match the exact Codable field names of SargamNote and WesternNote.
+    // MARK: - DTO Builder
+
+    /// Build the final `ImportedSongDTO` from pipeline results and configuration.
+    private func buildDTO(
+        normalised: ParsedNotation,
+        midiData: Data?,
+        warnings: [ParseWarning],
+        configuration: ImportConfiguration
+    ) -> ImportedSongDTO {
+        let durationSeconds = normalizer.estimateDurationSeconds(normalised, tempo: normalised.tempo)
         let sargamData: Data? = normalised.format == .sargam ? encodeSargamNotes(normalised.notes) : nil
         let westernData: Data? = normalised.format != .sargam ? encodeWesternNotes(normalised.notes) : nil
 
-        let dto = ImportedSongDTO(
-            title: title.trimmingCharacters(in: .whitespacesAndNewlines),
-            artist: artist.trimmingCharacters(in: .whitespacesAndNewlines),
-            language: language,
-            difficulty: max(1, min(5, difficulty)),
-            category: category,
+        return ImportedSongDTO(
+            title: configuration.title.trimmingCharacters(in: .whitespacesAndNewlines),
+            artist: configuration.artist.trimmingCharacters(in: .whitespacesAndNewlines),
+            language: configuration.language,
+            difficulty: max(1, min(5, configuration.difficulty)),
+            category: configuration.category,
             tempo: normalised.tempo,
             durationSeconds: durationSeconds,
             sargamNotationData: sargamData,
@@ -202,9 +252,6 @@ public struct ImportPipeline: ImportPipelineProtocol {
             source: "user",
             acceptedWarnings: warnings.filter { $0.severity != .error }
         )
-
-        continuation.yield(.completed(dto))
-        continuation.finish()
     }
 
     // MARK: - Parser Dispatch
@@ -249,7 +296,7 @@ public struct ImportPipeline: ImportPipelineProtocol {
     /// Encodes parsed western notes into the `[WesternNote]` JSON format expected by `Song.decodedWesternNotes`.
     ///
     /// Uses exact field names matching `WesternNote.CodingKeys`: `"note"`, `"duration"`, `"midiNumber"`.
-    /// The MIDI number is derived from the note name (e.g. "C4" → 60).
+    /// The MIDI number is derived from the note name (e.g. "C4" -> 60).
     private func encodeWesternNotes(_ notes: [ParsedNotation.Note]) -> Data? {
         let dicts = notes.map { note -> [String: Any] in
             [

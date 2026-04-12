@@ -29,6 +29,7 @@ extension Logger {
     ///   messages (e.g. `"PitchDetector"`, `"ImportPipeline"`).
     /// - Returns: A configured `Logger` instance for the SurVibe subsystem.
     public static func survibe(category: String) -> Logger {
+        // swiftlint:disable:next no_inline_logger_subsystem
         Logger(subsystem: subsystem, category: category)
     }
 }

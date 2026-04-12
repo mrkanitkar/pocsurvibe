@@ -51,13 +51,13 @@ final class PracticeSessionViewModel {
     private(set) var sargamNotes: [SargamNote] = []
 
     /// Accumulated note scores from the practice phase.
-    private(set) var noteScores: [NoteScore] = []
+    var noteScores: [NoteScore] = []
 
     /// Latest pitch detection result (for live UI feedback).
-    private(set) var currentPitch: PitchResult?
+    var currentPitch: PitchResult?
 
     /// Index of the current note being practiced (0-based).
-    private(set) var currentPracticeNoteIndex: Int = 0
+    var currentPracticeNoteIndex: Int = 0
 
     /// Overall session accuracy (0.0-1.0), computed at completion.
     private(set) var sessionAccuracy: Double = 0.0
@@ -73,11 +73,11 @@ final class PracticeSessionViewModel {
 
     /// AUD-017: Running accuracy sum for O(1) average computation.
     /// Avoids `PracticeScoring.averageAccuracy` O(n) reduce on every HUD render.
-    private(set) var liveAccuracySum: Double = 0
+    var liveAccuracySum: Double = 0
 
     /// AUD-017: Current streak of consecutive non-miss notes.
     /// Maintained incrementally so `PracticeHUD` never calls `PracticeScoring.longestStreak`.
-    private(set) var liveStreak: Int = 0
+    var liveStreak: Int = 0
 
     /// Wait Mode engine for note-by-note practice.
     private(set) var waitModeEngine = WaitModeEngine()
@@ -112,7 +112,7 @@ final class PracticeSessionViewModel {
     }
 
     /// Elapsed practice time in seconds.
-    private(set) var elapsedPracticeTime: TimeInterval = 0
+    var elapsedPracticeTime: TimeInterval = 0
 
     /// Whether the listen phase is currently playing.
     var isListenPlaying: Bool {
@@ -125,36 +125,36 @@ final class PracticeSessionViewModel {
     // MARK: - Private Properties
 
     /// Audio processor for microphone pitch detection.
-    private let audioProcessor = PracticeAudioProcessor()
+    let audioProcessor = PracticeAudioProcessor()
 
     /// Metronome engine for beat-keeping during practice.
-    private let metronomeEngine: MetronomeEngine
+    let metronomeEngine: MetronomeEngine
 
     /// Raga scoring context, built from the song's ragaName. nil for non-raga songs.
-    private var ragaScoringContext: RagaScoringContext?
+    var ragaScoringContext: RagaScoringContext?
 
     /// Raga-aware note mapper for enriching pitch results. nil for non-raga songs.
-    private var ragaMapper: RagaAwareMapper?
+    var ragaMapper: RagaAwareMapper?
 
     /// Recorder for persisting practice results to SwiftData.
     private var recorder: PracticeSessionRecorder?
 
     /// Gamification service for XP awards, rang progression, and achievements.
-    private var gamificationService: GamificationService?
+    var gamificationService: GamificationService?
 
     /// Task that consumes the pitch stream and scores notes.
-    private var pitchMonitoringTask: Task<Void, Never>?
+    var pitchMonitoringTask: Task<Void, Never>?
 
     /// Task that updates elapsed practice time.
-    private var practiceTimerTask: Task<Void, Never>?
+    var practiceTimerTask: Task<Void, Never>?
 
     /// Wall-clock time when practice started, used for elapsed time.
-    private var practiceStartTime: Date?
+    var practiceStartTime: Date?
 
     /// Whether first-pitch achievement has been fired this session.
-    private var hasTrackedFirstPitch: Bool = false
+    var hasTrackedFirstPitch: Bool = false
 
-    private static let logger = Logger.survibe(category: "PracticeSessionVM")
+    static let logger = Logger.survibe(category: "PracticeSessionVM")
 
     // MARK: - Initialization
 
@@ -185,7 +185,7 @@ final class PracticeSessionViewModel {
         sargamNotes = song.decodedSargamNotes ?? []
         if sargamNotes.isEmpty {
             Self.logger.warning(
-                "Song '\(song.title)' has no sargam notation — scoring will be limited"
+                "Song '\(song.title, privacy: .public)' has no sargam notation — scoring will be limited"
             )
         }
 
@@ -197,7 +197,7 @@ final class PracticeSessionViewModel {
         do {
             try await SoundFontManager.shared.loadBundledPiano()
         } catch {
-            Self.logger.error("SoundFont load failed: \(error.localizedDescription)")
+            Self.logger.error("SoundFont load failed: \(error.localizedDescription, privacy: .public)")
         }
 
         // Load song into playback engine
@@ -219,7 +219,7 @@ final class PracticeSessionViewModel {
         configureRagaContext(ragaName: song.ragaName)
 
         phase = .listenFirst
-        Self.logger.info("Song loaded for practice: \(song.title)")
+        Self.logger.info("Song loaded for practice: \(song.title, privacy: .public)")
     }
 
     /// Start the listen-first playback phase.
@@ -281,7 +281,7 @@ final class PracticeSessionViewModel {
             try audioProcessor.start()
         } catch {
             Self.logger.error(
-                "Audio processor failed to start: \(error.localizedDescription)"
+                "Audio processor failed to start: \(error.localizedDescription, privacy: .public)"
             )
             phase = .error(
                 "Microphone not available. Check permissions in Settings."
@@ -312,7 +312,7 @@ final class PracticeSessionViewModel {
             ]
         )
 
-        Self.logger.info("Practice started: \(self.song?.title ?? "unknown")")
+        Self.logger.info("Practice started: \(self.song?.title ?? "unknown", privacy: .public)")
     }
 
     /// Complete the practice session and compute results.
@@ -322,55 +322,17 @@ final class PracticeSessionViewModel {
     func completePractice() {
         guard phase == .practiceAlong else { return }
 
-        // Stop monitoring
-        pitchMonitoringTask?.cancel()
-        pitchMonitoringTask = nil
-        practiceTimerTask?.cancel()
-        practiceTimerTask = nil
-        audioProcessor.stop()
-        metronomeEngine.stop()
+        stopMonitoring()
+        scoreRemainingNotesAsMisses()
+        computeSessionResults()
+        persistResults()
 
-        // Score any remaining unscored notes as misses
-        while currentPracticeNoteIndex < sargamNotes.count {
-            let note = sargamNotes[currentPracticeNoteIndex]
-            noteScores.append(
-                NoteScoreCalculator.missedNote(expectedNote: note.note)
-            )
-            currentPracticeNoteIndex += 1
-        }
-
-        // Compute session results
-        sessionAccuracy = PracticeScoring.averageAccuracy(scores: noteScores)
-        starRating = PracticeScoring.starRating(accuracy: sessionAccuracy)
-        let grades = noteScores.map(\.grade)
-        longestStreak = PracticeScoring.longestStreak(grades: grades)
-        xpEarned = PracticeScoring.xpEarned(
-            accuracy: sessionAccuracy,
-            difficulty: song?.difficulty ?? 1
-        )
-
-        // Calculate duration in minutes
-        let durationMinutes = max(1, Int(elapsedPracticeTime / 60.0))
-
-        // Persist results
-        let songInfo = SessionSongInfo(
-            songId: song?.slugId ?? "",
-            songTitle: song?.title ?? "",
-            ragaName: song?.ragaName ?? "",
-            difficulty: song?.difficulty ?? 1
-        )
-        recorder?.recordSession(
-            songInfo: songInfo,
-            durationMinutes: durationMinutes,
-            noteScores: noteScores
-        )
-
-        // Award XP via gamification service (creates XPEntry records + triggers rang/achievements)
-        let songMastered = starRating >= 3
+        // Award XP via gamification service
+        let songProficient = starRating >= 3
         gamificationService?.handlePracticeCompleted(
             xp: xpEarned,
             songId: song?.slugId ?? "",
-            songMastered: songMastered
+            songProficient: songProficient
         )
 
         phase = .completed
@@ -452,141 +414,52 @@ final class PracticeSessionViewModel {
 
     // MARK: - Private Methods
 
-    /// Start the elapsed practice time tracker.
-    ///
-    /// Updates `elapsedPracticeTime` every second via `Task.sleep`.
-    private func startPracticeTimer() {
-        practiceTimerTask?.cancel()
-        practiceTimerTask = Task { [weak self] in
-            while !Task.isCancelled {
-                guard let self, let startTime = self.practiceStartTime else {
-                    return
-                }
-                self.elapsedPracticeTime = Date().timeIntervalSince(startTime)
-                try? await Task.sleep(for: .seconds(1))
-            }
-        }
-    }
-
-    /// Start the pitch monitoring loop.
-    ///
-    /// Consumes pitch results from the audio processor's async stream,
-    /// compares each detected note against the expected sargam note,
-    /// and produces `NoteScore` values. Automatically completes the
-    /// session when all notes have been played.
-    private func startPitchMonitoring() {
+    /// Cancel monitoring tasks and stop audio/metronome.
+    private func stopMonitoring() {
         pitchMonitoringTask?.cancel()
-        pitchMonitoringTask = Task { [weak self] in
-            guard let self else { return }
-            for await pitch in self.audioProcessor.pitchStream {
-                guard !Task.isCancelled, self.phase == .practiceAlong else { break }
-                guard self.currentPracticeNoteIndex < self.sargamNotes.count else {
-                    self.completePractice()
-                    break
-                }
-
-                // Enrich with raga context when mapper is available
-                let enrichedPitch = self.enrichPitchWithRagaContext(pitch)
-                self.currentPitch = enrichedPitch
-
-                guard enrichedPitch.amplitude >= PracticeConstants.silenceThreshold,
-                      enrichedPitch.confidence >= PracticeConstants.confidenceThreshold
-                else { continue }
-
-                // Track first valid pitch for "First Note" achievement
-                if !self.hasTrackedFirstPitch {
-                    self.hasTrackedFirstPitch = true
-                    self.gamificationService?.handleFirstPitchDetected()
-                }
-
-                if self.processDetectedPitch(enrichedPitch) { break }
-            }
-        }
+        pitchMonitoringTask = nil
+        practiceTimerTask?.cancel()
+        practiceTimerTask = nil
+        audioProcessor.stop()
+        metronomeEngine.stop()
     }
 
-    /// Enrich a pitch result with raga-aware mapping when available.
-    ///
-    /// When a `RagaAwareMapper` is configured, re-maps the detected frequency
-    /// to get JI cents offset and in-raga status. Falls through to the
-    /// original pitch result when no mapper is available.
-    ///
-    /// - Parameter pitch: The raw pitch result from the audio processor.
-    /// - Returns: Enriched pitch result with `isInRaga` and `ragaCentsOffset`.
-    private func enrichPitchWithRagaContext(_ pitch: PitchResult) -> PitchResult {
-        guard let mapper = ragaMapper else { return pitch }
-        do {
-            // referencePitch is A4 (440 Hz), matching the audio processor's convention
-            let mapping = try mapper.mapFrequency(pitch.frequency, referencePitch: 440.0)
-            return PitchResult(
-                frequency: pitch.frequency,
-                amplitude: pitch.amplitude,
-                noteName: mapping.noteName,
-                octave: mapping.octave,
-                centsOffset: pitch.centsOffset,
-                confidence: pitch.confidence,
-                isInRaga: mapping.isInRaga,
-                ragaCentsOffset: mapping.ragaCentsOffset
+    /// Mark all remaining unscored notes as misses.
+    private func scoreRemainingNotesAsMisses() {
+        while currentPracticeNoteIndex < sargamNotes.count {
+            let note = sargamNotes[currentPracticeNoteIndex]
+            noteScores.append(
+                NoteScoreCalculator.missedNote(expectedNote: note.note)
             )
-        } catch {
-            return pitch
-        }
-    }
-
-    /// Score a detected pitch against the current expected note. Returns `true` if session is complete.
-    private func processDetectedPitch(_ pitch: PitchResult) -> Bool {
-        let expected = sargamNotes[currentPracticeNoteIndex]
-        let expectedName = expected.modifier.map { "\($0.capitalized) \(expected.note)" } ?? expected.note
-
-        // Use JI cents deviation when raga context is available, otherwise 12ET
-        let centsDeviation: Double
-        if let ragaCents = pitch.ragaCentsOffset {
-            centsDeviation = abs(ragaCents)
-        } else {
-            centsDeviation = abs(pitch.centsOffset)
-        }
-
-        let score = NoteScoreCalculator.score(
-            expectedNote: expectedName, detectedNote: pitch.noteName,
-            pitchDeviationCents: centsDeviation,
-            timingDeviationSeconds: 0.05, durationDeviation: 0.1,
-            ragaPitchDeviationCents: pitch.ragaCentsOffset.map { abs($0) },
-            ragaContext: ragaScoringContext
-        )
-        noteScores.append(score)
-        // AUD-017: Maintain live counters incrementally — O(1) per note.
-        liveAccuracySum += score.accuracy
-        liveStreak = score.grade == .miss ? 0 : liveStreak + 1
-        if pitch.noteName == expectedName && pitch.octave == expected.octave {
             currentPracticeNoteIndex += 1
-            if currentPracticeNoteIndex >= sargamNotes.count {
-                completePractice()
-                return true
-            }
         }
-        return false
     }
 
-    /// Configure raga-aware scoring context from the song's raga name.
-    ///
-    /// When a valid raga name is provided, creates a `RagaScoringContext` for
-    /// score penalties and a `RagaAwareMapper` for JI note snapping.
-    /// When raga name is empty or unknown, clears both to fall back to 12ET.
-    ///
-    /// - Parameter ragaName: The raga name from the song, or empty string.
-    private func configureRagaContext(ragaName: String) {
-        guard !ragaName.isEmpty else {
-            ragaScoringContext = nil
-            ragaMapper = nil
-            return
-        }
+    /// Compute aggregate session results from note scores.
+    private func computeSessionResults() {
+        sessionAccuracy = PracticeScoring.averageAccuracy(scores: noteScores)
+        starRating = PracticeScoring.starRating(accuracy: sessionAccuracy)
+        let grades = noteScores.map(\.grade)
+        longestStreak = PracticeScoring.longestStreak(grades: grades)
+        xpEarned = PracticeScoring.xpEarned(
+            accuracy: sessionAccuracy,
+            difficulty: song?.difficulty ?? 1
+        )
+    }
 
-        ragaScoringContext = RagaScoringContext.from(ragaName: ragaName)
-        if let ragaContext = RagaTuningProvider.context(for: ragaName) {
-            ragaMapper = RagaAwareMapper(ragaContext: ragaContext)
-            Self.logger.info("Raga context configured: \(ragaName) (\(ragaContext.scaleDegrees.count) degrees)")
-        } else {
-            ragaMapper = nil
-            Self.logger.info("Unknown raga '\(ragaName)' — using equal temperament")
-        }
+    /// Persist session results to SwiftData via the recorder.
+    private func persistResults() {
+        let durationMinutes = max(1, Int(elapsedPracticeTime / 60.0))
+        let songInfo = SessionSongInfo(
+            songId: song?.slugId ?? "",
+            songTitle: song?.title ?? "",
+            ragaName: song?.ragaName ?? "",
+            difficulty: song?.difficulty ?? 1
+        )
+        recorder?.recordSession(
+            songInfo: songInfo,
+            durationMinutes: durationMinutes,
+            noteScores: noteScores
+        )
     }
 }

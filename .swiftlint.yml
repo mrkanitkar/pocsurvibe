@@ -78,3 +78,11 @@ custom_rules:
     regex: "VersionedSchema|SchemaMigrationPlan"
     message: "VersionedSchema is incompatible with CloudKit sync. Use manual lightweight versioning. See Architect Review F2."
     severity: error
+  no_inline_logger_subsystem:
+    name: "No Inline Logger Subsystem"
+    regex: 'Logger\(subsystem:'
+    match_kinds:
+      - identifier
+      - argument
+    message: "Use Logger.survibe(category:) from SVCore instead of Logger(subsystem:). See LOG-019."
+    severity: error

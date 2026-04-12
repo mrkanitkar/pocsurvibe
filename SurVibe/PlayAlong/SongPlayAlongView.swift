@@ -29,7 +29,7 @@ struct SongPlayAlongView: View {
     let song: Song
 
     /// View model managing playback, scoring, and session lifecycle.
-    @State private var viewModel = PlayAlongViewModel()
+    @State var viewModel = PlayAlongViewModel()
 
     /// Piano key positions collected via preference key for note alignment.
     @State private var keyPositions: [KeyPosition] = []
@@ -38,10 +38,10 @@ struct SongPlayAlongView: View {
     @State private var showResults = false
 
     /// Whether the correctness flash overlay is visible (brief green/red flash).
-    @State private var showCorrectnessBanner = false
+    @State var showCorrectnessBanner = false
 
     /// Color of the current correctness flash (green for correct, red for wrong).
-    @State private var correctnessBannerColor: Color = .green
+    @State var correctnessBannerColor: Color = .green
 
     // MARK: - AppStorage (persisted preferences)
 
@@ -344,176 +344,6 @@ struct SongPlayAlongView: View {
             }
         default:
             break
-        }
-    }
-
-    // MARK: - Pitch Feedback
-
-    /// A compact horizontal bar showing the detected note name, cents deviation,
-    /// confidence, and a `PitchProximityMeter` indicator.
-    ///
-    /// Visible only when the microphone detects a note above the silence/confidence
-    /// thresholds. This gives the user immediate feedback before pressing Play.
-    private func pitchFeedbackBar(pitch: PitchResult) -> some View {
-        HStack(spacing: 12) {
-            // Detected note name + octave
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Detected")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                HStack(spacing: 4) {
-                    Text(pitch.noteName)
-                        .font(.headline.bold())
-                    // Show out-of-raga badge when available
-                    if pitch.isInRaga == false {
-                        Text("Outside Raga")
-                            .font(.system(size: 9, weight: .semibold))
-                            .foregroundStyle(.white)
-                            .padding(.horizontal, 5)
-                            .padding(.vertical, 2)
-                            .background(Capsule().fill(.orange))
-                            .accessibilityLabel("Note is outside the raga")
-                    }
-                }
-            }
-            .accessibilityElement(children: .combine)
-            .accessibilityLabel("Detected note \(pitch.noteName)")
-
-            // Cents deviation
-            VStack(alignment: .leading, spacing: 2) {
-                Text("Cents")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                let displayCents = pitch.ragaCentsOffset ?? pitch.centsOffset
-                Text(String(format: "%+.0f", displayCents))
-                    .font(.callout.monospacedDigit())
-                    .foregroundStyle(centsColor(pitch.ragaCentsOffset ?? pitch.centsOffset))
-            }
-            .accessibilityElement(children: .combine)
-            .accessibilityLabel("\(Int(pitch.ragaCentsOffset ?? pitch.centsOffset)) cents offset")
-
-            // Vertical proximity meter
-            PitchProximityMeter(
-                centsOffset: pitch.ragaCentsOffset ?? pitch.centsOffset
-            )
-            .frame(width: 24, height: 48)
-
-            Spacer()
-
-            // Confidence
-            VStack(alignment: .trailing, spacing: 2) {
-                Text("Confidence")
-                    .font(.caption2)
-                    .foregroundStyle(.secondary)
-                Text("\(Int(pitch.confidence * 100))%")
-                    .font(.callout.monospacedDigit())
-            }
-            .accessibilityElement(children: .combine)
-            .accessibilityLabel("Confidence \(Int(pitch.confidence * 100)) percent")
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 6)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10))
-        .accessibilityElement(children: .contain)
-    }
-
-    /// Map a cents offset to a feedback color (green ≤10¢, blue ≤25¢, orange ≤50¢, red >50¢).
-    private func centsColor(_ cents: Double) -> Color {
-        let abs = Swift.abs(cents)
-        if abs <= 10 { return .green }
-        if abs <= 25 { return .blue }
-        if abs <= 50 { return .orange }
-        return .red
-    }
-
-    // MARK: - Guided Play Overlays
-
-    /// Brief banner flashing green (correct) or red (wrong) after each note attempt.
-    private var correctnessBanner: some View {
-        let isCorrect = correctnessBannerColor == .green
-        return HStack(spacing: 8) {
-            Image(systemName: isCorrect ? "checkmark.circle.fill" : "xmark.circle.fill")
-                .font(.title3.bold())
-            Text(isCorrect ? "Correct!" : "Try again")
-                .font(.headline)
-        }
-        .foregroundStyle(.white)
-        .padding(.horizontal, 16)
-        .padding(.vertical, 8)
-        .background(correctnessBannerColor.gradient, in: Capsule())
-        .accessibilityLabel(isCorrect ? "Correct note" : "Wrong note, try again")
-    }
-
-    /// Overlay shown when user hasn't played for `patienceSeconds`.
-    ///
-    /// Displays the expected note name and a skip button.
-    private func stuckHintOverlay(expectedMidiNote: Int) -> some View {
-        let swarName = swarNameFromMIDI(expectedMidiNote)
-        return VStack(spacing: 12) {
-            Text("Play this note")
-                .font(.subheadline)
-                .foregroundStyle(.secondary)
-            Text(swarName)
-                .font(.largeTitle.bold())
-                .foregroundStyle(.orange)
-            HStack(spacing: 16) {
-                Button {
-                    withAnimation {
-                        viewModel.skipGuidedNote()
-                    }
-                } label: {
-                    Label("Skip", systemImage: "forward.fill")
-                        .font(.subheadline)
-                        .padding(.horizontal, 12)
-                        .padding(.vertical, 6)
-                }
-                .buttonStyle(.bordered)
-                .tint(.secondary)
-                .accessibilityLabel("Skip this note")
-                .accessibilityHint("Mark as missed and move to the next note")
-            }
-        }
-        .padding(20)
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
-        .shadow(radius: 8)
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("Hint: play \(swarName)")
-    }
-
-    /// Convert a MIDI note number to a full swar name for the hint overlay.
-    private func swarNameFromMIDI(_ midiNote: Int) -> String {
-        let semitone = midiNote % 12
-        // Map chromatic offset to swar name
-        let swarNames = [
-            "Sa", "Komal Re", "Re", "Komal Ga", "Ga", "Ma",
-            "Tivra Ma", "Pa", "Komal Dha", "Dha", "Komal Ni", "Ni"
-        ]
-        let index = ((semitone % 12) + 12) % 12
-        return swarNames[index]
-    }
-
-    // MARK: - Guided Play Actions
-
-    /// Respond to guided play state transitions (correct/wrong flash).
-    private func handleGuidedPlayStateChange(_ newState: PlayAlongViewModel.GuidedPlayState) {
-        switch newState {
-        case .correct:
-            correctnessBannerColor = .green
-            withAnimation { showCorrectnessBanner = true }
-            // Auto-hide after 500ms
-            Task { @MainActor in
-                try? await Task.sleep(for: .milliseconds(500))
-                withAnimation { showCorrectnessBanner = false }
-            }
-        case .wrong:
-            correctnessBannerColor = .red
-            withAnimation { showCorrectnessBanner = true }
-            Task { @MainActor in
-                try? await Task.sleep(for: .milliseconds(400))
-                withAnimation { showCorrectnessBanner = false }
-            }
-        case .waitingForNote, .stuck:
-            withAnimation { showCorrectnessBanner = false }
         }
     }
 }
