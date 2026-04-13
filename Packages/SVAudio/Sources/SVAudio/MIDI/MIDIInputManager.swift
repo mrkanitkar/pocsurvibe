@@ -63,10 +63,6 @@ final class NoteCallbackBox: Sendable {
 }
 
 /// Thread-safe box holding a direct low-latency callback for MIDI Control Change events.
-///
-/// Mirrors `NoteCallbackBox` but carries `MIDIControlChangeEvent` instead of
-/// `MIDIInputEvent`. Used to deliver CC messages (sustain pedal, mod wheel, etc.)
-/// synchronously on CoreMIDI's high-priority thread.
 final class CCCallbackBox: Sendable {
     private let lock = OSAllocatedUnfairLock<(@Sendable (MIDIControlChangeEvent) -> Void)?>(
         initialState: nil
@@ -86,18 +82,13 @@ final class CCCallbackBox: Sendable {
 }
 
 /// Thread-safe box holding an optional `EventLogging` reference.
-///
-/// Uses `OSAllocatedUnfairLock` for lock-free-like performance on CoreMIDI's
-/// high-priority thread, consistent with the `NoteCallbackBox` pattern.
 final class EventLoggerBox: Sendable {
     private let lock = OSAllocatedUnfairLock<(any EventLogging)?>(initialState: nil)
 
-    /// Get the current event logger.
     func get() -> (any EventLogging)? {
         lock.withLock { $0 }
     }
 
-    /// Set or clear the event logger.
     func set(_ logger: (any EventLogging)?) {
         lock.withLock { $0 = logger }
     }
@@ -149,15 +140,13 @@ public final class MIDIInputManager: MIDIInputProviding {
     ///
     /// Written via `Task { @MainActor in }` from `refreshSources()`.
     /// Read on the main actor by `PlayAlongViewModel`.
-    @MainActor
-    public internal(set) var isConnected: Bool = false
+    @MainActor public internal(set) var isConnected: Bool = false
 
     /// Human-readable name of the first connected physical MIDI source.
     ///
     /// Written via `Task { @MainActor in }` from `refreshSources()`.
     /// Read on the main actor by `PlayAlongViewModel`.
-    @MainActor
-    public internal(set) var connectedDeviceName: String?
+    @MainActor public internal(set) var connectedDeviceName: String?
 
     // MARK: - Note-On Stream
 
@@ -217,17 +206,16 @@ public final class MIDIInputManager: MIDIInputProviding {
         set { callbackBox.set(newValue) }
     }
 
-    /// Direct `@Sendable` callback fired synchronously on CoreMIDI's high-priority thread
-    /// for MIDI Control Change messages (CC).
-    ///
-    /// Set this before calling `start()` to receive CC events (sustain pedal, mod wheel,
-    /// volume, etc.) with minimum latency. The closure is called with no actor hop.
-    ///
-    /// Primary use case: CC64 sustain pedal. The callback receives all CC messages;
-    /// filter on `event.controller` for specific controllers.
+    /// Direct `@Sendable` callback for MIDI Control Change messages (CC).
     public var onControlChangeEvent: (@Sendable (MIDIControlChangeEvent) -> Void)? {
         get { ccCallbackBox.get() }
         set { ccCallbackBox.set(newValue) }
+    }
+
+    /// Optional event logger for persisting MIDI events to SwiftData.
+    public var eventLogger: (any EventLogging)? {
+        get { eventLoggerBox.get() }
+        set { eventLoggerBox.set(newValue) }
     }
 
     // MARK: - Private State
@@ -266,6 +254,12 @@ public final class MIDIInputManager: MIDIInputProviding {
     /// Sendable box for broadcasting connection state changes.
     let connectionBox = ConnectionContinuationBox()
 
+    /// De-jitter filter to suppress mechanical switch bounce on physical keyboards.
+    ///
+    /// Shared with the CoreMIDI read callback closure. Thread-safe via internal
+    /// `Mutex<State>` -- safe to call from the high-priority CoreMIDI thread.
+    let deJitterFilter = MIDIDeJitterFilter()
+
     /// Sendable box holding the direct low-latency callback.
     ///
     /// Captured by the CoreMIDI read callback alongside `continuationBox`.
@@ -274,23 +268,10 @@ public final class MIDIInputManager: MIDIInputProviding {
     let callbackBox = NoteCallbackBox()
 
     /// Sendable box holding the direct low-latency Control Change callback.
-    ///
-    /// Captured by the CoreMIDI read callback to deliver CC messages (sustain
-    /// pedal, mod wheel, etc.) synchronously on CoreMIDI's high-priority thread.
     let ccCallbackBox = CCCallbackBox()
 
     /// Sendable box holding the optional event logger for persisting MIDI events.
     private let eventLoggerBox = EventLoggerBox()
-
-    /// Optional event logger for persisting MIDI events to SwiftData.
-    ///
-    /// Set by the app target before calling `start()` to enable event persistence.
-    /// The logger is called from CoreMIDI's high-priority thread — implementations
-    /// must be non-blocking (e.g., enqueue work to a background actor).
-    public var eventLogger: (any EventLogging)? {
-        get { eventLoggerBox.get() }
-        set { eventLoggerBox.set(newValue) }
-    }
 
     static let logger = Logger.survibe(category: "MIDIInput")
 
@@ -373,10 +354,11 @@ public final class MIDIInputManager: MIDIInputProviding {
         }
 
         // The read block fires on CoreMIDI's high-priority thread.
-        // Capture only the Sendable boxes — never `self`.
+        // Capture only Sendable boxes and the de-jitter filter — never `self`.
         let box = continuationBox
         let cbBox = callbackBox
         let ccBox = ccCallbackBox
+        let djFilter = deJitterFilter
         let portStatus = MIDIInputPortCreateWithProtocol(
             clientRef,
             "SurVibe Input Port" as CFString,
@@ -384,10 +366,8 @@ public final class MIDIInputManager: MIDIInputProviding {
             &portRef
         ) { eventList, _ in
             MIDIInputManager.parseEventList(
-                eventList,
-                into: box,
-                callback: cbBox,
-                ccCallback: ccBox
+                eventList, into: box, callback: cbBox,
+                ccCallback: ccBox, deJitter: djFilter
             )
         }
 

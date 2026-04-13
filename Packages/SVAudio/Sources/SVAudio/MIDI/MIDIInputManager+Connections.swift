@@ -94,19 +94,19 @@ extension MIDIInputManager {
 
     /// Parse a `MIDIEventList` (Universal MIDI Packets) and dispatch note events.
     ///
-    /// Static method — accesses no instance state. Both `box` and `callback` are
-    /// `Sendable` and protected by their own `NSLock`.
+    /// Static method -- accesses no instance state. `box`, `callback`, and
+    /// `deJitter` are all `Sendable` and protected by their own locks.
     ///
     /// Called from `MIDIInputPortCreateWithProtocol` on CoreMIDI's high-priority thread.
     ///
-    /// ## Universal MIDI Packet (UMP) format — MIDI 1.0 Channel Voice (message type 0x2)
+    /// ## Universal MIDI Packet (UMP) format -- MIDI 1.0 Channel Voice (message type 0x2)
     ///
     /// Each 32-bit word packs the MIDI message as big-endian bytes:
     ///   Bits [31:28] = UMP message type (0x2 = MIDI 1.0 Channel Voice)
     ///   Bits [27:24] = MIDI channel (0-15)
-    ///   Bits [23:16] = status byte (0x80 Note-Off, 0x90 Note-On, 0xB0 CC, etc.)
-    ///   Bits [15:8]  = data1 (note number for notes, controller number for CC)
-    ///   Bits [7:0]   = data2 (velocity for notes, controller value for CC)
+    ///   Bits [23:16] = status byte (0x80 Note-Off, 0x90 Note-On, etc.)
+    ///   Bits [15:8]  = note number (0-127)
+    ///   Bits [7:0]   = velocity (0-127)
     ///
     /// CoreMIDI automatically upgrades legacy MIDIPacketList sources to UMP when
     /// the port is created with `kMIDIProtocol_1_0`.
@@ -116,11 +116,18 @@ extension MIDIInputManager {
     /// Each `MIDIEventPacket` carries a hardware-precise `timeStamp` field
     /// (host ticks from `mach_absolute_time`). We capture it into
     /// `MIDIInputEvent.midiTimestamp` for accurate play-along scoring.
+    ///
+    /// - Parameters:
+    ///   - eventList: Pointer to the CoreMIDI event list.
+    ///   - box: Continuation box for the AsyncStream note-on delivery path.
+    ///   - callback: Direct low-latency callback box.
+    ///   - deJitter: Filter that suppresses duplicate note-on events from switch bounce.
     static func parseEventList(
         _ eventList: UnsafePointer<MIDIEventList>,
         into box: ContinuationBox<MIDIInputEvent>,
         callback: NoteCallbackBox,
-        ccCallback: CCCallbackBox
+        ccCallback: CCCallbackBox,
+        deJitter: MIDIDeJitterFilter
     ) {
         let count = Int(eventList.pointee.numPackets)
         guard count > 0 else { return }
@@ -136,12 +143,10 @@ extension MIDIInputManager {
                 let hardwareTimestamp = packet.timeStamp
 
                 parsePacketWords(
-                    packet: packet,
-                    wordCount: wordCount,
+                    packet: packet, wordCount: wordCount,
                     hardwareTimestamp: hardwareTimestamp,
-                    box: box,
-                    callback: callback,
-                    ccCallback: ccCallback
+                    box: box, callback: callback,
+                    ccCallback: ccCallback, deJitter: deJitter
                 )
 
                 packetPtr = MIDIEventPacketNext(packetPtr)
@@ -149,14 +154,23 @@ extension MIDIInputManager {
         }
     }
 
-    /// Parse UMP words from a single `MIDIEventPacket` and dispatch note and CC events.
+    /// Parse UMP words from a single `MIDIEventPacket` and dispatch note events.
+    ///
+    /// - Parameters:
+    ///   - packet: The raw event packet containing UMP words.
+    ///   - wordCount: Number of 32-bit words in the packet.
+    ///   - hardwareTimestamp: Hardware-precise timestamp from the packet.
+    ///   - box: Continuation box for AsyncStream delivery.
+    ///   - callback: Direct low-latency callback box.
+    ///   - deJitter: Filter that suppresses duplicate note-on events from switch bounce.
     private static func parsePacketWords(
         packet: MIDIEventPacket,
         wordCount: Int,
         hardwareTimestamp: MIDITimeStamp,
         box: ContinuationBox<MIDIInputEvent>,
         callback: NoteCallbackBox,
-        ccCallback: CCCallbackBox
+        ccCallback: CCCallbackBox,
+        deJitter: MIDIDeJitterFilter
     ) {
         let signpostID = midiSignposter.makeSignpostID()
         let signpostState = midiSignposter.beginInterval("UMPParsing", id: signpostID)
@@ -173,22 +187,27 @@ extension MIDIInputManager {
                 let umpMessageType = UInt8((word >> 28) & 0x0F)
 
                 // 0x2 = MIDI 1.0 Channel Voice Message (single word).
-                // This covers Note-On, Note-Off, AND Control Change messages.
                 guard umpMessageType == 0x02 else { continue }
 
-                let channel = UInt8((word >> 24) & 0x0F)
+                let channel    = UInt8((word >> 24) & 0x0F)
                 let statusByte = UInt8((word >> 16) & 0xFF)
-                let data1 = UInt8((word >> 8) & 0x7F)
-                let data2 = UInt8(word & 0x7F)
+                let noteNumber = UInt8((word >>  8) & 0x7F)
+                let velocity   = UInt8(word & 0x7F)
                 let messageType = statusByte & 0xF0
 
                 switch messageType {
                 case 0x90:  // Note-On (velocity=0 means Note-Off)
+                    // De-jitter: suppress duplicate note-on within coalescence window.
+                    if velocity > 0,
+                       deJitter.shouldSuppress(note: noteNumber, timestamp: hardwareTimestamp)
+                    {
+                        continue
+                    }
                     var token = ProbeToken()
                     token.stamp(.inputReceived)
                     let event = MIDIInputEvent(
-                        noteNumber: data1,
-                        velocity: data2,
+                        noteNumber: noteNumber,
+                        velocity: velocity,
                         channel: channel,
                         midiTimestamp: hardwareTimestamp,
                         probeToken: token
@@ -200,7 +219,7 @@ extension MIDIInputManager {
                     var token = ProbeToken()
                     token.stamp(.inputReceived)
                     let event = MIDIInputEvent(
-                        noteNumber: data1,
+                        noteNumber: noteNumber,
                         velocity: 0,
                         channel: channel,
                         midiTimestamp: hardwareTimestamp,
@@ -211,8 +230,8 @@ extension MIDIInputManager {
 
                 case 0xB0:  // Control Change
                     let ccEvent = MIDIControlChangeEvent(
-                        controller: data1,
-                        value: data2,
+                        controller: noteNumber,
+                        value: velocity,
                         channel: channel,
                         midiTimestamp: hardwareTimestamp
                     )

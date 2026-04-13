@@ -14,7 +14,8 @@ import SwiftUI
 ///
 /// ## Performance
 /// Only notes passing the `isNoteVisible` culling check are drawn.
-/// `TimelineView(.animation)` drives smooth 60 fps updates during playback.
+/// `TimelineView(.animation)` drives smooth updates at up to 120 fps on
+/// ProMotion displays during playback.
 ///
 /// ## Accessibility
 /// When `accessibilityReduceMotion` is enabled, notes are drawn without
@@ -89,7 +90,7 @@ struct FallingNotesView: View {
             let viewportHeight = geometry.size.height
             let paused = playbackStartDate == nil
 
-            TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: paused)) { context in
+            TimelineView(.animation(minimumInterval: 1.0 / 120.0, paused: paused)) { context in
                 // Compute currentTime directly from the timeline date so the
                 // ViewModel never needs to write a periodic tick on @MainActor.
                 let currentTime: TimeInterval = {
