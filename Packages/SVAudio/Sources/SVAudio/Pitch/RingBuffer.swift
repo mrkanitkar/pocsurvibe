@@ -13,6 +13,11 @@ private let ringBufferLogger = Logger.survibe(category: "RingBuffer")
 /// Thread safety: Uses Mutex from Swift Synchronization module wrapping all mutable
 /// state in a single `State` struct. This provides compiler-verified Sendable conformance.
 /// Lock hold time is minimal (~4KB memcpy for writes, pointer arithmetic for reads).
+///
+/// - Important: Prefer ``SPSCRingBuffer`` for new code (m2 consolidation).
+///   `SPSCRingBuffer` uses lock-free atomic indices suitable for the real-time audio
+///   thread. This class is retained for backward compatibility with chord detection
+///   consumers until they migrate (tracked as AUD-003).
 public final class AudioRingBuffer: Sendable {
     // MARK: - Properties
 

@@ -33,6 +33,15 @@ public final class PracticeReplayEngine {
     /// Total duration of the replay session in seconds.
     public private(set) var duration: Double = 0
 
+    /// Playback speed multiplier (0.5 = half speed, 1.0 = normal, 2.0 = double).
+    ///
+    /// Change during replay to speed up or slow down. Applied to the sleep
+    /// duration between events — lower values increase the wait, higher values
+    /// decrease it. Clamped to 0.25–4.0.
+    public var speed: Double = 1.0 {
+        didSet { speed = max(0.25, min(4.0, speed)) }
+    }
+
     /// Task driving the replay loop.
     private var replayTask: Task<Void, Never>?
 
@@ -93,8 +102,10 @@ public final class PracticeReplayEngine {
             for event in events {
                 guard !Task.isCancelled else { break }
 
-                // Wait until the event's timestamp
-                let targetOffset = Duration.seconds(event.timestamp)
+                // Wait until the event's timestamp, scaled by speed.
+                let currentSpeed = self?.speed ?? 1.0
+                let scaledTimestamp = event.timestamp / currentSpeed
+                let targetOffset = Duration.seconds(scaledTimestamp)
                 let elapsed = ContinuousClock.now - startTime
                 if targetOffset > elapsed {
                     try? await Task.sleep(for: targetOffset - elapsed)
