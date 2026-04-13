@@ -1,7 +1,7 @@
 import Foundation
-import SwiftData
-import SVLearning
 import SVCore
+import SVLearning
+import SwiftData
 import os.log
 
 /// Records practice session results to SwiftData models.
@@ -98,6 +98,10 @@ final class PracticeSessionRecorder {
         // Note: XP is now awarded by GamificationService in PracticeSessionViewModel.completePractice().
         // PracticeSessionRecorder only handles RiyazEntry + SongProgress persistence.
 
+        // 3. Persist individual note scores for post-session drill-down
+        let sessionID = entry.id
+        persistNoteScores(noteScores, sessionID: sessionID)
+
         Self.logger.info(
             """
             Session recorded: song=\(songInfo.songId, privacy: .public) \
@@ -106,7 +110,68 @@ final class PracticeSessionRecorder {
         )
     }
 
+    /// Persist individual note scores as `NoteScoreEntry` rows.
+    ///
+    /// Converts each transient `NoteScore` value (from `SVLearning`) into a
+    /// persistent `NoteScoreEntry` `@Model` linked by `sessionID`.
+    /// Enables post-session drill-down review of per-note accuracy data.
+    ///
+    /// - Parameters:
+    ///   - noteScores: Array of transient note scores from the practice session.
+    ///   - sessionID: UUID linking all entries to the parent `RiyazEntry`.
+    func persistNoteScores(_ noteScores: [NoteScore], sessionID: UUID) {
+        for (index, score) in noteScores.enumerated() {
+            let pitchAcc = Self.pitchAccuracyFromDeviation(score.pitchDeviationCents)
+            let timingAcc = Self.timingAccuracyFromDeviation(score.timingDeviationSeconds)
+            let durationAcc = max(0.0, 1.0 - abs(score.durationDeviation))
+
+            let entry = NoteScoreEntry(
+                sessionID: sessionID,
+                noteIndex: index,
+                pitchAccuracy: pitchAcc,
+                timingAccuracy: timingAcc,
+                durationAccuracy: durationAcc,
+                compositeScore: score.accuracy,
+                grade: score.grade.rawValue,
+                expectedNote: score.expectedNote,
+                playedFrequency: 0.0,
+                detectedNote: score.detectedNote ?? "",
+                pitchDeviationCents: score.pitchDeviationCents,
+                timestamp: score.timestamp
+            )
+            modelContext.insert(entry)
+        }
+
+        do {
+            try modelContext.save()
+        } catch {
+            Self.logger.error(
+                """
+                Failed to persist note scores for session \
+                \(sessionID, privacy: .public): \
+                \(error.localizedDescription, privacy: .public)
+                """
+            )
+        }
+    }
+
     // MARK: - Private Methods
+
+    /// Convert pitch deviation in cents to an accuracy value (0.0--1.0).
+    ///
+    /// Uses exponential decay: 50 cents deviation maps to ~0.5 accuracy.
+    nonisolated private static func pitchAccuracyFromDeviation(_ cents: Double) -> Double {
+        let absCents = abs(cents)
+        return max(0.0, exp(-absCents / 50.0 * log(2.0)))
+    }
+
+    /// Convert timing deviation in seconds to an accuracy value (0.0--1.0).
+    ///
+    /// Uses exponential decay: 0.2 seconds deviation maps to ~0.5 accuracy.
+    nonisolated private static func timingAccuracyFromDeviation(_ seconds: Double) -> Double {
+        let absSeconds = abs(seconds)
+        return max(0.0, exp(-absSeconds / 0.2 * log(2.0)))
+    }
 
     /// Fetch existing SongProgress or create a new one.
     ///

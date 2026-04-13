@@ -13,11 +13,16 @@ final class MockMIDIInputProvider: MIDIInputProviding, @unchecked Sendable {
 
     // MARK: - MIDIInputProviding
 
-    @MainActor var isConnected: Bool = false
-    @MainActor var connectedDeviceName: String?
+    @MainActor
+    var isConnected: Bool = false
+    @MainActor
+    var connectedDeviceName: String?
 
     /// Direct low-latency callback (mirrors production `MIDIInputManager`).
     var onNoteEvent: (@Sendable (MIDIInputEvent) -> Void)?
+
+    /// Direct low-latency callback for Control Change events.
+    var onControlChangeEvent: (@Sendable (MIDIControlChangeEvent) -> Void)?
 
     var noteOnStream: AsyncStream<MIDIInputEvent> {
         if let stream = _noteOnStream { return stream }
@@ -100,10 +105,22 @@ final class MockMIDIInputProvider: MIDIInputProviding, @unchecked Sendable {
         continuation?.yield(event)
     }
 
+    /// Simulate a Control Change event arriving from the MIDI keyboard.
+    ///
+    /// - Parameters:
+    ///   - controller: MIDI controller number (0-127). 64 = sustain pedal.
+    ///   - value: Controller value (0-127). For CC64: >= 64 = down, < 64 = up.
+    ///   - channel: MIDI channel (0-15).
+    func simulateControlChange(controller: UInt8, value: UInt8, channel: UInt8 = 0) {
+        let event = MIDIControlChangeEvent(controller: controller, value: value, channel: channel)
+        onControlChangeEvent?(event)
+    }
+
     /// Simulate a hot-plug connection state change (connect or disconnect).
     ///
     /// - Parameter connected: `true` = keyboard connected, `false` = disconnected.
-    @MainActor func simulateConnectionChange(connected: Bool) {
+    @MainActor
+    func simulateConnectionChange(connected: Bool) {
         isConnected = connected
         connectedDeviceName = connected ? simulatedDeviceName : nil
         _ = connectionStateStream
@@ -111,12 +128,14 @@ final class MockMIDIInputProvider: MIDIInputProviding, @unchecked Sendable {
     }
 
     /// Reset all recorded state.
-    @MainActor func reset() {
+    @MainActor
+    func reset() {
         isConnected = false
         connectedDeviceName = nil
         startCallCount = 0
         stopCallCount = 0
         simulateConnected = false
         onNoteEvent = nil
+        onControlChangeEvent = nil
     }
 }
