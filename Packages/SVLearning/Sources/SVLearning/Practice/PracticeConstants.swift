@@ -88,4 +88,44 @@ public enum PracticeConstants {
 
     /// Maximum number of recent scores to keep for trend analysis.
     public static let maxRecentScores: Int = 20
+
+    // MARK: - Difficulty Scaling (m7)
+
+    /// Scale a tolerance value by difficulty level.
+    ///
+    /// Higher difficulty = tighter tolerances. Level 1 (beginner) uses the base
+    /// tolerance. Level 5 (master) reduces it by 60%.
+    ///
+    /// ```
+    /// Level 1: multiplier = 1.0  (full tolerance)
+    /// Level 2: multiplier = 0.85
+    /// Level 3: multiplier = 0.70
+    /// Level 4: multiplier = 0.55
+    /// Level 5: multiplier = 0.40
+    /// ```
+    ///
+    /// - Parameters:
+    ///   - baseTolerance: The default tolerance value.
+    ///   - difficultyLevel: Difficulty level (1–5, clamped).
+    /// - Returns: Scaled tolerance for the given difficulty.
+    public static func scaledTolerance(_ baseTolerance: Double, forDifficulty difficultyLevel: Int) -> Double {
+        let level = max(1, min(5, difficultyLevel))
+        let multiplier = 1.0 - Double(level - 1) * 0.15
+        return baseTolerance * multiplier
+    }
+
+    /// Pitch tolerance (cents) scaled by difficulty level.
+    public static func perfectPitchCents(difficulty: Int) -> Double {
+        scaledTolerance(perfectPitchCents, forDifficulty: difficulty)
+    }
+
+    /// Timing tolerance (seconds) scaled by difficulty level.
+    public static func perfectTimingSeconds(difficulty: Int) -> Double {
+        scaledTolerance(perfectTimingSeconds, forDifficulty: difficulty)
+    }
+
+    /// Duration tolerance (fraction) scaled by difficulty level.
+    public static func perfectDurationFraction(difficulty: Int) -> Double {
+        scaledTolerance(perfectDurationFraction, forDifficulty: difficulty)
+    }
 }
