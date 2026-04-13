@@ -362,7 +362,7 @@ public final class MIDIInputManager: MIDIInputProviding {
         let portStatus = MIDIInputPortCreateWithProtocol(
             clientRef,
             "SurVibe Input Port" as CFString,
-            MIDIProtocolID._1_0,
+            MIDIProtocolID._2_0,
             &portRef
         ) { eventList, _ in
             MIDIInputManager.parseEventList(
