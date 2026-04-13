@@ -1,6 +1,7 @@
 import Foundation
 import os
 import QuartzCore
+import SVAudio
 
 /// Decouples MIDI key-highlight state from the SwiftUI render cycle.
 ///
@@ -53,6 +54,9 @@ final class MIDINoteHighlightCoordinator {
     /// 80 ms guarantees one rendered frame at 60 Hz and feels natural to
     /// the user (matches perceptual minimum for an intentional keypress flash).
     nonisolated let minimumHoldSeconds: TimeInterval = 0.080
+
+    /// Counts dropped display frames for observability.
+    let frameDropCounter = FrameDropCounter()
 
     // MARK: - Private: thread-safe note state
 
@@ -113,11 +117,24 @@ final class MIDINoteHighlightCoordinator {
         stateLock.withLock { $0[midiNote] = false }
     }
 
+    // MARK: - Latency Probe
+
+    /// Stamps t3 (frame presented) and records the completed probe token.
+    ///
+    /// Call from the scoring result handler after the display link processes
+    /// the note-on. The token already has t0 (input), t1 (DSP), t2 (match).
+    func recordProbe(_ token: ProbeToken?) {
+        guard var token else { return }
+        token.stamp(.framePresented)
+        LatencyProbe.shared.record(token)
+    }
+
     // MARK: - Display Link Callback — main thread only
 
     /// Called by `CADisplayLink` every frame. Reads the lock-protected buffer,
     /// applies minimum-hold, and publishes `activeNotes` when changed.
-    fileprivate func displayLinkFired(timestamp: CFTimeInterval) {
+    fileprivate func displayLinkFired(timestamp: CFTimeInterval, targetTimestamp: CFTimeInterval) {
+        frameDropCounter.recordFrame(timestamp: timestamp, targetTimestamp: targetTimestamp)
         // Snapshot current physical key states under lock (hold time: ~128 ns)
         let snapshot = stateLock.withLock { $0 }
 
@@ -171,6 +188,9 @@ private final class DisplayLinkTarget: NSObject {
     }
 
     @MainActor @objc func tick(_ link: CADisplayLink) {
-        coordinator?.displayLinkFired(timestamp: link.timestamp)
+        coordinator?.displayLinkFired(
+            timestamp: link.timestamp,
+            targetTimestamp: link.targetTimestamp
+        )
     }
 }

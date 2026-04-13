@@ -1,5 +1,9 @@
 import CoreMIDI
 import Foundation
+import os
+
+/// Signposter for Instruments profiling of MIDI input parsing.
+private let midiSignposter = OSSignposter(subsystem: "com.survibe", category: "MIDIInput")
 
 // MARK: - Source Refresh & Classification
 
@@ -149,6 +153,9 @@ extension MIDIInputManager {
         box: ContinuationBox<MIDIInputEvent>,
         callback: NoteCallbackBox
     ) {
+        let signpostID = midiSignposter.makeSignpostID()
+        let signpostState = midiSignposter.beginInterval("UMPParsing", id: signpostID)
+
         withUnsafeBytes(of: packet.words) { rawWords in
             let words = rawWords.bindMemory(to: UInt32.self)
             var wordIndex = 0
@@ -171,21 +178,27 @@ extension MIDIInputManager {
 
                 switch messageType {
                 case 0x90:  // Note-On (velocity=0 means Note-Off)
+                    var token = ProbeToken()
+                    token.stamp(.inputReceived)
                     let event = MIDIInputEvent(
                         noteNumber: noteNumber,
                         velocity: velocity,
                         channel: channel,
-                        midiTimestamp: hardwareTimestamp
+                        midiTimestamp: hardwareTimestamp,
+                        probeToken: token
                     )
                     callback.fire(event)
                     box.yield(event)
 
                 case 0x80:  // Note-Off (explicit)
+                    var token = ProbeToken()
+                    token.stamp(.inputReceived)
                     let event = MIDIInputEvent(
                         noteNumber: noteNumber,
                         velocity: 0,
                         channel: channel,
-                        midiTimestamp: hardwareTimestamp
+                        midiTimestamp: hardwareTimestamp,
+                        probeToken: token
                     )
                     callback.fire(event)
                     box.yield(event)
@@ -195,6 +208,8 @@ extension MIDIInputManager {
                 }
             }
         }
+
+        midiSignposter.endInterval("UMPParsing", signpostState)
     }
 
     // MARK: - Source Classification

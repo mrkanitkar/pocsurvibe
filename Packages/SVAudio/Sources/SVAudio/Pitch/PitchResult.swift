@@ -31,6 +31,12 @@ public struct PitchResult: Sendable, Equatable {
     /// `nil` when no raga context is active.
     public let ragaCentsOffset: Double?
 
+    /// Latency probe token carrying pipeline timestamps for end-to-end measurement.
+    ///
+    /// Stamped at audio tap entry (t0) and DSP completion (t1).
+    /// `nil` when profiling is not active.
+    public var probeToken: ProbeToken?
+
     public init(
         frequency: Double,
         amplitude: Double,
@@ -40,7 +46,8 @@ public struct PitchResult: Sendable, Equatable {
         timestamp: Date = Date(),
         confidence: Double,
         isInRaga: Bool? = nil,
-        ragaCentsOffset: Double? = nil
+        ragaCentsOffset: Double? = nil,
+        probeToken: ProbeToken? = nil
     ) {
         self.frequency = frequency
         self.amplitude = amplitude
@@ -51,5 +58,6 @@ public struct PitchResult: Sendable, Equatable {
         self.confidence = confidence
         self.isInRaga = isInRaga
         self.ragaCentsOffset = ragaCentsOffset
+        self.probeToken = probeToken
     }
 }

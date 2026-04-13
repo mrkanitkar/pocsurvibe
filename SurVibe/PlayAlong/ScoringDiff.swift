@@ -1,4 +1,5 @@
 import Foundation
+import SVAudio
 import SVLearning
 
 /// Minimal state delta produced by `NoteMatchingActor` for a single note evaluation.
@@ -22,6 +23,12 @@ struct ScoringDiff: Sendable {
 
     /// Whether the streak should increment (hit) or reset (miss) after this note.
     let streakOutcome: StreakOutcome
+
+    /// Latency probe token with t0–t2 stamped (input → DSP → match).
+    ///
+    /// Forwarded to `MIDINoteHighlightCoordinator` to stamp t3 (frame presented)
+    /// and record the complete pipeline measurement.
+    var probeToken: ProbeToken?
 
     /// Streak outcome for a note attempt.
     enum StreakOutcome: Sendable {

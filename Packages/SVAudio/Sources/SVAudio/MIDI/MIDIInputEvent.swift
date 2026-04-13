@@ -32,6 +32,13 @@ public struct MIDIInputEvent: Sendable, Equatable {
     /// System time when the event was received.
     public let timestamp: Date
 
+    /// Latency probe token stamped at the MIDI callback entry point (t0).
+    ///
+    /// Carries `mach_absolute_time` timestamps through the pipeline for
+    /// end-to-end latency measurement. `nil` when profiling is not active
+    /// or when the event was synthesised by a test double.
+    public var probeToken: ProbeToken?
+
     /// Create a MIDI input event.
     ///
     /// - Parameters:
@@ -40,17 +47,20 @@ public struct MIDIInputEvent: Sendable, Equatable {
     ///   - channel: MIDI channel (0–15).
     ///   - midiTimestamp: Hardware CoreMIDI timestamp. Defaults to nil.
     ///   - timestamp: Wall-clock event timestamp. Defaults to now.
+    ///   - probeToken: Latency probe token. Defaults to nil.
     public init(
         noteNumber: UInt8,
         velocity: UInt8,
         channel: UInt8 = 0,
         midiTimestamp: MIDITimeStamp? = nil,
-        timestamp: Date = Date()
+        timestamp: Date = Date(),
+        probeToken: ProbeToken? = nil
     ) {
         self.noteNumber = noteNumber
         self.velocity = velocity
         self.channel = channel
         self.midiTimestamp = midiTimestamp
         self.timestamp = timestamp
+        self.probeToken = probeToken
     }
 }

@@ -2,7 +2,7 @@ import AVFoundation
 import Foundation
 import SVAudio
 import SVCore
-import os.log
+import os
 
 /// Drives song playback using AVAudioSequencer for sample-accurate MIDI
 /// scheduling and tracks position for notation highlighting.
@@ -80,6 +80,9 @@ final class SongPlaybackEngine {
     private var positionCursor: Int = 0
 
     private static let logger = Logger.survibe(category: "SongPlayback")
+
+    /// Signposter for Instruments profiling of playback tick intervals.
+    private static let signposter = OSSignposter(subsystem: "com.survibe", category: "SongPlayback")
 
     // MARK: - Initialization
 
@@ -403,6 +406,9 @@ final class SongPlaybackEngine {
             return
         }
 
+        let signpostID = Self.signposter.makeSignpostID()
+        let signpostState = Self.signposter.beginInterval("PlaybackTick", id: signpostID)
+
         currentPosition = min(sequencer.currentPositionInSeconds, duration)
 
         // AUD-030: Advance cursor past events whose end time has passed.
@@ -428,6 +434,8 @@ final class SongPlaybackEngine {
 
         currentNoteIndex = foundCurrent
         nextNoteIndex = foundNext
+
+        Self.signposter.endInterval("PlaybackTick", signpostState)
 
         // Detect playback completion.
         if currentPosition >= duration {
