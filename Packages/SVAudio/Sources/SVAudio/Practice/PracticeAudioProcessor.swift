@@ -227,9 +227,14 @@ public final class PracticeAudioProcessor {
     ///
     /// AUD-007: Event-driven via `tapSignal` AsyncStream. The loop wakes
     /// immediately each time the mic tap delivers a new buffer, eliminating
-    /// the 50ms polling sleep. At 44100 Hz with a 2048-frame tap buffer,
-    /// the tap fires approximately every 46ms — DSP now runs at the same
-    /// rate with near-zero added latency instead of polling every 50ms.
+    /// the 50ms polling sleep.
+    ///
+    /// ## Sliding Window (M4b)
+    /// The tap fires on every I/O callback (~5.8ms at 256-frame buffer).
+    /// `readLatest(count: 2048)` always reads the most recent 2048 samples,
+    /// overlapping with previous reads. This gives pitch detection latency of
+    /// ~7-8ms (1 I/O buffer + DSP) instead of waiting for a full non-overlapping
+    /// 2048-frame window (~46ms).
     ///
     /// Reads the latest 2048 audio samples from the SPSC ring buffer into
     /// a pre-allocated working buffer, performs autocorrelation-based pitch
