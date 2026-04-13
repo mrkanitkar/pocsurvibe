@@ -57,6 +57,9 @@ struct SurVibeApp: App {
             Lesson.self,
             Curriculum.self,
             XPEntry.self,
+            NoteScoreEntry.self,
+            MIDIEventEntry.self,
+            PitchLogEntry.self,
         ])
     }
 
@@ -78,7 +81,7 @@ struct SurVibeApp: App {
         let config = ModelConfiguration(schema: schema, cloudKitDatabase: .automatic)
 
         // Proactive store reset on schema version change
-        let currentSchemaVersion = 5
+        let currentSchemaVersion = 6
         let previousVersion = UserDefaults.standard.integer(forKey: "survibe_schema_version")
         if previousVersion != 0, previousVersion < currentSchemaVersion {
             appLogger.info(

@@ -3,11 +3,11 @@
 // properties in the primary class declaration; private methods cannot be
 // extracted to separate files without losing @Observable synthesis.
 import Foundation
-import SwiftData
-import SwiftUI
 import SVAudio
 import SVCore
 import SVLearning
+import SwiftData
+import SwiftUI
 import os.log
 
 /// Main view model for the play-along experience.
@@ -135,7 +135,8 @@ final class PlayAlongViewModel {
     var latencyPreset: LatencyPreset = {
         let raw = UserDefaults.standard.string(forKey: "com.survibe.playAlong.latencyPreset") ?? ""
         return LatencyPreset(rawValue: raw) ?? .fast
-    }() {
+    }()
+    {
         didSet {
             UserDefaults.standard.set(latencyPreset.rawValue, forKey: "com.survibe.playAlong.latencyPreset")
             // Restart pitch detection with the new buffer size
@@ -378,12 +379,14 @@ final class PlayAlongViewModel {
 
         // Path 1: MIDI binary data (2/19 songs)
         if let midiData = song.midiData, !midiData.isEmpty,
-           case .success(let midiEvents) = MIDIParser.parse(data: midiData) {
+            case .success(let midiEvents) = MIDIParser.parse(data: midiData)
+        {
             noteEvents = NoteEvent.fromMIDI(events: midiEvents)
         }
         // Path 2: Notation arrays (17/19 songs)
         else if let sargam = song.decodedSargamNotes,
-                let western = song.decodedWesternNotes {
+            let western = song.decodedWesternNotes
+        {
             noteEvents = NoteEvent.fromNotation(
                 sargamNotes: sargam,
                 westernNotes: western,
@@ -659,7 +662,7 @@ final class PlayAlongViewModel {
             .waitModeToggled,
             properties: [
                 "enabled": isWaitModeEnabled,
-                "song_title": song?.title ?? ""
+                "song_title": song?.title ?? "",
             ]
         )
     }
@@ -696,6 +699,7 @@ final class PlayAlongViewModel {
         chordDetectionTask?.cancel()
         chordDetectionTask = nil
         midiInput.onNoteEvent = nil
+        midiInput.onControlChangeEvent = nil
         midiInput.stop()
         highlightCoordinator.onActiveNotesChanged = nil
         highlightCoordinator.stop()
@@ -773,6 +777,7 @@ final class PlayAlongViewModel {
     /// the mic still updates `currentPitch` for visual feedback.
     private func startMIDIDetection() {
         midiInput.onNoteEvent = nil  // clear any previous callback before re-registering
+        midiInput.onControlChangeEvent = nil
         midiConnectionTask?.cancel()
         midiConnectionTask = nil
         highlightCoordinator.start()
@@ -804,32 +809,44 @@ final class PlayAlongViewModel {
     /// Phase 1 runs on the CoreMIDI thread (lock-free highlight via coordinator).
     /// Phase 2 dispatches scoring to `@MainActor` via a high-priority Task.
     private func installMIDINoteCallback() {
-#if DEBUG
-        MIDIEventDiagnostics.shared.reset()
-        MIDIEventDiagnostics.shared.isEnabled = true
-#endif
+        #if DEBUG
+            MIDIEventDiagnostics.shared.reset()
+            MIDIEventDiagnostics.shared.isEnabled = true
+        #endif
 
         let coordinator = highlightCoordinator
+
+        // CC callback: sustain pedal (CC64) and other controllers.
+        // Runs on CoreMIDI's high-priority thread — no actor hop.
+        midiInput.onControlChangeEvent = { event in
+            guard event.isSustainPedal else { return }
+            if event.isSustainDown {
+                coordinator.sustainDown(channel: event.channel)
+            } else {
+                coordinator.sustainUp(channel: event.channel)
+            }
+        }
+
         midiInput.onNoteEvent = { [weak self] event in
             let midiNote = Int(event.noteNumber)
 
             // Phase 1: CoreMIDI thread — lock-free highlight + diagnostic recording.
-#if DEBUG
-            MIDIEventDiagnostics.shared.recordCoremidi(event: event)
-#endif
+            #if DEBUG
+                MIDIEventDiagnostics.shared.recordCoremidi(event: event)
+            #endif
             if event.isNoteOn {
                 coordinator.noteOn(midiNote)
             } else {
-                coordinator.noteOff(midiNote)
+                coordinator.noteOff(midiNote, channel: event.channel)
             }
 
             // Phase 2: MainActor — scoring only.
             Task(priority: .high) { @MainActor [weak self] in
                 guard let self else { return }
 
-#if DEBUG
-                MIDIEventDiagnostics.shared.recordMainActor(event: event)
-#endif
+                #if DEBUG
+                    MIDIEventDiagnostics.shared.recordMainActor(event: event)
+                #endif
 
                 if event.isNoteOn {
                     if self.playbackState == .playing {
@@ -933,7 +950,8 @@ final class PlayAlongViewModel {
         while !Task.isCancelled {
             try? await Task.sleep(for: .milliseconds(50))
             guard let buf,
-                  let samples = buf.read(count: realSamples) else { continue }
+                let samples = buf.read(count: realSamples)
+            else { continue }
             let rms = Self.calculateRMS(samples)
             guard rms >= amplitudeGate else { continue }
             let result = ChromagramDSP.analyzeChord(
@@ -998,7 +1016,8 @@ final class PlayAlongViewModel {
             pitchResultCount += 1
 
             if enriched.amplitude >= PracticeConstants.silenceThreshold,
-               enriched.confidence >= PracticeConstants.confidenceThreshold {
+                enriched.confidence >= PracticeConstants.confidenceThreshold
+            {
                 processMelodyPitch(enriched)
             } else {
                 belowThresholdCount += 1
@@ -1256,9 +1275,10 @@ final class PlayAlongViewModel {
     private func startPlaybackFromCurrentPosition() {
         playbackTask?.cancel()
         let offset = pauseElapsed
-        let startIndex = noteEvents.firstIndex { event in
-            (event.timestamp / tempoScale) >= offset
-        } ?? noteEvents.count
+        let startIndex =
+            noteEvents.firstIndex { event in
+                (event.timestamp / tempoScale) >= offset
+            } ?? noteEvents.count
 
         playbackTask = Task { [weak self] in
             guard let self else { return }
@@ -1288,7 +1308,7 @@ final class PlayAlongViewModel {
                 do {
                     try await clock.sleep(for: sleepDuration)
                 } catch {
-                    return // Task was cancelled
+                    return  // Task was cancelled
                 }
             }
 
@@ -1302,10 +1322,10 @@ final class PlayAlongViewModel {
 
             do {
                 if try await awaitWaitModeResolution(index: index) {
-                    return // Task was cancelled during wait
+                    return  // Task was cancelled during wait
                 }
             } catch {
-                return // Task was cancelled during wait
+                return  // Task was cancelled during wait
             }
         }
 
@@ -1405,7 +1425,8 @@ final class PlayAlongViewModel {
     /// - Parameter midiNote: MIDI note number of the input.
     private func processNoteInput(midiNote: Int) async {
         guard let index = currentNoteIndex,
-              index < noteEvents.count else { return }
+            index < noteEvents.count
+        else { return }
 
         let expectedEvent = noteEvents[index]
 
@@ -1423,12 +1444,22 @@ final class PlayAlongViewModel {
         let pitch = currentPitch
         let ragaContext = ragaScoringContext
 
+        // Compute timing deviation: difference between actual onset and expected onset.
+        // In wait mode, timing is not scored (defaults to 0 via evaluateWaitMode).
+        let onsetDeviation = abs(currentTime - expectedEvent.timestamp)
+
+        // Duration deviation requires note-off tracking (not yet implemented).
+        // Pass 0 until note-off timestamps are captured in a future task.
+        let durDeviation = 0.0
+
         let diff = await noteMatchingActor.evaluate(
             midiNote: midiNote,
             expectedEvent: expectedEvent,
             currentPitch: pitch,
             ragaScoringContext: ragaContext,
-            waitModeMatch: waitModeMatch
+            waitModeMatch: waitModeMatch,
+            timingDeviationSeconds: onsetDeviation,
+            durationDeviation: durDeviation
         )
 
         // Apply the diff back on @MainActor — only three writes, no re-render
@@ -1592,6 +1623,7 @@ final class PlayAlongViewModel {
         pitchDetectionTask?.cancel()
         pitchDetectionTask = nil
         midiInput.onNoteEvent = nil
+        midiInput.onControlChangeEvent = nil
         midiConnectionTask?.cancel()
         midiConnectionTask = nil
         patienceTimerTask?.cancel()

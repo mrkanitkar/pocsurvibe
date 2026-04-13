@@ -86,6 +86,23 @@ struct MIDIInputManagerTests {
         MIDIInputManager.shared.onNoteEvent = nil
         #expect(MIDIInputManager.shared.onNoteEvent == nil)
     }
+
+    // MARK: - Control Change Callback
+
+    @Test("onControlChangeEvent getter returns nil by default")
+    func defaultCCCallbackIsNil() {
+        MIDIInputManager.shared.onControlChangeEvent = nil
+        #expect(MIDIInputManager.shared.onControlChangeEvent == nil)
+    }
+
+    @Test("onControlChangeEvent can be set and cleared")
+    func setAndClearCCCallback() {
+        let callback: @Sendable (MIDIControlChangeEvent) -> Void = { _ in }
+        MIDIInputManager.shared.onControlChangeEvent = callback
+        #expect(MIDIInputManager.shared.onControlChangeEvent != nil)
+        MIDIInputManager.shared.onControlChangeEvent = nil
+        #expect(MIDIInputManager.shared.onControlChangeEvent == nil)
+    }
 }
 
 // MARK: - MIDIInputEvent Concurrency Tests

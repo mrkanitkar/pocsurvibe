@@ -28,12 +28,14 @@ public protocol MIDIInputProviding: AnyObject, Sendable {
     /// Whether at least one MIDI source is currently connected.
     ///
     /// Updated on the main actor. Read on the main actor by UI consumers.
-    @MainActor var isConnected: Bool { get }
+    @MainActor
+    var isConnected: Bool { get }
 
     /// Human-readable name of the first connected MIDI source, or nil if none.
     ///
     /// Updated on the main actor. Read on the main actor by UI consumers.
-    @MainActor var connectedDeviceName: String? { get }
+    @MainActor
+    var connectedDeviceName: String? { get }
 
     /// Direct low-latency callback for MIDI note events.
     ///
@@ -46,6 +48,15 @@ public protocol MIDIInputProviding: AnyObject, Sendable {
     /// This path eliminates the AsyncStream buffer + cooperative-scheduler
     /// resume overhead (~5–20 ms) for latency-critical consumers.
     var onNoteEvent: (@Sendable (MIDIInputEvent) -> Void)? { get set }
+
+    /// Direct low-latency callback for MIDI Control Change events.
+    ///
+    /// **Called synchronously on CoreMIDI's high-priority real-time thread.**
+    /// Delivers all CC messages (sustain pedal CC64, mod wheel CC1, volume CC7,
+    /// etc.). Filter on `event.controller` for specific controllers.
+    ///
+    /// Primary use case: CC64 sustain pedal handling in play-along mode.
+    var onControlChangeEvent: (@Sendable (MIDIControlChangeEvent) -> Void)? { get set }
 
     /// An async stream that yields MIDI note events from connected sources.
     ///

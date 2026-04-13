@@ -104,9 +104,9 @@ extension MIDIInputManager {
     /// Each 32-bit word packs the MIDI message as big-endian bytes:
     ///   Bits [31:28] = UMP message type (0x2 = MIDI 1.0 Channel Voice)
     ///   Bits [27:24] = MIDI channel (0-15)
-    ///   Bits [23:16] = status byte (0x80 Note-Off, 0x90 Note-On, etc.)
-    ///   Bits [15:8]  = note number (0-127)
-    ///   Bits [7:0]   = velocity (0-127)
+    ///   Bits [23:16] = status byte (0x80 Note-Off, 0x90 Note-On, 0xB0 CC, etc.)
+    ///   Bits [15:8]  = data1 (note number for notes, controller number for CC)
+    ///   Bits [7:0]   = data2 (velocity for notes, controller value for CC)
     ///
     /// CoreMIDI automatically upgrades legacy MIDIPacketList sources to UMP when
     /// the port is created with `kMIDIProtocol_1_0`.
@@ -119,7 +119,8 @@ extension MIDIInputManager {
     static func parseEventList(
         _ eventList: UnsafePointer<MIDIEventList>,
         into box: ContinuationBox<MIDIInputEvent>,
-        callback: NoteCallbackBox
+        callback: NoteCallbackBox,
+        ccCallback: CCCallbackBox
     ) {
         let count = Int(eventList.pointee.numPackets)
         guard count > 0 else { return }
@@ -135,9 +136,12 @@ extension MIDIInputManager {
                 let hardwareTimestamp = packet.timeStamp
 
                 parsePacketWords(
-                    packet: packet, wordCount: wordCount,
+                    packet: packet,
+                    wordCount: wordCount,
                     hardwareTimestamp: hardwareTimestamp,
-                    box: box, callback: callback
+                    box: box,
+                    callback: callback,
+                    ccCallback: ccCallback
                 )
 
                 packetPtr = MIDIEventPacketNext(packetPtr)
@@ -145,13 +149,14 @@ extension MIDIInputManager {
         }
     }
 
-    /// Parse UMP words from a single `MIDIEventPacket` and dispatch note events.
+    /// Parse UMP words from a single `MIDIEventPacket` and dispatch note and CC events.
     private static func parsePacketWords(
         packet: MIDIEventPacket,
         wordCount: Int,
         hardwareTimestamp: MIDITimeStamp,
         box: ContinuationBox<MIDIInputEvent>,
-        callback: NoteCallbackBox
+        callback: NoteCallbackBox,
+        ccCallback: CCCallbackBox
     ) {
         let signpostID = midiSignposter.makeSignpostID()
         let signpostState = midiSignposter.beginInterval("UMPParsing", id: signpostID)
@@ -168,12 +173,13 @@ extension MIDIInputManager {
                 let umpMessageType = UInt8((word >> 28) & 0x0F)
 
                 // 0x2 = MIDI 1.0 Channel Voice Message (single word).
+                // This covers Note-On, Note-Off, AND Control Change messages.
                 guard umpMessageType == 0x02 else { continue }
 
-                let channel    = UInt8((word >> 24) & 0x0F)
+                let channel = UInt8((word >> 24) & 0x0F)
                 let statusByte = UInt8((word >> 16) & 0xFF)
-                let noteNumber = UInt8((word >>  8) & 0x7F)
-                let velocity   = UInt8(word & 0x7F)
+                let data1 = UInt8((word >> 8) & 0x7F)
+                let data2 = UInt8(word & 0x7F)
                 let messageType = statusByte & 0xF0
 
                 switch messageType {
@@ -181,8 +187,8 @@ extension MIDIInputManager {
                     var token = ProbeToken()
                     token.stamp(.inputReceived)
                     let event = MIDIInputEvent(
-                        noteNumber: noteNumber,
-                        velocity: velocity,
+                        noteNumber: data1,
+                        velocity: data2,
                         channel: channel,
                         midiTimestamp: hardwareTimestamp,
                         probeToken: token
@@ -194,7 +200,7 @@ extension MIDIInputManager {
                     var token = ProbeToken()
                     token.stamp(.inputReceived)
                     let event = MIDIInputEvent(
-                        noteNumber: noteNumber,
+                        noteNumber: data1,
                         velocity: 0,
                         channel: channel,
                         midiTimestamp: hardwareTimestamp,
@@ -202,6 +208,15 @@ extension MIDIInputManager {
                     )
                     callback.fire(event)
                     box.yield(event)
+
+                case 0xB0:  // Control Change
+                    let ccEvent = MIDIControlChangeEvent(
+                        controller: data1,
+                        value: data2,
+                        channel: channel,
+                        midiTimestamp: hardwareTimestamp
+                    )
+                    ccCallback.fire(ccEvent)
 
                 default:
                     break

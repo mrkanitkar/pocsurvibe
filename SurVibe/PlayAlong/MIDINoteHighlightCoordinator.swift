@@ -47,6 +47,15 @@ final class MIDINoteHighlightCoordinator {
     /// on the view model — that stored property is what SwiftUI observes.
     var onActiveNotesChanged: (@MainActor (Set<Int>) -> Void)?
 
+    // MARK: - Sustain Pedal
+
+    /// Sustain pedal state tracker shared with the MIDI input pipeline.
+    ///
+    /// When the sustain pedal (CC64) is held down and a note-off arrives,
+    /// the note remains highlighted instead of being released. When the pedal
+    /// is released, all held notes are released at once.
+    let sustainPedalState = SustainPedalState()
+
     // MARK: - Configuration
 
     /// Minimum visible duration for each key highlight in seconds.
@@ -93,6 +102,7 @@ final class MIDINoteHighlightCoordinator {
         displayLink?.invalidate()
         displayLink = nil
         isRunning = false
+        sustainPedalState.reset()
         stateLock.withLock { state in
             for i in 0..<128 { state[i] = false }
         }
@@ -112,9 +122,40 @@ final class MIDINoteHighlightCoordinator {
     }
 
     /// Mark a note as physically released. May be called from any thread.
-    nonisolated func noteOff(_ midiNote: Int) {
+    ///
+    /// If the sustain pedal is currently held down for the given channel,
+    /// the note is captured by `sustainPedalState` and remains highlighted
+    /// until the pedal is released.
+    nonisolated func noteOff(_ midiNote: Int, channel: UInt8 = 0) {
         guard midiNote >= 0, midiNote < 128 else { return }
+        if sustainPedalState.holdNote(note: midiNote, channel: channel) {
+            return
+        }
         stateLock.withLock { $0[midiNote] = false }
+    }
+
+    /// Handle sustain pedal down event. May be called from any thread.
+    ///
+    /// - Parameter channel: MIDI channel (0-15).
+    nonisolated func sustainDown(channel: UInt8 = 0) {
+        sustainPedalState.pedalDown(channel: channel)
+    }
+
+    /// Handle sustain pedal up event. May be called from any thread.
+    ///
+    /// Releases all notes that were held during the sustain period
+    /// by clearing them in the lock-protected state buffer.
+    ///
+    /// - Parameter channel: MIDI channel (0-15).
+    nonisolated func sustainUp(channel: UInt8 = 0) {
+        let releasedNotes = sustainPedalState.pedalUp(channel: channel)
+        if !releasedNotes.isEmpty {
+            stateLock.withLock { state in
+                for note in releasedNotes where note >= 0 && note < 128 {
+                    state[note] = false
+                }
+            }
+        }
     }
 
     // MARK: - Latency Probe

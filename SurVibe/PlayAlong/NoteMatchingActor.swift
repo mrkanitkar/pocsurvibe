@@ -52,7 +52,9 @@ actor NoteMatchingActor {
         currentPitch: PitchResult?,
         ragaScoringContext: RagaScoringContext?,
         waitModeMatch: Bool?,
-        probeToken: ProbeToken? = nil
+        probeToken: ProbeToken? = nil,
+        timingDeviationSeconds: Double = 0,
+        durationDeviation: Double = 0
     ) -> ScoringDiff {
         let isCorrectMIDI = Int(expectedEvent.midiNote) == midiNote
         let inputs = ScoringInputs(
@@ -62,7 +64,9 @@ actor NoteMatchingActor {
                 pitch: currentPitch, isCorrectMIDI: isCorrectMIDI
             ),
             ragaPitchCents: currentPitch?.ragaCentsOffset.map { abs($0) },
-            ragaScoringContext: ragaScoringContext
+            ragaScoringContext: ragaScoringContext,
+            timingDeviationSeconds: timingDeviationSeconds,
+            durationDeviation: durationDeviation
         )
 
         // Stamp t2 (match complete) on the probe token.
@@ -104,6 +108,10 @@ actor NoteMatchingActor {
         let centsDeviation: Double
         let ragaPitchCents: Double?
         let ragaScoringContext: RagaScoringContext?
+        /// Absolute onset timing deviation in seconds. Zero in wait mode.
+        let timingDeviationSeconds: Double
+        /// Duration deviation as a fraction of expected duration. Zero in wait mode.
+        let durationDeviation: Double
     }
 
     /// Evaluate a note input under wait-mode rules.
@@ -141,7 +149,8 @@ actor NoteMatchingActor {
                 expectedNote: inputs.expectedEvent.swarName,
                 detectedNote: inputs.detectedSwarName,
                 pitchDeviationCents: inputs.centsDeviation,
-                timingDeviationSeconds: 0, durationDeviation: 0,
+                timingDeviationSeconds: inputs.timingDeviationSeconds,
+                durationDeviation: inputs.durationDeviation,
                 ragaPitchDeviationCents: inputs.ragaPitchCents,
                 ragaContext: inputs.ragaScoringContext
             )

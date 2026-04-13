@@ -66,6 +66,12 @@ public final class PracticeAudioProcessor {
     private var tapSignalContinuation: AsyncStream<Void>.Continuation?
     private var tapSignal: AsyncStream<Void> = AsyncStream { _ in }
 
+    /// Optional event logger for persisting pitch detection results to SwiftData.
+    ///
+    /// Set by the app target before calling `start()` to enable event persistence.
+    /// Called on the main actor — implementations enqueue writes to a background actor.
+    public var eventLogger: (any EventLogging)?
+
     /// Reference pitch for frequency-to-note conversion (A4, in Hz).
     public var referencePitch: Double = 440.0
 
