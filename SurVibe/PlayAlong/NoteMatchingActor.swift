@@ -51,7 +51,8 @@ actor NoteMatchingActor {
         expectedEvent: NoteEvent,
         currentPitch: PitchResult?,
         ragaScoringContext: RagaScoringContext?,
-        waitModeMatch: Bool?
+        waitModeMatch: Bool?,
+        probeToken: ProbeToken? = nil
     ) -> ScoringDiff {
         let isCorrectMIDI = Int(expectedEvent.midiNote) == midiNote
         let inputs = ScoringInputs(
@@ -64,15 +65,23 @@ actor NoteMatchingActor {
             ragaScoringContext: ragaScoringContext
         )
 
+        // Stamp t2 (match complete) on the probe token.
+        var token = probeToken
+        token?.stamp(.matchComplete)
+
         // Wait mode path: caller already evaluated the match on @MainActor.
         if let matched = waitModeMatch {
-            return evaluateWaitMode(matched: matched, inputs: inputs)
+            var diff = evaluateWaitMode(matched: matched, inputs: inputs)
+            diff.probeToken = token
+            return diff
         }
 
         // Standard mode: immediate scoring based on MIDI correctness.
-        return evaluateStandardMode(
+        var diff = evaluateStandardMode(
             isCorrectMIDI: isCorrectMIDI, inputs: inputs
         )
+        diff.probeToken = token
+        return diff
     }
 
     // MARK: - Private Helpers

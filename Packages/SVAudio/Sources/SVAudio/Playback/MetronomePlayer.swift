@@ -1,5 +1,5 @@
 import AVFoundation
-import os.log
+import os
 
 /// Metronome player using AVAudioPlayerNode with sample-accurate AVAudioTime scheduling.
 ///
@@ -34,6 +34,9 @@ public final class MetronomePlayer: MetronomePlaying {
     private let lookAheadBeats = 4
 
     private static let logger = Logger.survibe(category: "Metronome")
+
+    /// Signposter for Instruments profiling of click scheduling intervals.
+    private static let signposter = OSSignposter(subsystem: "com.survibe", category: "Metronome")
 
     // MARK: - Initialization
 
@@ -174,6 +177,9 @@ public final class MetronomePlayer: MetronomePlaying {
                 guard let self else { return }
 
                 // Schedule the next batch of beats ahead
+                let signpostID = Self.signposter.makeSignpostID()
+                let signpostState = Self.signposter.beginInterval("ClickScheduling", id: signpostID)
+
                 for offset in 0..<self.lookAheadBeats {
                     let beatIndex = nextBeatIndex + offset
                     let beatSampleTime = Self.sampleTimeForBeat(
@@ -185,6 +191,8 @@ public final class MetronomePlayer: MetronomePlaying {
                     let beatTime = AVAudioTime(sampleTime: beatSampleTime, atRate: sampleRate)
                     self.scheduleClick(at: beatTime)
                 }
+
+                Self.signposter.endInterval("ClickScheduling", signpostState)
 
                 nextBeatIndex += self.lookAheadBeats
 

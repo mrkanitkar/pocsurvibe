@@ -229,6 +229,11 @@ public final class AudioKitPitchDetector: PitchDetectorProtocol {
                 processedCount += 1
                 #endif
 
+                // Stamp t0 (input received) at DSP loop read — the earliest
+                // point the mic data is actionable in software.
+                var probeToken = ProbeToken()
+                probeToken.stamp(.inputReceived)
+
                 let signpostID = pitchSignposter.makeSignpostID()
                 let state = pitchSignposter.beginInterval("PitchDetection", id: signpostID)
                 let result = Self.processWorkBuffer(
@@ -236,6 +241,9 @@ public final class AudioKitPitchDetector: PitchDetectorProtocol {
                     refPitch: refPitch, minFreq: minFreq, maxFreq: maxFreq
                 )
                 pitchSignposter.endInterval("PitchDetection", state)
+
+                // Stamp t1 (DSP complete) after pitch detection finishes.
+                probeToken.stamp(.dspComplete)
 
                 #if DEBUG
                 if processedCount % 50 == 1 {
@@ -246,10 +254,12 @@ public final class AudioKitPitchDetector: PitchDetectorProtocol {
                 }
                 #endif
 
-                if let result {
-                    continuation.yield(result)
+                if var detected = result {
+                    detected.probeToken = probeToken
+                    continuation.yield(detected)
+                    let amp = detected.amplitude
                     await MainActor.run { [weak self] in
-                        self?.lastAmplitude = result.amplitude
+                        self?.lastAmplitude = amp
                         self?.bufferCount += 1
                     }
                 } else {
