@@ -33,6 +33,13 @@ public final class PracticeAudioProcessor {
     /// Whether the processor is currently active and producing pitch results.
     public private(set) var isActive: Bool = false
 
+    /// Latest chord analysis result from ChromagramDSP.
+    ///
+    /// Updated after each DSP cycle alongside pitch detection. Available for
+    /// chord completeness scoring (M7). `nil` when no chord is detected or
+    /// processor is stopped.
+    public private(set) var lastChordResult: ChordResult?
+
     /// The async stream of pitch detection results.
     ///
     /// Yields `PitchResult` values as they are detected from the microphone.
@@ -67,9 +74,6 @@ public final class PracticeAudioProcessor {
     private var tapSignal: AsyncStream<Void> = AsyncStream { _ in }
 
     /// Optional event logger for persisting pitch detection results to SwiftData.
-    ///
-    /// Set by the app target before calling `start()` to enable event persistence.
-    /// Called on the main actor — implementations enqueue writes to a background actor.
     public var eventLogger: (any EventLogging)?
 
     /// Reference pitch for frequency-to-note conversion (A4, in Hz).
@@ -212,6 +216,7 @@ public final class PracticeAudioProcessor {
         continuation?.finish()
         continuation = nil
         _pitchStream = nil
+        lastChordResult = nil
         isActive = false
         Self.logger.info("PracticeAudioProcessor stopped")
     }
@@ -261,10 +266,9 @@ public final class PracticeAudioProcessor {
                 #if DEBUG
                 processedCount += 1
                 if processedCount == 1 || processedCount % 20 == 0 {
-                    let rms = Self.calculateRMS(workBuf)
-                    let rmsStr = String(format: "%.4f", rms)
-                    Self.logger.info(
-                        "MicDiag: proc=\(processedCount) det=\(detectedCount) rms=\(rmsStr) fr=\(bufferSize)"
+                    Self.logDSPDiagnostics(
+                        workBuf, processed: processedCount,
+                        detected: detectedCount, bufferSize: bufferSize
                     )
                 }
                 #endif
@@ -279,13 +283,17 @@ public final class PracticeAudioProcessor {
                 if let result {
                     #if DEBUG
                     detectedCount += 1
-                    let dspFreqStr = String(format: "%.1f", result.frequency)
-                    let dspConfStr = String(format: "%.2f", result.confidence)
-                    Self.logger.info(
-                        "MicDiag: \(result.noteName)\(result.octave) \(dspFreqStr)Hz cf=\(dspConfStr) #\(detectedCount)"
-                    )
+                    Self.logPitchDetection(result, count: detectedCount)
                     #endif
                     self?.continuation?.yield(result)
+                }
+
+                // Run chord analysis on the same sample buffer.
+                let chordResult = Self.analyzeChordFromBuffer(
+                    workBuf, count: bufferSize, referencePitch: refPitch
+                )
+                await MainActor.run { [weak self] in
+                    self?.lastChordResult = chordResult
                 }
             }
         }
@@ -346,6 +354,41 @@ public final class PracticeAudioProcessor {
         vDSP_rmsqv(base, 1, &rms, vDSP_Length(buffer.count))
         return Double(rms)
     }
+
+    /// Run polyphonic chord analysis on the DSP work buffer via ChromagramDSP.
+    ///
+    /// Copies samples from the pre-allocated `UnsafeMutableBufferPointer` into
+    /// an `[Float]` for `ChromagramDSP.analyzeChord`. The allocation is acceptable
+    /// here because this runs on the DSP task, not the real-time audio thread.
+    nonisolated private static func analyzeChordFromBuffer(
+        _ buffer: UnsafeMutableBufferPointer<Float>,
+        count: Int,
+        referencePitch: Double
+    ) -> ChordResult {
+        ChromagramDSP.analyzeChord(
+            samples: Array(buffer[0..<count]),
+            sampleRate: 44100,
+            referencePitch: referencePitch
+        )
+    }
+
+    /// Log periodic DSP buffer diagnostics (debug builds only).
+    #if DEBUG
+    nonisolated private static func logDSPDiagnostics(
+        _ buffer: UnsafeMutableBufferPointer<Float>,
+        processed: Int, detected: Int, bufferSize: Int
+    ) {
+        let rmsStr = String(format: "%.4f", calculateRMS(buffer))
+        practiceAudioLogger.info("MicDiag: proc=\(processed) det=\(detected) rms=\(rmsStr) fr=\(bufferSize)")
+    }
+
+    /// Log a pitch detection result (debug builds only).
+    nonisolated private static func logPitchDetection(_ result: PitchResult, count: Int) {
+        let freqStr = String(format: "%.1f", result.frequency)
+        let confStr = String(format: "%.2f", result.confidence)
+        practiceAudioLogger.info("MicDiag: \(result.noteName)\(result.octave) \(freqStr)Hz cf=\(confStr) #\(count)")
+    }
+    #endif
 
     /// Find the best autocorrelation lag using vDSP_dotpr (AUD-025).
     ///

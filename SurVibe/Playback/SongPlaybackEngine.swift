@@ -1,17 +1,19 @@
 import AVFoundation
 import Foundation
+import QuartzCore
 import SVAudio
 import SVCore
-import os
+import UIKit
+import os.log
 
 /// Drives song playback using AVAudioSequencer for sample-accurate MIDI
 /// scheduling and tracks position for notation highlighting.
 ///
 /// SongPlaybackEngine loads MIDI data from a Song model, configures an
 /// AVAudioSequencer routed to AudioEngineManager's sampler, and parses
-/// events via MIDIParser for display. A 30 Hz Task loop updates the
-/// current position and note index for UI consumers (e.g., notation
-/// scroll views, progress bars).
+/// events via MIDIParser for display. A `CADisplayLink` running at up
+/// to 120 Hz (ProMotion) updates the current position and note index
+/// for UI consumers (e.g., notation scroll views, progress bars).
 ///
 /// ## Lifecycle
 /// ```
@@ -19,15 +21,17 @@ import os
 /// ```
 ///
 /// ## Note Scheduling Strategy (ARCH-005)
-/// Uses AVAudioSequencer for sample-accurate MIDI playback, replacing
-/// the previous Task.sleep-based scheduling. The sequencer runs on the
-/// audio render thread, eliminating the ~10ms jitter of wall-clock
-/// scheduling. MIDIParser events are still used for UI note highlighting.
+/// Uses AVAudioSequencer for sample-accurate MIDI playback. The sequencer
+/// runs on the audio render thread, providing sub-millisecond timing
+/// accuracy. MIDIParser events are used for UI note highlighting only.
+/// Audio events are completely decoupled from display timing -- dropped
+/// CADisplayLink frames do NOT cause missed audio events.
 ///
 /// ## Thread Safety
 /// All mutable state is isolated to `@MainActor`. The sequencer is
 /// created and controlled from MainActor; its internal scheduling
-/// runs on the audio render thread.
+/// runs on the audio render thread. The `CADisplayLink` runs on the
+/// main run loop, matching `@MainActor` isolation.
 @Observable
 @MainActor
 final class SongPlaybackEngine {
@@ -70,23 +74,26 @@ final class SongPlaybackEngine {
     /// Created during `load(song:)` and routed to AudioEngineManager's sampler.
     private var sequencer: AVAudioSequencer?
 
-    /// AUD-010: Task-based display loop replaces `Timer` + `Task { @MainActor }`.
-    /// A single Task sleeping 33 ms (~30 Hz) avoids the extra actor hop that
-    /// `Timer` + `Task { @MainActor in }` incurred per tick.
-    private var displayLinkTask: Task<Void, Never>?
+    /// AUD-010: CADisplayLink for UI position tracking at display refresh rate.
+    /// Runs at up to 120 Hz on ProMotion devices, automatically matching the
+    /// display's actual refresh rate. Paused when the app enters background.
+    private var displayLink: CADisplayLink?
 
     /// AUD-030: Forward-only cursor for O(1) note lookup during playback.
     /// Monotonically advanced; never reset during active playback.
     private var positionCursor: Int = 0
 
-    private static let logger = Logger.survibe(category: "SongPlayback")
+    /// Observers for app lifecycle notifications (background/foreground).
+    private var backgroundObserver: (any NSObjectProtocol)?
+    private var foregroundObserver: (any NSObjectProtocol)?
 
-    /// Signposter for Instruments profiling of playback tick intervals.
-    private static let signposter = OSSignposter(subsystem: "com.survibe", category: "SongPlayback")
+    private static let logger = Logger.survibe(category: "SongPlayback")
 
     // MARK: - Initialization
 
-    init() {}
+    init() {
+        observeAppLifecycle()
+    }
 
     // Note: Cleanup is handled by stop() called from SongDetailView.onDisappear.
     // deinit cannot access @MainActor-isolated properties under strict concurrency.
@@ -195,8 +202,8 @@ final class SongPlaybackEngine {
     ///
     /// Transitions from `.idle` or `.stopped` to `.playing`.
     /// Resets the sequencer position to zero and starts it for
-    /// sample-accurate MIDI playback. Starts the 30 Hz display loop
-    /// for UI position tracking.
+    /// sample-accurate MIDI playback. Starts the CADisplayLink
+    /// (up to 120 Hz on ProMotion) for UI position tracking.
     ///
     /// Fires `songPlaybackStarted` analytics event.
     func play() {
@@ -373,41 +380,43 @@ final class SongPlaybackEngine {
 
     // MARK: - Private Methods — Display Link
 
-    /// Start a ~30 Hz Task loop to update playback position and note indices.
+    /// Start a CADisplayLink at up to 120 Hz for UI position tracking.
     ///
-    /// AUD-010: Uses a Task instead of `Timer` + `Task { @MainActor in }`,
-    /// eliminating the extra actor hop per tick that Timer callbacks incurred.
+    /// AUD-010: Uses `CADisplayLink` instead of `Task.sleep` polling,
+    /// synchronizing UI updates exactly to the display refresh rate.
+    /// On ProMotion displays this runs at 120 Hz; on standard displays
+    /// at 60 Hz. Audio events remain on the AVAudioSequencer timeline,
+    /// completely decoupled from the display link cadence.
     private func startDisplayLink() {
         stopDisplayLink()
-        displayLinkTask = Task { [weak self] in
-            while !Task.isCancelled {
-                // try? is intentional — Task.sleep throws CancellationError on task cancel, which is expected control flow.
-                try? await Task.sleep(for: .milliseconds(33))
-                guard !Task.isCancelled else { return }
-                self?.updatePlaybackPosition()
-            }
-        }
+        let target = PlaybackDisplayLinkTarget(engine: self)
+        let link = CADisplayLink(target: target, selector: #selector(PlaybackDisplayLinkTarget.tick(_:)))
+        link.preferredFrameRateRange = CAFrameRateRange(minimum: 60, maximum: 120, preferred: 120)
+        link.add(to: .main, forMode: .common)
+        displayLink = link
     }
 
-    /// Cancel the display loop task.
+    /// Invalidate and release the CADisplayLink.
     private func stopDisplayLink() {
-        displayLinkTask?.cancel()
-        displayLinkTask = nil
+        displayLink?.invalidate()
+        displayLink = nil
     }
 
     /// Read the current playback position from the sequencer,
     /// update `currentNoteIndex` and `nextNoteIndex` for UI highlighting,
     /// and detect playback completion.
     ///
+    /// Called by `CADisplayLink` every display frame. Visual updates ONLY --
+    /// audio events are scheduled by AVAudioSequencer on the audio render
+    /// thread and are NOT triggered from this callback. Dropped frames do
+    /// NOT cause missed audio events.
+    ///
     /// AUD-030: Uses forward-only `positionCursor` for O(1) amortised note
     /// lookup — advances past expired events, breaks at first future event.
-    private func updatePlaybackPosition() {
+    fileprivate func updatePlaybackPosition() {
         guard playbackState == .playing, let sequencer else {
             return
         }
-
-        let signpostID = Self.signposter.makeSignpostID()
-        let signpostState = Self.signposter.beginInterval("PlaybackTick", id: signpostID)
 
         currentPosition = min(sequencer.currentPositionInSeconds, duration)
 
@@ -435,11 +444,44 @@ final class SongPlaybackEngine {
         currentNoteIndex = foundCurrent
         nextNoteIndex = foundNext
 
-        Self.signposter.endInterval("PlaybackTick", signpostState)
-
         // Detect playback completion.
         if currentPosition >= duration {
             handlePlaybackCompletion()
+        }
+    }
+
+    // MARK: - Private Methods — App Lifecycle
+
+    /// Register for background/foreground notifications to pause/resume
+    /// the CADisplayLink. The display link must be paused when the app
+    /// is backgrounded to avoid wasting GPU cycles and battery.
+    private func observeAppLifecycle() {
+        let center = NotificationCenter.default
+
+        backgroundObserver = center.addObserver(
+            forName: UIApplication.didEnterBackgroundNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            // Extract sendable values before entering MainActor Task.
+            let _ = notification.name
+            Task { @MainActor [weak self] in
+                self?.displayLink?.isPaused = true
+                Self.logger.debug("CADisplayLink paused (app backgrounded)")
+            }
+        }
+
+        foregroundObserver = center.addObserver(
+            forName: UIApplication.willEnterForegroundNotification,
+            object: nil,
+            queue: .main
+        ) { [weak self] notification in
+            let _ = notification.name
+            Task { @MainActor [weak self] in
+                guard let self, self.playbackState == .playing else { return }
+                self.displayLink?.isPaused = false
+                Self.logger.debug("CADisplayLink resumed (app foregrounded)")
+            }
         }
     }
 
@@ -465,5 +507,24 @@ final class SongPlaybackEngine {
         Self.logger.info(
             "Playback completed: \(self.songTitle, privacy: .public) (\(Int(self.duration))s)"
         )
+    }
+}
+
+// MARK: - CADisplayLink target shim
+
+/// Breaks the CADisplayLink -> SongPlaybackEngine retain cycle.
+///
+/// CADisplayLink strongly retains its target. A weak-reference shim prevents
+/// the engine from being kept alive by the display link after `stopDisplayLink()`.
+/// Same pattern used by `MIDINoteHighlightCoordinator`.
+private final class PlaybackDisplayLinkTarget: NSObject {
+    private weak var engine: SongPlaybackEngine?
+
+    init(engine: SongPlaybackEngine) {
+        self.engine = engine
+    }
+
+    @MainActor @objc func tick(_ link: CADisplayLink) {
+        engine?.updatePlaybackPosition()
     }
 }
