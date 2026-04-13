@@ -186,13 +186,26 @@ extension MIDIInputManager {
                 // UMP message type is the top 4 bits of the 32-bit word.
                 let umpMessageType = UInt8((word >> 28) & 0x0F)
 
+                // Handle MIDI 2.0 Channel Voice (type 0x4) — 64-bit, two words.
+                if umpMessageType == 0x04, wordIndex < wordCount {
+                    let word2 = words[wordIndex]
+                    wordIndex += 1
+                    parseMIDI2ChannelVoice(
+                        word, word2: word2, timestamp: hardwareTimestamp,
+                        box: box, callback: callback, ccCallback: ccCallback,
+                        deJitter: deJitter
+                    )
+                    continue
+                }
+
                 // 0x2 = MIDI 1.0 Channel Voice Message (single word).
+                // 0x0 (Utility) and 0x1 (System) are silently skipped.
                 guard umpMessageType == 0x02 else { continue }
 
-                let channel    = UInt8((word >> 24) & 0x0F)
+                let channel = UInt8((word >> 24) & 0x0F)
                 let statusByte = UInt8((word >> 16) & 0xFF)
-                let noteNumber = UInt8((word >>  8) & 0x7F)
-                let velocity   = UInt8(word & 0x7F)
+                let noteNumber = UInt8((word >> 8) & 0x7F)
+                let velocity = UInt8(word & 0x7F)
                 let messageType = statusByte & 0xF0
 
                 switch messageType {
@@ -244,6 +257,59 @@ extension MIDIInputManager {
         }
 
         midiSignposter.endInterval("UMPParsing", signpostState)
+    }
+
+    /// Parse a MIDI 2.0 Channel Voice message (UMP type 0x4, 64-bit).
+    ///
+    /// Extracts 16-bit velocity from word2 and normalizes to 7-bit for
+    /// compatibility with the existing scoring pipeline.
+    private static func parseMIDI2ChannelVoice(
+        _ word1: UInt32,
+        word2: UInt32,
+        timestamp: MIDITimeStamp,
+        box: ContinuationBox<MIDIInputEvent>,
+        callback: NoteCallbackBox,
+        ccCallback: CCCallbackBox,
+        deJitter: MIDIDeJitterFilter
+    ) {
+        let channel = UInt8((word1 >> 24) & 0x0F)
+        let statusNibble = UInt8((word1 >> 16) & 0xF0)
+        let noteNumber = UInt8((word1 >> 8) & 0x7F)
+        let velocity16 = UInt16((word2 >> 16) & 0xFFFF)
+        let velocity = UInt8(velocity16 >> 9)
+
+        switch statusNibble {
+        case 0x90 where velocity > 0:
+            if deJitter.shouldSuppress(note: noteNumber, timestamp: timestamp) { return }
+            var token = ProbeToken()
+            token.stamp(.inputReceived)
+            let event = MIDIInputEvent(
+                noteNumber: noteNumber, velocity: velocity,
+                channel: channel, midiTimestamp: timestamp, probeToken: token
+            )
+            callback.fire(event)
+            box.yield(event)
+
+        case 0x90, 0x80:
+            var token = ProbeToken()
+            token.stamp(.inputReceived)
+            let event = MIDIInputEvent(
+                noteNumber: noteNumber, velocity: 0,
+                channel: channel, midiTimestamp: timestamp, probeToken: token
+            )
+            callback.fire(event)
+            box.yield(event)
+
+        case 0xB0:
+            let ccEvent = MIDIControlChangeEvent(
+                controller: noteNumber, value: UInt8(velocity16 >> 9),
+                channel: channel, midiTimestamp: timestamp
+            )
+            ccCallback.fire(ccEvent)
+
+        default:
+            break
+        }
     }
 
     // MARK: - Source Classification

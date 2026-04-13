@@ -156,6 +156,17 @@ public final class SPSCRingBuffer: Sendable {
     public var totalSamplesWritten: Int {
         _totalWritten.load(ordering: .relaxed)
     }
+
+    /// Current fill level as a fraction of capacity (0.0–1.0).
+    ///
+    /// Readable from any thread without locking (atomic load).
+    /// Values near 1.0 indicate the consumer is falling behind the producer.
+    /// Exposed for ``LatencySummary`` diagnostics and queue depth monitoring.
+    public var fillLevel: Double {
+        let written = _totalWritten.load(ordering: .relaxed)
+        let level = min(written, capacity)
+        return Double(level) / Double(capacity)
+    }
 }
 
 // MARK: - Int Helpers (file-private)

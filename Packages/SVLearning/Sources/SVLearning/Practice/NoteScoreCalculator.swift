@@ -24,6 +24,8 @@ public enum NoteScoreCalculator {
     ///   - durationDeviation: Duration deviation as fraction of expected duration.
     ///   - ragaPitchDeviationCents: Cents deviation from the JI target. Used when raga context is present.
     ///   - ragaContext: Optional raga scoring context for raga-aware scoring.
+    ///   - playedVelocity: MIDI velocity (0–127) of the played note. `nil` for mic input.
+    ///   - expectedVelocity: Expected velocity from notation. `nil` if not specified.
     /// - Returns: A `NoteScore` with computed accuracy and grade.
     public static func score(
         expectedNote: String,
@@ -32,7 +34,9 @@ public enum NoteScoreCalculator {
         timingDeviationSeconds: Double,
         durationDeviation: Double,
         ragaPitchDeviationCents: Double? = nil,
-        ragaContext: RagaScoringContext? = nil
+        ragaContext: RagaScoringContext? = nil,
+        playedVelocity: UInt8? = nil,
+        expectedVelocity: UInt8? = nil
     ) -> NoteScore {
         // Use JI cents when raga context is available, otherwise 12ET cents
         let effectivePitchCents = ragaPitchDeviationCents ?? pitchDeviationCents
@@ -51,9 +55,21 @@ public enum NoteScoreCalculator {
         let timingAccuracy = timingAccuracyScore(seconds: abs(timingDeviationSeconds))
         let durationAccuracy = durationAccuracyScore(fraction: abs(durationDeviation))
 
-        let composite = pitchAccuracy * PracticeConstants.pitchWeight
-            + timingAccuracy * PracticeConstants.timingWeight
-            + durationAccuracy * PracticeConstants.durationWeight
+        // When both played and expected velocity are available, add dynamics scoring.
+        // Weights shift to: 45% pitch + 25% timing + 15% duration + 15% dynamics.
+        // Otherwise, use standard weights: 50% pitch + 30% timing + 20% duration.
+        let composite: Double
+        if let played = playedVelocity, let expected = expectedVelocity, expected > 0 {
+            let dynamicsAccuracy = dynamicsAccuracyScore(played: played, expected: expected)
+            composite = pitchAccuracy * 0.45
+                + timingAccuracy * 0.25
+                + durationAccuracy * 0.15
+                + dynamicsAccuracy * 0.15
+        } else {
+            composite = pitchAccuracy * PracticeConstants.pitchWeight
+                + timingAccuracy * PracticeConstants.timingWeight
+                + durationAccuracy * PracticeConstants.durationWeight
+        }
 
         let grade = NoteGrade.from(accuracy: composite)
 
@@ -179,5 +195,22 @@ public enum NoteScoreCalculator {
     ) -> Double {
         let ratio = (value - low) / (high - low)
         return outputLow + ratio * (outputHigh - outputLow)
+    }
+
+    /// Convert velocity difference to a 0.0–1.0 dynamics accuracy score.
+    ///
+    /// Tolerances: within ±20 velocity units = perfect (1.0),
+    /// ±40 = good (0.7), ±60 = fair (0.5). Beyond ±60 scales to 0.
+    ///
+    /// - Parameters:
+    ///   - played: Actual MIDI velocity (0–127).
+    ///   - expected: Expected MIDI velocity (1–127).
+    /// - Returns: Dynamics accuracy between 0.0 and 1.0.
+    private static func dynamicsAccuracyScore(played: UInt8, expected: UInt8) -> Double {
+        let delta = abs(Double(played) - Double(expected))
+        if delta <= 20 { return 1.0 }
+        if delta <= 40 { return linearInterpolate(value: delta, low: 20, high: 40, outputLow: 1.0, outputHigh: 0.7) }
+        if delta <= 60 { return linearInterpolate(value: delta, low: 40, high: 60, outputLow: 0.7, outputHigh: 0.5) }
+        return max(0.0, 0.5 - (delta - 60) / 67.0)
     }
 }
