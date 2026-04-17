@@ -186,7 +186,17 @@ struct SongPlayAlongView: View {
                         viewModel.handleKeyboardNoteOff(midiNote: midiNote)
                     },
                     notationMode: viewModel.notationMode,
-                    manageSoundFont: false
+                    manageSoundFont: false,
+                    // Two-hand highlight colors resolved once upstream from the
+                    // active theme (see `.task` / `.onChange(of: themeManager.currentPreset)`
+                    // above). Passed as `let` so the CADisplayLink-driven
+                    // `highlightState` mutations only re-render this view —
+                    // not `SongPlayAlongView.body`. InteractivePianoView reads
+                    // the per-note RH/LH/chord sets from `highlightState`
+                    // internally, preserving the latency contract.
+                    rhColor: viewModel.rhColor,
+                    lhColor: viewModel.lhColor,
+                    chordColor: viewModel.chordColor
                 )
                 .onPreferenceChange(KeyPositionPreference.self) { positions in
                     keyPositions = positions

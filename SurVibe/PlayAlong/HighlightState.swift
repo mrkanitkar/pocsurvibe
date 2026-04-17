@@ -26,6 +26,26 @@ final class HighlightState {
     /// CADisplayLink cadence. Read only by `InteractivePianoView`.
     var midiHighlightNotes: Set<Int> = []
 
+    /// MIDI notes to highlight as right-hand (RH color, typically blue).
+    ///
+    /// Written by the scoring engine as song playback progresses; read only
+    /// by `InteractivePianoView`. Isolated here so the CADisplayLink-driven
+    /// mutations do not re-render `SongPlayAlongView`.
+    var rhNotes: Set<Int> = []
+
+    /// MIDI notes to highlight as left-hand (LH color, typically red).
+    ///
+    /// Written by the scoring engine as song playback progresses; read only
+    /// by `InteractivePianoView`.
+    var lhNotes: Set<Int> = []
+
+    /// MIDI notes to highlight as both hands / chord (chord color, typically purple).
+    ///
+    /// Takes precedence over `rhNotes` / `lhNotes` when a note appears in
+    /// this set. Written by the scoring engine; read only by
+    /// `InteractivePianoView`.
+    var chordNotes: Set<Int> = []
+
     /// Swar name and octave of the first pressed MIDI/touch note, if any.
     ///
     /// Written on every note-on and note-off event. Read only by
