@@ -43,9 +43,6 @@ struct SongPlayAlongView: View {
     /// Color of the current correctness flash (green for correct, red for wrong).
     @State var correctnessBannerColor: Color = .green
 
-    /// Whether the theme quick-switch sheet is presented.
-    @State private var showThemeSheet = false
-
     // MARK: - AppStorage (persisted preferences)
 
     @AppStorage("playAlongWaitMode") private var storedWaitMode: Bool = false
@@ -94,7 +91,6 @@ struct SongPlayAlongView: View {
                         properties: ["enabled": viewModel.isSoundEnabled, "song_title": song.title]
                     )
                 },
-                onThemeTapped: { showThemeSheet = true },
                 onSeek: { viewModel.seek(to: $0) }
             )
 
@@ -168,22 +164,8 @@ struct SongPlayAlongView: View {
             )
             .ignoresSafeArea()
         )
-        .sheet(isPresented: $showThemeSheet) {
-            ThemeQuickSwitchSheet()
-                .presentationDetents([.height(180)])
-        }
         .navigationTitle(song.title)
         .navigationBarTitleDisplayMode(.inline)
-        .toolbar {
-            ToolbarItem(placement: .cancellationAction) {
-                Button("Close") {
-                    viewModel.cleanup()
-                    dismiss()
-                }
-                .accessibilityLabel("Close")
-                .accessibilityHint("End play-along and return to the song library")
-            }
-        }
         .task {
             viewModel.modelContext = modelContext
             // Derive view mode and notation from the active theme preset
