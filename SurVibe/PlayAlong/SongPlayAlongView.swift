@@ -57,122 +57,174 @@ struct SongPlayAlongView: View {
     // MARK: - Body
 
     var body: some View {
-        VStack(spacing: 0) {
-            // Transport toolbar — theme-driven, no view/notation pickers
-            PlayAlongToolbar(
-                playbackState: viewModel.playbackState,
-                tempoScale: viewModel.tempoScale,
-                isWaitModeEnabled: viewModel.isWaitModeEnabled,
-                isSoundEnabled: viewModel.isSoundEnabled,
-                isMIDIConnected: viewModel.isMIDIConnected,
-                midiDeviceName: viewModel.midiDeviceName,
-                baseBPM: song.tempo,
-                songTitle: song.title,
-                songSubtitle: song.artist.isEmpty ? "Aaroha" : song.artist,
-                playbackProgress: viewModel.playbackProgress,
-                playbackDuration: viewModel.playbackDuration,
-                onPlayPause: handlePlayPause,
-                onStop: handleStop,
-                onTempoChange: {
-                    viewModel.tempoScale = $0
-                    AnalyticsManager.shared.track(
-                        .playAlongTempoChanged,
-                        properties: ["tempo_scale": $0, "song_title": song.title]
-                    )
-                },
-                onWaitModeToggle: {
-                    viewModel.toggleWaitMode()
-                    storedWaitMode = viewModel.isWaitModeEnabled
-                },
-                onSoundToggle: {
-                    viewModel.isSoundEnabled.toggle()
-                    AnalyticsManager.shared.track(
-                        .playAlongSoundToggled,
-                        properties: ["enabled": viewModel.isSoundEnabled, "song_title": song.title]
-                    )
-                },
-                onTanpuraToggle: { /* TODO(Task 2.9): wire to tanpura audio */ },
-                onModeTapped: { /* TODO(Task 2.9): present Profile appearance sheet */ },
-                onSeek: { viewModel.seek(to: $0) }
+        ZStack {
+            // Layer 1 — theme gradient background
+            LinearGradient(
+                colors: themeManager.resolved.backgroundGradient,
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
             )
+            .ignoresSafeArea()
 
-            // Main content area — switches between visual modes.
-            //
-            // Gesture overlay summons/manages chrome. Gestures are attached
-            // HERE (not on the piano keyboard) so piano-key taps still route
-            // to `InteractivePianoView.onNoteOn`/`onNoteOff` without being
-            // swallowed. `.contentShape(Rectangle())` ensures the full area
-            // is hittable even when the underlying view renders `Color.clear`
-            // (e.g., `.hide` notation mode).
-            contentArea
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .contentShape(Rectangle())
-                .onTapGesture {
-                    // Tap = "I want controls" → summon chrome.
-                    viewModel.summonChrome()
+            // Layer 2 — main content VStack (toolbar when summoned + notation + piano)
+            VStack(spacing: 0) {
+                if viewModel.chromeVisibility == .summoned {
+                    // Transport toolbar — theme-driven, only visible when chrome is summoned.
+                    PlayAlongToolbar(
+                        playbackState: viewModel.playbackState,
+                        tempoScale: viewModel.tempoScale,
+                        isWaitModeEnabled: viewModel.isWaitModeEnabled,
+                        isSoundEnabled: viewModel.isSoundEnabled,
+                        isMIDIConnected: viewModel.isMIDIConnected,
+                        midiDeviceName: viewModel.midiDeviceName,
+                        baseBPM: song.tempo,
+                        songTitle: song.title,
+                        songSubtitle: song.artist.isEmpty ? "Aaroha" : song.artist,
+                        playbackProgress: viewModel.playbackProgress,
+                        playbackDuration: viewModel.playbackDuration,
+                        onPlayPause: handlePlayPause,
+                        onStop: handleStop,
+                        onTempoChange: {
+                            viewModel.tempoScale = $0
+                            AnalyticsManager.shared.track(
+                                .playAlongTempoChanged,
+                                properties: ["tempo_scale": $0, "song_title": song.title]
+                            )
+                        },
+                        onWaitModeToggle: {
+                            viewModel.toggleWaitMode()
+                            storedWaitMode = viewModel.isWaitModeEnabled
+                        },
+                        onSoundToggle: {
+                            viewModel.isSoundEnabled.toggle()
+                            AnalyticsManager.shared.track(
+                                .playAlongSoundToggled,
+                                properties: ["enabled": viewModel.isSoundEnabled, "song_title": song.title]
+                            )
+                        },
+                        onTanpuraToggle: { /* TODO(Task 2.11+): wire to tanpura audio */ },
+                        onModeTapped: { /* TODO(Task 2.11+): present Profile appearance sheet */ },
+                        onSeek: { viewModel.seek(to: $0) }
+                    )
+                    .transition(
+                        reduceMotion
+                            ? .opacity
+                            : .move(edge: .top).combined(with: .opacity)
+                    )
                 }
-                .gesture(
-                    // Swipe down (from top edge or anywhere on the content):
-                    // downward translation dominates → summon chrome.
-                    DragGesture(minimumDistance: 30)
-                        .onEnded { value in
-                            if value.translation.height > 30
-                                && abs(value.translation.width) < 50 {
-                                viewModel.summonChrome()
+
+                // Main content area — theme-aware renderer dispatch.
+                //
+                // Gesture overlay summons/manages chrome. Gestures are attached
+                // HERE (not on the piano keyboard) so piano-key taps still route
+                // to `InteractivePianoView.onNoteOn`/`onNoteOff` without being
+                // swallowed. `.contentShape(Rectangle())` ensures the full area
+                // is hittable even when the underlying view renders `Color.clear`
+                // (e.g., `.hide` notation mode).
+                contentArea
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .contentShape(Rectangle())
+                    .onTapGesture {
+                        // Tap = "I want controls" → summon chrome.
+                        viewModel.summonChrome()
+                    }
+                    .gesture(
+                        // Swipe down (from top edge or anywhere on the content):
+                        // downward translation dominates → summon chrome.
+                        DragGesture(minimumDistance: 30)
+                            .onEnded { value in
+                                if value.translation.height > 30
+                                    && abs(value.translation.width) < 50 {
+                                    viewModel.summonChrome()
+                                }
                             }
-                        }
+                    )
+                    .onLongPressGesture(minimumDuration: 0.5) {
+                        // TODO(Task 2.11+): open a seek scrubber on long-press
+                        // instead of summoning chrome. For now, treat long-press
+                        // on notation as an intent to see controls.
+                        viewModel.summonChrome()
+                    }
+                    // TODO(Task 2.11+): implement native two-finger tap for
+                    // wait-mode toggle via UIKit bridging (SwiftUI's TapGesture
+                    // doesn't distinguish finger count on iOS).
+
+                // TODO(Task 2.11+): wire LyricsStrip when song-lyrics model lands
+
+                // Scoring HUD overlay — visible during playback OR when notes have been scored in guided mode
+                CompactScoringHUD(
+                    accuracy: viewModel.accuracy,
+                    streak: viewModel.streak,
+                    notesHit: viewModel.notesHit,
+                    totalNotes: viewModel.noteEvents.count,
+                    isVisible: viewModel.playbackState == .playing
+                        || viewModel.playbackState == .paused
+                        || (viewModel.playbackState == .idle && viewModel.notesHit > 0)
                 )
-                .onLongPressGesture(minimumDuration: 0.5) {
-                    // TODO(Task 2.11+): open a seek scrubber on long-press
-                    // instead of summoning chrome. For now, treat long-press
-                    // on notation as an intent to see controls.
-                    viewModel.summonChrome()
+
+                // Pitch proximity feedback (shown when a note is detected from mic)
+                if let pitch = viewModel.currentPitch {
+                    pitchFeedbackBar(pitch: pitch)
+                        .padding(.horizontal)
+                        .padding(.bottom, 4)
                 }
-                // TODO(Task 2.11+): implement native two-finger tap for
-                // wait-mode toggle via UIKit bridging (SwiftUI's TapGesture
-                // doesn't distinguish finger count on iOS).
 
-            // Scoring HUD overlay — visible during playback OR when notes have been scored in guided mode
-            CompactScoringHUD(
-                accuracy: viewModel.accuracy,
-                streak: viewModel.streak,
-                notesHit: viewModel.notesHit,
-                totalNotes: viewModel.noteEvents.count,
-                isVisible: viewModel.playbackState == .playing
-                    || viewModel.playbackState == .paused
-                    || (viewModel.playbackState == .idle && viewModel.notesHit > 0)
-            )
-
-            // Pitch proximity feedback (shown when a note is detected from mic)
-            if let pitch = viewModel.currentPitch {
-                pitchFeedbackBar(pitch: pitch)
-                    .padding(.horizontal)
-                    .padding(.bottom, 4)
+                // Piano keyboard at the bottom.
+                // highlightState is passed directly so CADisplayLink ticks (60–120 Hz)
+                // that update MIDI key highlights only re-render InteractivePianoView —
+                // NOT the entire SongPlayAlongView hierarchy. This eliminates the
+                // @MainActor saturation that caused 300–530ms MIDI scoring lag.
+                InteractivePianoView(
+                    activeMidiNotes: viewModel.effectiveMidiNotes,
+                    highlightState: viewModel.highlightState,
+                    activeCentsOffset: viewModel.currentPitch?.centsOffset ?? 0,
+                    expectedMidiNote: viewModel.expectedMidiNote,
+                    onNoteOn: { midiNote in
+                        viewModel.handleKeyboardNoteOn(midiNote: midiNote)
+                    },
+                    onNoteOff: { midiNote in
+                        viewModel.handleKeyboardNoteOff(midiNote: midiNote)
+                    },
+                    notationMode: viewModel.notationMode,
+                    manageSoundFont: false
+                )
+                .onPreferenceChange(KeyPositionPreference.self) { positions in
+                    keyPositions = positions
+                }
             }
 
-            // Piano keyboard at the bottom.
-            // highlightState is passed directly so CADisplayLink ticks (60–120 Hz)
-            // that update MIDI key highlights only re-render InteractivePianoView —
-            // NOT the entire SongPlayAlongView hierarchy. This eliminates the
-            // @MainActor saturation that caused 300–530ms MIDI scoring lag.
-            InteractivePianoView(
-                activeMidiNotes: viewModel.effectiveMidiNotes,
-                highlightState: viewModel.highlightState,
-                activeCentsOffset: viewModel.currentPitch?.centsOffset ?? 0,
-                expectedMidiNote: viewModel.expectedMidiNote,
-                onNoteOn: { midiNote in
-                    viewModel.handleKeyboardNoteOn(midiNote: midiNote)
-                },
-                onNoteOff: { midiNote in
-                    viewModel.handleKeyboardNoteOff(midiNote: midiNote)
-                },
-                notationMode: viewModel.notationMode,
-                manageSoundFont: false
-            )
-            .onPreferenceChange(KeyPositionPreference.self) { positions in
-                keyPositions = positions
+            // Layer 3 — persistent chrome overlays (always on top of content)
+            VStack {
+                HStack(alignment: .top) {
+                    tanpuraRagaPill
+                    Spacer()
+                    micSourcePill
+                }
+                .padding(.horizontal, 16)
+                .padding(.top, 16)
+                Spacer()
             }
+            .allowsHitTesting(false)
+
+            // Layer 4 — persistent pause dot, above the piano keyboard
+            VStack {
+                Spacer()
+                PersistentPauseDot(
+                    isPlaying: viewModel.playbackState == .playing,
+                    backgroundColor: viewModel.cardBackgroundColor,
+                    foregroundColor: themeManager.resolved.primaryTextColor,
+                    onToggle: handlePlayPause
+                )
+                .padding(.bottom, 20)
+            }
+
+            // Layer 5 — first-time coach mark (auto-dismisses, AppStorage-gated)
+            FirstTimeCoachMark()
         }
+        .animation(
+            reduceMotion ? nil : .easeInOut(duration: 0.25),
+            value: viewModel.chromeVisibility
+        )
         .overlay(alignment: .top) {
             // Correctness flash banner — shows briefly on each note attempt
             if showCorrectnessBanner {
@@ -190,14 +242,6 @@ struct SongPlayAlongView: View {
                     .animation(reduceMotion ? nil : .spring(response: 0.4), value: viewModel.isStuck)
             }
         }
-        .background(
-            LinearGradient(
-                colors: themeManager.resolved.backgroundGradient,
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
-            )
-            .ignoresSafeArea()
-        )
         .navigationTitle(song.title)
         .navigationBarTitleDisplayMode(.inline)
         .task {
@@ -291,56 +335,94 @@ struct SongPlayAlongView: View {
 
     // MARK: - Content Area
 
-    /// Match state of the note at the current playback index, for notation overlays.
-    ///
-    /// Returns the `FallingNotesLayoutEngine.NoteState` for the note currently at
-    /// `viewModel.currentNoteIndex`, enabling the scrolling-sheet renderers to show
-    /// a green border (`.correct`) or red border (`.wrong`) on the active note.
-    private var currentNoteMatchState: FallingNotesLayoutEngine.NoteState? {
-        guard let index = viewModel.currentNoteIndex,
-              index < viewModel.noteEvents.count else { return nil }
-        return viewModel.noteStates[viewModel.noteEvents[index].id]
-    }
-
-    /// The main visual content area, switching between falling notes and sheet.
+    /// The main visual content area — dispatches to the right notation renderer
+    /// based on the active theme preset. Colors arrive to renderers as `let`
+    /// parameters (via `viewModel`) so none of them read the `AppThemeManager`
+    /// environment — preserving the audio-latency contract.
     @ViewBuilder
     private var contentArea: some View {
         if viewModel.playbackState == .loading {
             ProgressView("Loading song…")
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
-            switch viewModel.viewMode {
-            case .fallingNotes:
-                FallingNotesView(
+            switch themeManager.currentPreset {
+            case .sargamGlassBars, .sargamGlass:
+                SargamDualRowView(
                     noteEvents: viewModel.noteEvents,
-                    playbackStartDate: viewModel.playbackStartDate,
-                    tempoScale: viewModel.tempoScale,
-                    currentNoteIndex: viewModel.currentNoteIndex,
-                    noteStates: viewModel.noteStates,
-                    notationMode: viewModel.notationMode,
-                    keyPositions: keyPositions
+                    currentTime: viewModel.currentTime,
+                    rhColor: viewModel.rhColor,
+                    lhColor: viewModel.lhColor,
+                    chordColor: viewModel.chordColor,
+                    cardBackgroundColor: viewModel.cardBackgroundColor
                 )
-                .accessibilityLabel("Falling notes display")
-                .accessibilityHint("Notes fall toward the piano keys during playback")
+                .accessibilityLabel("Sargam dual-row notation")
 
-            case .scrollingSheet:
-                ScrollingSheetView(
-                    song: song,
-                    currentNoteIndex: viewModel.currentNoteIndex,
-                    notationMode: viewModel.notationMode,
-                    currentPitch: viewModel.currentPitch,
-                    highlightState: viewModel.highlightState,
-                    currentNoteMatchState: currentNoteMatchState
+            case .immersiveBars, .immersive, .midnightBars, .midnight, .popEra:
+                BarsOnStaffView(
+                    noteEvents: viewModel.noteEvents,
+                    currentTime: viewModel.currentTime,
+                    rhColor: viewModel.rhColor,
+                    lhColor: viewModel.lhColor,
+                    chordColor: viewModel.chordColor,
+                    notationLineColor: viewModel.notationLineColor,
+                    notationSecondaryColor: viewModel.notationSecondaryColor,
+                    showTrebleClef: true,
+                    showBassClef: true
                 )
-                .accessibilityLabel("Scrolling sheet notation")
-                .accessibilityHint("Sheet notation scrolls to follow the current note")
+                .accessibilityLabel("Horizontal-bar grand-staff notation")
 
-            case .hide:
-                Color.clear
-                    .accessibilityLabel("Keyboard only mode — no notation overlay")
-                    .accessibilityHint("Only the piano keyboard is visible")
+            case .neonRhythm, .synthesia:
+                SplitLaneView(
+                    noteEvents: viewModel.noteEvents,
+                    currentTime: viewModel.currentTime,
+                    rhColor: viewModel.rhColor,
+                    lhColor: viewModel.lhColor,
+                    chordColor: viewModel.chordColor
+                )
+                .accessibilityLabel("Vertical split-lane falling notes")
             }
         }
+    }
+
+    // MARK: - Persistent chrome pills
+
+    /// Context-aware top-left pill derived from the current theme/song.
+    @ViewBuilder
+    private var tanpuraRagaPill: some View {
+        let mode: TanpuraRagaPill.Mode = {
+            switch themeManager.currentPreset {
+            case .popEra:
+                return .popSong(
+                    artist: song.artist.isEmpty ? "Artist" : song.artist,
+                    song: song.title
+                )
+            case .sargamGlass, .sargamGlassBars, .neonRhythm:
+                return .raga(
+                    name: song.artist.isEmpty ? "Raga" : song.artist,
+                    tonic: "C4"
+                )
+            default:
+                return .westernKey(key: "C major", bpm: song.tempo)
+            }
+        }()
+        TanpuraRagaPill(
+            mode: mode,
+            backgroundColor: viewModel.cardBackgroundColor,
+            foregroundColor: themeManager.resolved.primaryTextColor
+        )
+    }
+
+    /// Top-right pill showing the active input source (mic vs MIDI).
+    @ViewBuilder
+    private var micSourcePill: some View {
+        let source: MicSourcePill.Source = viewModel.isMIDIConnected
+            ? .midi(deviceName: viewModel.midiDeviceName)
+            : .mic
+        MicSourcePill(
+            source: source,
+            backgroundColor: viewModel.cardBackgroundColor,
+            foregroundColor: themeManager.resolved.primaryTextColor
+        )
     }
 
     // MARK: - Actions
