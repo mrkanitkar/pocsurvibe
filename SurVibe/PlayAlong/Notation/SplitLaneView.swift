@@ -24,7 +24,7 @@ struct SplitLaneView: View {
     private let hitLineFraction: CGFloat = 0.92
 
     var body: some View {
-        GeometryReader { geo in
+        GeometryReader { _ in
             Canvas { ctx, size in
                 drawSplit(ctx: ctx, size: size)
                 drawLanes(ctx: ctx, size: size)

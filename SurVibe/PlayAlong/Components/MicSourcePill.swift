@@ -60,5 +60,10 @@ struct MicSourcePill: View {
 }
 
 #Preview("MIDI") {
-    MicSourcePill(source: .midi(deviceName: "Yamaha P-225"), backgroundColor: .black.opacity(0.4), foregroundColor: .white).padding()
+    MicSourcePill(
+        source: .midi(deviceName: "Yamaha P-225"),
+        backgroundColor: .black.opacity(0.4),
+        foregroundColor: .white
+    )
+    .padding()
 }

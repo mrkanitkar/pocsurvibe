@@ -186,7 +186,10 @@ struct PlayAlongToolbar: View {
             )
             .accessibilityLabel("Playback position")
             .accessibilityValue(
-                "\(PlayAlongToolbar.formatTime(playbackProgress * playbackDuration)) of \(PlayAlongToolbar.formatTime(playbackDuration))"
+                """
+                \(PlayAlongToolbar.formatTime(playbackProgress * playbackDuration)) \
+                of \(PlayAlongToolbar.formatTime(playbackDuration))
+                """
             )
             .accessibilityHint("Drag to seek to a different position in the song")
 
