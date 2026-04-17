@@ -62,6 +62,7 @@ struct ThemeQuickSwitchSheet: View {
     private var themeCarousel: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 12) {
+                // TODO(Task 2.1): this sheet is being removed; migration to Profile-only picker.
                 ForEach(AppThemePreset.allCases, id: \.self) { preset in
                     themeCard(for: preset)
                 }
