@@ -26,30 +26,36 @@ struct ThemePreviewCard: View {
     // MARK: - Body
 
     var body: some View {
-        Button(action: onSelect) {
-            VStack(spacing: 0) {
-                gradientPreview
-                detailFooter
+        VStack(spacing: 0) {
+            Button(action: onSelect) {
+                VStack(spacing: 0) {
+                    gradientPreview
+                    detailFooter
+                }
+                .frame(width: 280, height: 400)
+                .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
+                .overlay(activeRing)
+                .overlay(alignment: .topTrailing) { checkmarkBadge }
+                .glassEffect(.regular)
+                .shadow(
+                    color: isActive ? preset.accentColor.opacity(0.35) : .black.opacity(0.15),
+                    radius: isActive ? 16 : 8,
+                    y: isActive ? 6 : 4
+                )
             }
-            .frame(width: 280, height: 400)
-            .clipShape(RoundedRectangle(cornerRadius: 24, style: .continuous))
-            .overlay(activeRing)
-            .overlay(alignment: .topTrailing) { checkmarkBadge }
-            .glassEffect(.regular)
-            .shadow(
-                color: isActive ? preset.accentColor.opacity(0.35) : .black.opacity(0.15),
-                radius: isActive ? 16 : 8,
-                y: isActive ? 6 : 4
+            .buttonStyle(.plain)
+            .accessibilityLabel("\(preset.displayName) theme")
+            .accessibilityHint(
+                isActive
+                    ? "Currently active theme. \(preset.subtitle)."
+                    : "Double tap to apply \(preset.displayName) theme. \(preset.subtitle)."
             )
+            .accessibilityAddTraits(isActive ? .isSelected : [])
+
+            if preset == .popEra && isActive {
+                PopEraSwatchRow()
+            }
         }
-        .buttonStyle(.plain)
-        .accessibilityLabel("\(preset.displayName) theme")
-        .accessibilityHint(
-            isActive
-                ? "Currently active theme. \(preset.subtitle)."
-                : "Double tap to apply \(preset.displayName) theme. \(preset.subtitle)."
-        )
-        .accessibilityAddTraits(isActive ? .isSelected : [])
     }
 
     // MARK: - Subviews
@@ -116,6 +122,42 @@ struct ThemePreviewCard: View {
                 .accessibilityHidden(true)
                 .transition(.scale.combined(with: .opacity))
         }
+    }
+}
+
+// MARK: - Pop Era Swatch Row
+
+/// Row of five circular swatches representing the Pop Era sub-themes.
+///
+/// Shown beneath the `ThemePreviewCard` only when the card represents the
+/// Pop Era preset AND is the currently active theme. Tapping a swatch
+/// switches the active era via `AppThemeManager.setEra(_:)`. The selected
+/// era is indicated with a white stroke ring.
+private struct PopEraSwatchRow: View {
+    @Environment(AppThemeManager.self) private var themeManager
+
+    var body: some View {
+        HStack(spacing: 12) {
+            ForEach(PopEra.allCases, id: \.self) { era in
+                Button {
+                    themeManager.setEra(era)
+                } label: {
+                    ZStack {
+                        Circle()
+                            .fill(AppThemePreset.popEra.eraAccentColor(for: era))
+                            .frame(width: 32, height: 32)
+                        if themeManager.popEra == era {
+                            Circle()
+                                .stroke(Color.white, lineWidth: 3)
+                                .frame(width: 32, height: 32)
+                        }
+                    }
+                }
+                .accessibilityLabel("\(era.displayName) era")
+                .accessibilityAddTraits(themeManager.popEra == era ? .isSelected : [])
+            }
+        }
+        .padding(.top, 12)
     }
 }
 
