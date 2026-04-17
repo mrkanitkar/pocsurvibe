@@ -128,6 +128,21 @@ final class PlayAlongViewModel {
     /// Notation label display mode (Sargam, Western, dual, etc.).
     var notationMode: NotationDisplayMode = .sargam
 
+    // MARK: - Resolved Theme Colors (v2)
+
+    /// Right-hand accent color — set once at `.task` from theme.
+    ///
+    /// `@ObservationIgnored` prevents assignments from triggering SwiftUI
+    /// re-renders. Views receive these as `let` parameters at construction time.
+    @ObservationIgnored var rhColor: Color = .blue
+
+    @ObservationIgnored var lhColor: Color = .red
+    @ObservationIgnored var chordColor: Color = .purple
+    @ObservationIgnored var notationLineColor: Color = .black
+    @ObservationIgnored var notationSecondaryColor: Color = .gray
+    @ObservationIgnored var cardBackgroundColor: Color = .white.opacity(0.9)
+    @ObservationIgnored var karaokeBackgroundColor: Color = .black.opacity(0.55)
+
     /// Latency preset for mic pitch detection (controls FFT buffer size for chord detection).
     ///
     /// Persisted across sessions. Changing this value while detection is active

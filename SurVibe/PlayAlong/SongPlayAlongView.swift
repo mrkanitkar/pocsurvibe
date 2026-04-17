@@ -171,6 +171,13 @@ struct SongPlayAlongView: View {
             // Derive view mode and notation from the active theme preset
             viewModel.viewMode = themeManager.currentPreset.viewMode
             viewModel.notationMode = themeManager.currentPreset.notationMode
+            viewModel.rhColor = themeManager.resolved.rightHandColor
+            viewModel.lhColor = themeManager.resolved.leftHandColor
+            viewModel.chordColor = themeManager.resolved.chordColor
+            viewModel.notationLineColor = themeManager.resolved.notationLineColor
+            viewModel.notationSecondaryColor = themeManager.resolved.notationSecondaryColor
+            viewModel.cardBackgroundColor = themeManager.resolved.cardBackgroundColor
+            viewModel.karaokeBackgroundColor = themeManager.resolved.karaokeBackgroundColor
             viewModel.isWaitModeEnabled = storedWaitMode
             await viewModel.loadSong(song)
         }
@@ -178,6 +185,13 @@ struct SongPlayAlongView: View {
             // Live-switch when user changes theme via quick-switch sheet
             viewModel.viewMode = newPreset.viewMode
             viewModel.notationMode = newPreset.notationMode
+            viewModel.rhColor = themeManager.resolved.rightHandColor
+            viewModel.lhColor = themeManager.resolved.leftHandColor
+            viewModel.chordColor = themeManager.resolved.chordColor
+            viewModel.notationLineColor = themeManager.resolved.notationLineColor
+            viewModel.notationSecondaryColor = themeManager.resolved.notationSecondaryColor
+            viewModel.cardBackgroundColor = themeManager.resolved.cardBackgroundColor
+            viewModel.karaokeBackgroundColor = themeManager.resolved.karaokeBackgroundColor
             AnalyticsManager.shared.track(
                 .playAlongViewModeChanged,
                 properties: ["view_mode": newPreset.viewMode.rawValue, "song_title": song.title]
