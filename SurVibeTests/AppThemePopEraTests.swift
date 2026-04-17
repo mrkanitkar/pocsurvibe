@@ -26,17 +26,26 @@ struct AppThemePopEraTests {
         }
     }
 
-    @Test func popEraHasNineThemesTotal() {
-        // 5 legacy + 4 new bar variants + Pop Era = 10 but deprecated count = 5, so 5+4=9 user-visible
-        // allCases still contains legacy compat themes during migration window
-        let userVisible = AppThemePreset.userVisibleCases
-        #expect(userVisible.count == 5)  // Sargam, Western, Night, Pop Era, Arcade
+    @Test func userVisibleCasesHasFivePresets() {
+        // Profile picker shows: Sargam, Western, Night, Pop Era, Arcade.
+        // Legacy cases (immersive, sargamGlass, midnight, synthesia) are hidden
+        // compat and switched away from in Task 1.10a.
+        #expect(AppThemePreset.userVisibleCases.count == 5)
     }
 
-    @Test func newPresetsExist() {
-        _ = AppThemePreset.sargamGlassBars
-        _ = AppThemePreset.immersiveBars
-        _ = AppThemePreset.midnightBars
-        _ = AppThemePreset.popEra
+    @Test func allCasesHasNineTotal() {
+        // Pin the total (5 legacy + 4 new v2). If someone adds or removes a case,
+        // this test catches it — forcing an intentional update to userVisibleCases
+        // and any switch statements.
+        #expect(AppThemePreset.allCases.count == 9)
+    }
+
+    @Test func newPresetRawValuesAreStable() {
+        // Raw values persist in UserDefaults — renaming any of these would
+        // silently migrate users to an unrelated theme on upgrade.
+        #expect(AppThemePreset.sargamGlassBars.rawValue == "sargamGlassBars")
+        #expect(AppThemePreset.immersiveBars.rawValue == "immersiveBars")
+        #expect(AppThemePreset.midnightBars.rawValue == "midnightBars")
+        #expect(AppThemePreset.popEra.rawValue == "popEra")
     }
 }
