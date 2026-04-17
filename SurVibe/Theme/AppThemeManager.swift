@@ -114,11 +114,32 @@ final class AppThemeManager {
         UserDefaults.standard.set(preset.rawValue, forKey: Self.storageKey)
         resolved = AppThemeDefinition.resolve(
             preset: preset,
+            popEra: popEra,
             colorScheme: lastColorScheme
         )
         AnalyticsManager.shared.track(
             .themeChanged,
             properties: ["theme": preset.rawValue, "source": source]
+        )
+    }
+
+    /// Update the Pop Era sub-theme.
+    ///
+    /// Persists to UserDefaults and re-resolves the theme definition.
+    /// Only has visible effect when `currentPreset == .popEra`.
+    ///
+    /// - Parameter era: The era to apply.
+    func setEra(_ era: PopEra) {
+        popEra = era
+        UserDefaults.standard.set(era.rawValue, forKey: Self.popEraKey)
+        resolved = AppThemeDefinition.resolve(
+            preset: currentPreset,
+            popEra: era,
+            colorScheme: lastColorScheme
+        )
+        AnalyticsManager.shared.track(
+            .themeChanged,
+            properties: ["era": era.rawValue, "source": "era_picker"]
         )
     }
 
@@ -132,6 +153,7 @@ final class AppThemeManager {
         lastColorScheme = colorScheme
         resolved = AppThemeDefinition.resolve(
             preset: currentPreset,
+            popEra: popEra,
             colorScheme: colorScheme
         )
     }

@@ -1,3 +1,5 @@
+import Foundation
+import SwiftUI
 import Testing
 @testable import SurVibe
 
@@ -47,5 +49,27 @@ struct AppThemePopEraTests {
         #expect(AppThemePreset.immersiveBars.rawValue == "immersiveBars")
         #expect(AppThemePreset.midnightBars.rawValue == "midnightBars")
         #expect(AppThemePreset.popEra.rawValue == "popEra")
+    }
+
+    @Test @MainActor func setEraUpdatesResolvedAndPersists() {
+        UserDefaults.standard.removeObject(forKey: "appThemePopEra")
+        let manager = AppThemeManager(colorScheme: .light)
+        manager.apply(.popEra)
+
+        let initialAccent = manager.resolved.eraAccentColor
+
+        manager.setEra(.brat)
+
+        #expect(manager.popEra == .brat)
+        #expect(manager.resolved.eraAccentColor != initialAccent)
+        #expect(UserDefaults.standard.string(forKey: "appThemePopEra") == "brat")
+    }
+
+    @Test @MainActor func setEraOnNonPopEraDoesNotMutateResolved() {
+        let manager = AppThemeManager(colorScheme: .light)
+        manager.apply(.sargamGlassBars)
+        let before = manager.resolved.accentColor
+        manager.setEra(.brat)
+        #expect(manager.resolved.accentColor == before)
     }
 }
