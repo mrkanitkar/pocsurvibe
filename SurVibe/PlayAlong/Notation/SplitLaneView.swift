@@ -1,0 +1,153 @@
+import SwiftUI
+
+/// Vertical falling-notes renderer split at middle-C.
+///
+/// Used by Neon Rhythm (#2 Arcade mode). Each MIDI note slot is a lane;
+/// lanes left of middle-C (MIDI 60) render LH notes with red glow, lanes
+/// right render RH notes with blue glow. Bars drop at a constant speed.
+///
+/// ## Latency contract
+/// Colors arrive as `let` parameters. This view MUST NOT read
+/// `@Environment(AppThemeManager.self)`. Canvas-based drawing avoids
+/// per-frame SwiftUI re-renders.
+struct SplitLaneView: View {
+    let noteEvents: [NoteEvent]
+    let currentTime: TimeInterval
+    let rhColor: Color
+    let lhColor: Color
+    let chordColor: Color
+
+    /// Seconds of lookahead visible above the hit line.
+    private let windowSeconds: TimeInterval = 3.0
+
+    /// Hit line is at the bottom of the drawing area.
+    private let hitLineFraction: CGFloat = 0.92
+
+    var body: some View {
+        GeometryReader { geo in
+            Canvas { ctx, size in
+                drawSplit(ctx: ctx, size: size)
+                drawLanes(ctx: ctx, size: size)
+                drawBars(ctx: ctx, size: size)
+                drawHitLine(ctx: ctx, size: size)
+            }
+        }
+        .accessibilityElement()
+        .accessibilityLabel("Split-lane falling notes: left hand on the left, right hand on the right")
+    }
+
+    // MARK: - Layout constants
+
+    private var leftSideLanes: Int { 24 }  // MIDI 36..59 → LH
+    private var rightSideLanes: Int { 24 }  // MIDI 60..83 → RH
+    private var totalLanes: Int { leftSideLanes + rightSideLanes }
+
+    private func laneWidth(for size: CGSize) -> CGFloat {
+        size.width / CGFloat(totalLanes)
+    }
+
+    private func midiToLaneX(_ midi: Int, size: CGSize) -> CGFloat {
+        let clamped = max(36, min(83, midi))
+        let index = clamped - 36
+        return CGFloat(index) * laneWidth(for: size)
+    }
+
+    // MARK: - Drawing
+
+    private func drawSplit(ctx: GraphicsContext, size: CGSize) {
+        // Dashed vertical line at middle-C (MIDI 60, lane index 24)
+        let splitX = CGFloat(leftSideLanes) * laneWidth(for: size)
+        var path = Path()
+        path.move(to: CGPoint(x: splitX, y: 0))
+        path.addLine(to: CGPoint(x: splitX, y: size.height))
+        ctx.stroke(
+            path,
+            with: .color(.white.opacity(0.15)),
+            style: StrokeStyle(lineWidth: 1, dash: [4, 4])
+        )
+    }
+
+    private func drawLanes(ctx: GraphicsContext, size: CGSize) {
+        let lw = laneWidth(for: size)
+        for i in 1..<totalLanes {
+            var path = Path()
+            let x = CGFloat(i) * lw
+            path.move(to: CGPoint(x: x, y: 0))
+            path.addLine(to: CGPoint(x: x, y: size.height))
+            ctx.stroke(path, with: .color(.white.opacity(0.03)), lineWidth: 0.5)
+        }
+    }
+
+    private func drawBars(ctx: GraphicsContext, size: CGSize) {
+        let hitLineY = size.height * hitLineFraction
+        let pixelsPerSecond = hitLineY / CGFloat(windowSeconds)
+        let lw = laneWidth(for: size)
+
+        // Chord group detection — ≥2 notes sharing timestamp (within 10ms).
+        let chordTimestamps = chordTimestamps()
+
+        for event in noteEvents {
+            let timeUntilHit = event.timestamp - currentTime
+            if timeUntilHit > windowSeconds || timeUntilHit < -event.duration {
+                continue  // Off-screen
+            }
+
+            let centerY = hitLineY - CGFloat(timeUntilHit) * pixelsPerSecond
+            let barHeight = max(8, CGFloat(event.duration) * pixelsPerSecond)
+            let topY = centerY - barHeight / 2
+            let x = midiToLaneX(Int(event.midiNote), size: size)
+
+            let isChordNote = chordTimestamps.contains { abs($0 - event.timestamp) < 0.01 }
+            let color: Color = {
+                if isChordNote { return chordColor }
+                return event.hand == .right ? rhColor : lhColor
+            }()
+
+            let rect = CGRect(x: x + 2, y: topY, width: lw - 4, height: barHeight)
+            ctx.fill(
+                Path(roundedRect: rect, cornerRadius: 4),
+                with: .color(color)
+            )
+            // Glow outline
+            ctx.stroke(
+                Path(roundedRect: rect, cornerRadius: 4),
+                with: .color(color.opacity(0.4)),
+                lineWidth: 2
+            )
+        }
+    }
+
+    private func drawHitLine(ctx: GraphicsContext, size: CGSize) {
+        let hitLineY = size.height * hitLineFraction
+        var path = Path()
+        path.move(to: CGPoint(x: 0, y: hitLineY))
+        path.addLine(to: CGPoint(x: size.width, y: hitLineY))
+        ctx.stroke(path, with: .color(.white), lineWidth: 1.5)
+    }
+
+    // MARK: - Chord detection
+
+    /// Timestamps (within 10ms buckets) that have ≥2 concurrent notes.
+    private func chordTimestamps() -> Set<Double> {
+        var buckets: [Int: Int] = [:]
+        for event in noteEvents {
+            let bucket = Int((event.timestamp * 100).rounded())  // 10ms resolution
+            buckets[bucket, default: 0] += 1
+        }
+        return Set(
+            buckets.filter { $0.value >= 2 }.keys.map { Double($0) / 100 }
+        )
+    }
+}
+
+#Preview("Empty") {
+    SplitLaneView(
+        noteEvents: [],
+        currentTime: 0,
+        rhColor: Color(red: 0.00, green: 0.48, blue: 1.00),
+        lhColor: Color(red: 1.00, green: 0.23, blue: 0.19),
+        chordColor: Color(red: 0.61, green: 0.15, blue: 0.69)
+    )
+    .frame(width: 800, height: 500)
+    .background(Color.black)
+}
