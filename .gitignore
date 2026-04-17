@@ -53,6 +53,10 @@ docs/
 .claude/plans/
 .claude/launch.json
 .claude/serve-missinglink.py
+.claude/scheduled_tasks.lock
+.claude/worktrees/
+.superpowers/
+.xcodebuildmcp/
 PLAN.md
 SurVibe_Code_Review.md
 llm.txt
