@@ -1,8 +1,8 @@
 import SVAudio
 import SwiftUI
 
-/// Play-along toolbar with transport controls, timeline scrubber,
-/// tempo pills, and quick-access theme switching.
+/// Play-along "summoned toolbar" with title, timeline scrubber, and
+/// practice controls.
 ///
 /// All controls are driven by external state passed as `let` properties
 /// with change callbacks. The toolbar adapts its layout horizontally and
@@ -10,9 +10,10 @@ import SwiftUI
 ///
 /// ## Layout
 /// Three rows of controls:
-/// 1. **Header:** Play/Pause, song title/subtitle, theme button
-/// 2. **Timeline:** Scrubber slider with elapsed/remaining time labels
-/// 3. **Controls:** BPM preset pills, divider, Wait/Sound/MIDI status
+/// 1. **Header:** Song title/subtitle (center) + Mode button (right).
+///    Play/Pause is handled by the persistent pause dot, not by this toolbar.
+/// 2. **Timeline:** Scrubber slider with elapsed/remaining time labels.
+/// 3. **Controls:** BPM preset pills · Wait · Sound · Tanpura · MIDI/Mic source.
 struct PlayAlongToolbar: View {
     // MARK: - Properties
 
@@ -27,6 +28,12 @@ struct PlayAlongToolbar: View {
 
     /// Whether reference audio playback is enabled.
     let isSoundEnabled: Bool
+
+    /// Whether the tanpura reference drone is enabled.
+    ///
+    /// This is currently a UI-only toggle. Audio wiring is deferred to a
+    /// follow-up task.
+    var isTanpuraEnabled: Bool = false
 
     /// Whether a MIDI keyboard is currently connected via USB or Bluetooth.
     let isMIDIConnected: Bool
@@ -60,10 +67,17 @@ struct PlayAlongToolbar: View {
     // MARK: - Callbacks
 
     /// Called when the user taps Play or Pause.
-    var onPlayPause: () -> Void
+    ///
+    /// Retained for backward compatibility with existing call sites. The new
+    /// summoned-toolbar layout hides play/pause from the header (the persistent
+    /// pause dot handles it), so this closure is typically unused.
+    var onPlayPause: () -> Void = {}
 
     /// Called when the user taps Stop.
-    var onStop: () -> Void
+    ///
+    /// Retained for backward compatibility with existing call sites. The new
+    /// layout does not surface a stop button in the toolbar.
+    var onStop: () -> Void = {}
 
     /// Called when the user selects a tempo preset.
     var onTempoChange: (Double) -> Void
@@ -74,8 +88,15 @@ struct PlayAlongToolbar: View {
     /// Called when the user toggles reference sound.
     var onSoundToggle: () -> Void
 
-    /// Called when the user taps the theme button to open the theme sheet.
-    var onThemeTapped: () -> Void
+    /// Called when the user toggles the tanpura drone.
+    var onTanpuraToggle: () -> Void = {}
+
+    /// Called when the user taps the Mode button.
+    ///
+    /// The Mode button is intended to open Profile → Appearance so the player
+    /// can switch themes. Wiring is deferred to a follow-up task; default is
+    /// a no-op.
+    var onModeTapped: () -> Void = {}
 
     /// Called when the user drags the timeline scrubber to a new position.
     ///
@@ -97,25 +118,30 @@ struct PlayAlongToolbar: View {
 
     // MARK: - Row 1: Header
 
-    /// Play/Pause button, song title/subtitle (centered), and theme button.
+    /// Song title/subtitle (centered) and Mode button on the trailing side.
+    ///
+    /// A 44pt-wide leading gutter visually balances the Mode button so the
+    /// song info stays optically centered. Play/Pause has moved to the
+    /// persistent pause dot and is no longer shown here.
     private var headerRow: some View {
         HStack(spacing: 12) {
-            playPauseButton
+            Spacer()
+                .frame(width: 44)
+                .accessibilityHidden(true)
             songInfo
-            themeButton
+            modeButton
         }
     }
 
-    /// Play/Pause toggle button with state-driven icon.
-    private var playPauseButton: some View {
-        Button(action: onPlayPause) {
-            Image(systemName: playPauseIconName)
-                .font(.title2)
+    /// Button that opens the theme/appearance entry point (Profile → Appearance).
+    private var modeButton: some View {
+        Button(action: onModeTapped) {
+            Image(systemName: "circle.lefthalf.filled")
+                .font(.body)
                 .frame(width: 44, height: 44)
         }
-        .disabled(isPlayPauseDisabled)
-        .accessibilityLabel(playPauseAccessibilityLabel)
-        .accessibilityHint(playPauseAccessibilityHint)
+        .accessibilityLabel("Theme mode")
+        .accessibilityHint("Open Profile to change theme")
     }
 
     /// Song title and subtitle, centered in the available space.
@@ -139,19 +165,6 @@ struct PlayAlongToolbar: View {
         .accessibilityAddTraits(.isHeader)
     }
 
-    /// Button to open the theme quick-switch sheet.
-    private var themeButton: some View {
-        Button(action: onThemeTapped) {
-            Image(systemName: "paintbrush.fill")
-                .font(.body)
-                .frame(width: 36, height: 36)
-                .background(Color(.tertiarySystemBackground))
-                .clipShape(RoundedRectangle(cornerRadius: 8))
-        }
-        .accessibilityLabel("Change theme")
-        .accessibilityHint("Open theme picker to switch visual style")
-    }
-
     // MARK: - Row 2: Timeline
 
     /// Timeline scrubber showing current position and total duration.
@@ -173,7 +186,10 @@ struct PlayAlongToolbar: View {
             )
             .accessibilityLabel("Playback position")
             .accessibilityValue(
-                "\(PlayAlongToolbar.formatTime(playbackProgress * playbackDuration)) of \(PlayAlongToolbar.formatTime(playbackDuration))"
+                """
+                \(PlayAlongToolbar.formatTime(playbackProgress * playbackDuration)) \
+                of \(PlayAlongToolbar.formatTime(playbackDuration))
+                """
             )
             .accessibilityHint("Drag to seek to a different position in the song")
 
@@ -188,13 +204,14 @@ struct PlayAlongToolbar: View {
 
     // MARK: - Row 3: Controls
 
-    /// BPM preset pills, divider, and wait/sound/MIDI controls.
+    /// BPM preset pills, divider, and wait/sound/tanpura/source controls.
     private var controlsRow: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 10) {
             tempoPills
             divider
             waitModeButton
             soundToggleButton
+            tanpuraToggleButton
             midiStatusPill
         }
     }
@@ -294,6 +311,23 @@ struct PlayAlongToolbar: View {
         .accessibilityHint("Toggle reference audio playback")
     }
 
+    /// Toggle for the tanpura reference drone.
+    ///
+    /// Currently a UI-only toggle — audio wiring is deferred.
+    private var tanpuraToggleButton: some View {
+        Button(action: onTanpuraToggle) {
+            Image(systemName: "waveform.path.ecg")
+                .font(.body)
+                .frame(width: 36, height: 36)
+                .foregroundStyle(isTanpuraEnabled ? .white : .primary)
+                .background(isTanpuraEnabled ? Color.accentColor : Color.clear)
+                .clipShape(RoundedRectangle(cornerRadius: 8))
+        }
+        .accessibilityLabel("Tanpura drone")
+        .accessibilityValue(isTanpuraEnabled ? "On" : "Off")
+        .accessibilityHint("Toggle tanpura reference drone")
+    }
+
     // MARK: - Computed Properties
 
     /// SF Symbol name for the play/pause button based on current playback state.
@@ -303,53 +337,6 @@ struct PlayAlongToolbar: View {
             "pause.fill"
         default:
             "play.fill"
-        }
-    }
-
-    /// Returns the SF Symbol name for the current playback state.
-    private var playPauseIconName: String {
-        Self.playPauseIcon(for: playbackState)
-    }
-
-    /// VoiceOver label for the play/pause button.
-    private var playPauseAccessibilityLabel: String {
-        switch playbackState {
-        case .playing:
-            "Pause"
-        default:
-            "Play"
-        }
-    }
-
-    /// VoiceOver hint for the play/pause button.
-    private var playPauseAccessibilityHint: String {
-        switch playbackState {
-        case .playing:
-            "Pause song playback"
-        case .paused:
-            "Resume song playback"
-        default:
-            "Start playing the song"
-        }
-    }
-
-    /// Whether the play/pause button should be disabled.
-    private var isPlayPauseDisabled: Bool {
-        switch playbackState {
-        case .loading, .error:
-            true
-        default:
-            false
-        }
-    }
-
-    /// Whether the stop button should be disabled.
-    private var isStopDisabled: Bool {
-        switch playbackState {
-        case .idle, .loading, .stopped, .error:
-            true
-        case .playing, .paused:
-            false
         }
     }
 
@@ -418,6 +405,7 @@ struct PlayAlongToolbar: View {
         tempoScale: 1.0,
         isWaitModeEnabled: false,
         isSoundEnabled: true,
+        isTanpuraEnabled: false,
         isMIDIConnected: false,
         midiDeviceName: nil,
         baseBPM: 120,
@@ -430,7 +418,8 @@ struct PlayAlongToolbar: View {
         onTempoChange: { _ in },
         onWaitModeToggle: {},
         onSoundToggle: {},
-        onThemeTapped: {},
+        onTanpuraToggle: {},
+        onModeTapped: {},
         onSeek: { _ in }
     )
 }
@@ -441,6 +430,7 @@ struct PlayAlongToolbar: View {
         tempoScale: 0.6,
         isWaitModeEnabled: true,
         isSoundEnabled: false,
+        isTanpuraEnabled: true,
         isMIDIConnected: true,
         midiDeviceName: "Yamaha PSR-400",
         baseBPM: 100,
@@ -453,7 +443,8 @@ struct PlayAlongToolbar: View {
         onTempoChange: { _ in },
         onWaitModeToggle: {},
         onSoundToggle: {},
-        onThemeTapped: {},
+        onTanpuraToggle: {},
+        onModeTapped: {},
         onSeek: { _ in }
     )
 }

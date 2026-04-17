@@ -75,8 +75,8 @@ struct AppThemeTests {
 
     // MARK: - All Cases Count
 
-    @Test func fivePresetsExist() {
-        #expect(AppThemePreset.allCases.count == 5)
+    @Test func nineTotalPresetsExist() {
+        #expect(AppThemePreset.allCases.count == 9)
     }
 
     // MARK: - Display Names
@@ -153,5 +153,41 @@ struct AppThemeTests {
     @Test func lightThemesUseClassicPiano() {
         #expect(!AppThemePreset.immersive.usesDarkPiano)
         #expect(!AppThemePreset.sargamGlass.usesDarkPiano)
+    }
+
+    // MARK: - New Preset → ViewMode Mapping (v2)
+
+    @Test func sargamGlassBarsUsesScrollingSheet() {
+        #expect(AppThemePreset.sargamGlassBars.viewMode == .scrollingSheet)
+    }
+
+    @Test func immersiveBarsUsesScrollingSheet() {
+        #expect(AppThemePreset.immersiveBars.viewMode == .scrollingSheet)
+    }
+
+    @Test func midnightBarsUsesScrollingSheet() {
+        #expect(AppThemePreset.midnightBars.viewMode == .scrollingSheet)
+    }
+
+    @Test func popEraUsesScrollingSheet() {
+        #expect(AppThemePreset.popEra.viewMode == .scrollingSheet)
+    }
+
+    // MARK: - New Preset → NotationMode Mapping (v2)
+
+    @Test func sargamGlassBarsUsesSargamPlusSheet() {
+        #expect(AppThemePreset.sargamGlassBars.notationMode == .sargamPlusSheet)
+    }
+
+    @Test func immersiveBarsUsesSheetMusic() {
+        #expect(AppThemePreset.immersiveBars.notationMode == .sheetMusic)
+    }
+
+    @Test func midnightBarsUsesSargamPlusSheet() {
+        #expect(AppThemePreset.midnightBars.notationMode == .sargamPlusSheet)
+    }
+
+    @Test func popEraUsesSheetMusic() {
+        #expect(AppThemePreset.popEra.notationMode == .sheetMusic)
     }
 }

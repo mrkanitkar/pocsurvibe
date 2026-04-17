@@ -23,8 +23,8 @@ struct ThemeCarouselPicker: View {
     /// Trigger value for sensory feedback on theme selection.
     @State private var feedbackTrigger: Bool = false
 
-    /// All available theme presets in display order.
-    private let presets = AppThemePreset.allCases
+    // All available theme presets in display order.
+    private let presets = AppThemePreset.userVisibleCases
 
     // MARK: - Body
 
