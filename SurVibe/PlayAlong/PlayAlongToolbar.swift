@@ -2,7 +2,7 @@ import SVAudio
 import SwiftUI
 
 /// Play-along toolbar with transport controls, timeline scrubber,
-/// tempo pills, and quick-access theme switching.
+/// and tempo pills.
 ///
 /// All controls are driven by external state passed as `let` properties
 /// with change callbacks. The toolbar adapts its layout horizontally and
@@ -10,7 +10,7 @@ import SwiftUI
 ///
 /// ## Layout
 /// Three rows of controls:
-/// 1. **Header:** Play/Pause, song title/subtitle, theme button
+/// 1. **Header:** Play/Pause and song title/subtitle
 /// 2. **Timeline:** Scrubber slider with elapsed/remaining time labels
 /// 3. **Controls:** BPM preset pills, divider, Wait/Sound/MIDI status
 struct PlayAlongToolbar: View {
@@ -74,9 +74,6 @@ struct PlayAlongToolbar: View {
     /// Called when the user toggles reference sound.
     var onSoundToggle: () -> Void
 
-    /// Called when the user taps the theme button to open the theme sheet.
-    var onThemeTapped: () -> Void
-
     /// Called when the user drags the timeline scrubber to a new position.
     ///
     /// - Parameter progress: Normalized position (0.0 to 1.0).
@@ -97,12 +94,11 @@ struct PlayAlongToolbar: View {
 
     // MARK: - Row 1: Header
 
-    /// Play/Pause button, song title/subtitle (centered), and theme button.
+    /// Play/Pause button and song title/subtitle (centered).
     private var headerRow: some View {
         HStack(spacing: 12) {
             playPauseButton
             songInfo
-            themeButton
         }
     }
 
@@ -137,19 +133,6 @@ struct PlayAlongToolbar: View {
         .accessibilityElement(children: .combine)
         .accessibilityLabel("\(songTitle), \(songSubtitle)")
         .accessibilityAddTraits(.isHeader)
-    }
-
-    /// Button to open the theme quick-switch sheet.
-    private var themeButton: some View {
-        Button(action: onThemeTapped) {
-            Image(systemName: "paintbrush.fill")
-                .font(.body)
-                .frame(width: 36, height: 36)
-                .background(Color(.tertiarySystemBackground))
-                .clipShape(RoundedRectangle(cornerRadius: 8))
-        }
-        .accessibilityLabel("Change theme")
-        .accessibilityHint("Open theme picker to switch visual style")
     }
 
     // MARK: - Row 2: Timeline
@@ -430,7 +413,6 @@ struct PlayAlongToolbar: View {
         onTempoChange: { _ in },
         onWaitModeToggle: {},
         onSoundToggle: {},
-        onThemeTapped: {},
         onSeek: { _ in }
     )
 }
@@ -453,7 +435,6 @@ struct PlayAlongToolbar: View {
         onTempoChange: { _ in },
         onWaitModeToggle: {},
         onSoundToggle: {},
-        onThemeTapped: {},
         onSeek: { _ in }
     )
 }
