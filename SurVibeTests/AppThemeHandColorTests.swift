@@ -66,8 +66,14 @@ struct AppThemeHandColorTests {
     }
 
     @Test func eraAccentVariesPerEra() {
-        #expect(AppThemePreset.popEra.eraAccentColor(for: .taylor) != AppThemePreset.popEra.eraAccentColor(for: .olivia))
-        #expect(AppThemePreset.popEra.eraAccentColor(for: .brat) != AppThemePreset.popEra.eraAccentColor(for: .sabrina))
+        #expect(
+            AppThemePreset.popEra.eraAccentColor(for: .taylor)
+                != AppThemePreset.popEra.eraAccentColor(for: .olivia)
+        )
+        #expect(
+            AppThemePreset.popEra.eraAccentColor(for: .brat)
+                != AppThemePreset.popEra.eraAccentColor(for: .sabrina)
+        )
     }
 
     @Test func notationLineContrastsBackground() {

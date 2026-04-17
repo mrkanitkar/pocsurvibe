@@ -18,7 +18,8 @@ import SwiftUI
 /// ## Persistence
 /// The selected preset is stored in `UserDefaults["appThemePreset"]`.
 /// On first launch (key absent), defaults to `.immersive`.
-@MainActor @Observable
+@MainActor
+@Observable
 final class AppThemeManager {
 
     // MARK: - Properties
