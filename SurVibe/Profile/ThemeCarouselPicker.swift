@@ -24,8 +24,7 @@ struct ThemeCarouselPicker: View {
     @State private var feedbackTrigger: Bool = false
 
     // All available theme presets in display order.
-    // TODO(Task 1.10a): switch to AppThemePreset.userVisibleCases to hide legacy themes.
-    private let presets = AppThemePreset.allCases
+    private let presets = AppThemePreset.userVisibleCases
 
     // MARK: - Body
 
