@@ -38,7 +38,12 @@ struct FirstTimeCoachMark: View {
                 }
             }
             .accessibilityElement(children: .combine)
-            .accessibilityLabel("First-time tip: tap anywhere to show controls. Swipe down from top. Tap screen during play.")
+            .accessibilityLabel(
+                """
+                First-time tip: tap anywhere to show controls. \
+                Swipe down from top. Tap screen during play.
+                """
+            )
         }
     }
 }

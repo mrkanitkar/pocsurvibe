@@ -181,5 +181,14 @@ struct SargamDualRowView: View {
         cardBackgroundColor: Color.white.opacity(0.55)
     )
     .padding()
-    .background(LinearGradient(colors: [Color(red: 1.0, green: 0.96, blue: 0.90), Color(red: 1.0, green: 0.85, blue: 0.66)], startPoint: .topLeading, endPoint: .bottomTrailing))
+    .background(
+        LinearGradient(
+            colors: [
+                Color(red: 1.0, green: 0.96, blue: 0.90),
+                Color(red: 1.0, green: 0.85, blue: 0.66)
+            ],
+            startPoint: .topLeading,
+            endPoint: .bottomTrailing
+        )
+    )
 }
