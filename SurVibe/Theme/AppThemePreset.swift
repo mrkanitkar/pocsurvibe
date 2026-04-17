@@ -335,4 +335,25 @@ enum AppThemePreset: String, CaseIterable, Sendable {
         case .popEra: "Pop zeitgeist accents"
         }
     }
+
+    // MARK: - Migration (v2)
+
+    /// Map a legacy raw value (v1) to its v2 equivalent.
+    ///
+    /// Returns the same value if already a v2 case. Returns `.sargamGlassBars`
+    /// (the new default) if the raw value is unrecognized.
+    static func migrateFromV1(_ rawValue: String) -> AppThemePreset {
+        if let direct = AppThemePreset(rawValue: rawValue) {
+            switch direct {
+            case .immersive: return .immersiveBars
+            case .sargamGlass: return .sargamGlassBars
+            case .midnight: return .midnightBars
+            case .synthesia: return .immersiveBars
+            case .neonRhythm: return .neonRhythm
+            case .sargamGlassBars, .immersiveBars, .midnightBars, .popEra:
+                return direct  // already v2
+            }
+        }
+        return .sargamGlassBars  // unknown → new default
+    }
 }

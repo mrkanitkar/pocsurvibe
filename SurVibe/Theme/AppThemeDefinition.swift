@@ -53,6 +53,28 @@ struct AppThemeDefinition: Sendable {
 
     // MARK: - Factory
 
+    /// Resolve a theme preset for a given color scheme, with Pop Era sub-theme.
+    ///
+    /// Overload accepting `popEra` for the Pop Era theme. Delegates to the
+    /// existing `resolve(preset:colorScheme:)` for non-`popEra` themes.
+    ///
+    /// - TODO(Task 1.7/1.8): Replace this stub with a full implementation
+    ///   that applies Pop Era sub-theme accents when `preset == .popEra`.
+    ///
+    /// - Parameters:
+    ///   - preset: The active theme preset.
+    ///   - popEra: The Pop Era sub-theme (used only when `preset == .popEra`).
+    ///   - colorScheme: The current system color scheme.
+    /// - Returns: Fully resolved theme definition.
+    static func resolve(
+        preset: AppThemePreset,
+        popEra: PopEra,
+        colorScheme: ColorScheme
+    ) -> AppThemeDefinition {
+        // For now, ignore popEra and delegate; Task 1.7/1.8 wires it up.
+        return resolve(preset: preset, colorScheme: colorScheme)
+    }
+
     /// Resolve a theme preset for a given color scheme.
     ///
     /// Called once by `AppThemeManager` when the preset or color scheme
