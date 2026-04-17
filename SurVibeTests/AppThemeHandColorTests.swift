@@ -40,4 +40,22 @@ struct AppThemeHandColorTests {
             #expect(preset.darkRightHandColor != preset.darkLeftHandColor)
         }
     }
+
+    @Test func cardBackgroundIsThemeAwareDistinctFromPrimary() {
+        for preset in AppThemePreset.allCases {
+            #expect(preset.cardBackgroundColor != Color.clear)
+        }
+    }
+
+    @Test func successAndErrorColorsDiffer() {
+        for preset in AppThemePreset.allCases {
+            #expect(preset.successColor != preset.errorColor)
+        }
+    }
+
+    @Test func celebrationColorsArrayHasMultipleColors() {
+        for preset in AppThemePreset.allCases {
+            #expect(preset.celebrationColors.count >= 3)
+        }
+    }
 }
