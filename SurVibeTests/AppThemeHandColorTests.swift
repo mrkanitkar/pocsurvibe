@@ -58,4 +58,22 @@ struct AppThemeHandColorTests {
             #expect(preset.celebrationColors.count >= 3)
         }
     }
+
+    @Test func karaokeBackgroundExistsForAllPresets() {
+        for preset in AppThemePreset.allCases {
+            _ = preset.karaokeBackgroundColor
+        }
+    }
+
+    @Test func eraAccentVariesPerEra() {
+        #expect(AppThemePreset.popEra.eraAccentColor(for: .taylor) != AppThemePreset.popEra.eraAccentColor(for: .olivia))
+        #expect(AppThemePreset.popEra.eraAccentColor(for: .brat) != AppThemePreset.popEra.eraAccentColor(for: .sabrina))
+    }
+
+    @Test func notationLineContrastsBackground() {
+        for preset in AppThemePreset.allCases {
+            _ = preset.notationLineColor
+            _ = preset.notationSecondaryColor
+        }
+    }
 }
