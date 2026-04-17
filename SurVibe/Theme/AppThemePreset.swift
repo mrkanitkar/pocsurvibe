@@ -95,7 +95,6 @@ enum AppThemePreset: String, CaseIterable, Sendable {
         switch self {
         case .neonRhythm, .synthesia: .fallingNotes
         case .immersive, .sargamGlass, .midnight: .scrollingSheet
-        // TODO(Task 1.2): refine viewMode mapping for v2 bar presets
         case .sargamGlassBars, .immersiveBars, .midnightBars, .popEra: .scrollingSheet
         }
     }
@@ -111,7 +110,6 @@ enum AppThemePreset: String, CaseIterable, Sendable {
         case .sargamGlass: .sargamPlusSheet
         case .midnight: .sheetMusic
         case .synthesia: .western
-        // TODO(Task 1.2): refine notationMode mapping for v2 bar presets
         case .sargamGlassBars: .sargamPlusSheet
         case .immersiveBars: .sheetMusic
         case .midnightBars: .sargamPlusSheet
