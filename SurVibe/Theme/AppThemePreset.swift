@@ -1,6 +1,38 @@
 import SVCore
 import SwiftUI
 
+/// Pop Era sub-theme — selects accent color set for the Pop Era main theme.
+///
+/// Driven by the 2025-26 music zeitgeist. Persisted separately from the
+/// main theme via `UserDefaults["appThemePopEra"]`.
+enum PopEra: String, CaseIterable, Sendable {
+    case taylor
+    case olivia
+    case sabrina
+    case chappell
+    case brat
+
+    var displayName: String {
+        switch self {
+        case .taylor: "Taylor"
+        case .olivia: "Olivia"
+        case .sabrina: "Sabrina"
+        case .chappell: "Chappell"
+        case .brat: "Brat"
+        }
+    }
+
+    var iconName: String {
+        switch self {
+        case .taylor: "heart.fill"
+        case .olivia: "sparkles"
+        case .sabrina: "snowflake"
+        case .chappell: "crown.fill"
+        case .brat: "bolt.fill"
+        }
+    }
+}
+
 /// Bundled theme presets for the SurVibe app.
 ///
 /// Each preset defines:
@@ -29,6 +61,30 @@ enum AppThemePreset: String, CaseIterable, Sendable {
     /// Dark falling note lanes, western labels. Synthesia-style.
     case synthesia
 
+    // MARK: - New v2 Presets
+
+    /// Hero / default: Sargam Glass with horizontal bar playhead (v2).
+    case sargamGlassBars
+
+    /// Western mode: Immersive with horizontal bar playhead (v2).
+    case immersiveBars
+
+    /// Night mode: Midnight with horizontal bar playhead (v2).
+    case midnightBars
+
+    /// Pop Era mode: zeitgeist accents (Taylor/Olivia/Sabrina/Chappell/Brat).
+    case popEra
+
+    /// User-visible presets in the Profile theme picker.
+    /// Legacy cases are hidden compat fallbacks during migration.
+    static let userVisibleCases: [AppThemePreset] = [
+        .sargamGlassBars,
+        .immersiveBars,
+        .midnightBars,
+        .popEra,
+        .neonRhythm
+    ]
+
     // MARK: - Play-Along Derived Properties
 
     /// The play-along view mode this theme uses.
@@ -39,6 +95,8 @@ enum AppThemePreset: String, CaseIterable, Sendable {
         switch self {
         case .neonRhythm, .synthesia: .fallingNotes
         case .immersive, .sargamGlass, .midnight: .scrollingSheet
+        // TODO(Task 1.2): refine viewMode mapping for v2 bar presets
+        case .sargamGlassBars, .immersiveBars, .midnightBars, .popEra: .scrollingSheet
         }
     }
 
@@ -53,6 +111,11 @@ enum AppThemePreset: String, CaseIterable, Sendable {
         case .sargamGlass: .sargamPlusSheet
         case .midnight: .sheetMusic
         case .synthesia: .western
+        // TODO(Task 1.2): refine notationMode mapping for v2 bar presets
+        case .sargamGlassBars: .sargamPlusSheet
+        case .immersiveBars: .sheetMusic
+        case .midnightBars: .sargamPlusSheet
+        case .popEra: .sheetMusic
         }
     }
 
@@ -78,6 +141,22 @@ enum AppThemePreset: String, CaseIterable, Sendable {
             [Color.black]
         case .synthesia:
             [Color(red: 0.04, green: 0.04, blue: 0.08)]
+        // TODO(Task 1.4-1.8): refine backgroundGradient for v2 bar presets
+        case .sargamGlassBars:
+            [Color(red: 1.00, green: 0.97, blue: 0.94),
+             Color(red: 1.00, green: 0.88, blue: 0.70),
+             Color(red: 1.00, green: 0.80, blue: 0.74),
+             Color(red: 0.91, green: 0.84, blue: 0.96),
+             Color(red: 0.82, green: 0.77, blue: 0.89)]
+        case .immersiveBars:
+            [Color(red: 0.00, green: 0.65, blue: 0.72),
+             Color(red: 0.04, green: 0.47, blue: 0.54),
+             Color(red: 0.10, green: 0.23, blue: 0.42),
+             Color(red: 0.06, green: 0.12, blue: 0.23)]
+        case .midnightBars:
+            [Color.black]
+        case .popEra:
+            [Color.black]
         }
     }
 
@@ -94,6 +173,17 @@ enum AppThemePreset: String, CaseIterable, Sendable {
              Color(red: 0.10, green: 0.08, blue: 0.18)]
         case .neonRhythm, .midnight, .synthesia:
             backgroundGradient // Already dark — same in both modes
+        // TODO(Task 1.4-1.8): refine darkBackgroundGradient for v2 bar presets
+        case .sargamGlassBars:
+            [Color(red: 0.15, green: 0.10, blue: 0.08),
+             Color(red: 0.12, green: 0.08, blue: 0.15),
+             Color(red: 0.10, green: 0.08, blue: 0.18)]
+        case .immersiveBars:
+            [Color(red: 0.02, green: 0.20, blue: 0.25),
+             Color(red: 0.03, green: 0.12, blue: 0.20),
+             Color(red: 0.04, green: 0.08, blue: 0.14)]
+        case .midnightBars, .popEra:
+            backgroundGradient
         }
     }
 
@@ -105,6 +195,11 @@ enum AppThemePreset: String, CaseIterable, Sendable {
         case .sargamGlass: .rangNeel // #3F51B5
         case .midnight: Color(red: 0.96, green: 0.65, blue: 0.14) // #F5A623
         case .synthesia: Color(red: 0.30, green: 0.69, blue: 0.31) // #4CAF50
+        // TODO(Task 1.4-1.8): refine accentColor for v2 bar presets
+        case .sargamGlassBars: .rangNeel
+        case .immersiveBars: Color(red: 0.00, green: 0.71, blue: 0.85)
+        case .midnightBars: Color(red: 0.96, green: 0.65, blue: 0.14)
+        case .popEra: Color(red: 1.00, green: 0.00, blue: 0.43)
         }
     }
 
@@ -116,6 +211,11 @@ enum AppThemePreset: String, CaseIterable, Sendable {
         case .sargamGlass: .rangNeel
         case .midnight: Color(red: 0.96, green: 0.65, blue: 0.14) // #F5A623
         case .synthesia: Color(red: 0.30, green: 0.69, blue: 0.31) // #4CAF50
+        // TODO(Task 1.4-1.8): refine playheadColor for v2 bar presets
+        case .sargamGlassBars: .rangNeel
+        case .immersiveBars: Color(red: 0.00, green: 0.63, blue: 1.00)
+        case .midnightBars: Color(red: 0.96, green: 0.65, blue: 0.14)
+        case .popEra: Color(red: 1.00, green: 0.00, blue: 0.43)
         }
     }
 
@@ -127,6 +227,11 @@ enum AppThemePreset: String, CaseIterable, Sendable {
         case .sargamGlass: .white.opacity(0.38)
         case .midnight: Color(red: 0.04, green: 0.04, blue: 0.04)
         case .synthesia: .white.opacity(0.04)
+        // TODO(Task 1.4-1.8): refine surfaceColor for v2 bar presets
+        case .sargamGlassBars: .white.opacity(0.38)
+        case .immersiveBars: .white.opacity(0.93)
+        case .midnightBars: Color(red: 0.04, green: 0.04, blue: 0.04)
+        case .popEra: .white.opacity(0.04)
         }
     }
 
@@ -136,6 +241,10 @@ enum AppThemePreset: String, CaseIterable, Sendable {
         case .immersive: Color(red: 0.08, green: 0.10, blue: 0.14).opacity(0.85)
         case .sargamGlass: Color(red: 0.12, green: 0.08, blue: 0.10).opacity(0.65)
         case .neonRhythm, .midnight, .synthesia: surfaceColor
+        // TODO(Task 1.4-1.8): refine darkSurfaceColor for v2 bar presets
+        case .sargamGlassBars: Color(red: 0.12, green: 0.08, blue: 0.10).opacity(0.65)
+        case .immersiveBars: Color(red: 0.08, green: 0.10, blue: 0.14).opacity(0.85)
+        case .midnightBars, .popEra: surfaceColor
         }
     }
 
@@ -144,6 +253,10 @@ enum AppThemePreset: String, CaseIterable, Sendable {
         switch self {
         case .neonRhythm, .midnight, .synthesia: true
         case .immersive, .sargamGlass: false
+        // TODO(Task 1.4-1.8): refine isInherentlyDark for v2 bar presets
+        case .sargamGlassBars: false
+        case .immersiveBars: false
+        case .midnightBars, .popEra: true
         }
     }
 
@@ -154,6 +267,10 @@ enum AppThemePreset: String, CaseIterable, Sendable {
         switch self {
         case .neonRhythm, .midnight, .synthesia: true
         case .immersive, .sargamGlass: false
+        // TODO(Task 1.4-1.8): refine usesDarkPiano for v2 bar presets
+        case .sargamGlassBars: false
+        case .immersiveBars: false
+        case .midnightBars, .popEra: true
         }
     }
 
@@ -163,6 +280,11 @@ enum AppThemePreset: String, CaseIterable, Sendable {
         switch self {
         case .neonRhythm, .sargamGlass, .synthesia: true
         case .immersive, .midnight: false
+        // TODO(Task 1.4-1.8): refine usesRangColoredPianoKeys for v2 bar presets
+        case .sargamGlassBars: true
+        case .immersiveBars: false
+        case .midnightBars: false
+        case .popEra: true
         }
     }
 
@@ -176,6 +298,11 @@ enum AppThemePreset: String, CaseIterable, Sendable {
         case .sargamGlass: "Sargam Glass"
         case .midnight: "Midnight"
         case .synthesia: "Synthesia"
+        // TODO(Task 1.4-1.8): refine displayName for v2 bar presets
+        case .sargamGlassBars: "Sargam"
+        case .immersiveBars: "Western"
+        case .midnightBars: "Night"
+        case .popEra: "Pop Era"
         }
     }
 
@@ -187,6 +314,11 @@ enum AppThemePreset: String, CaseIterable, Sendable {
         case .sargamGlass: "sparkles"
         case .midnight: "moon.fill"
         case .synthesia: "arrow.down.to.line"
+        // TODO(Task 1.4-1.8): refine iconName for v2 bar presets
+        case .sargamGlassBars: "sparkles"
+        case .immersiveBars: "waveform"
+        case .midnightBars: "moon.fill"
+        case .popEra: "music.mic"
         }
     }
 
@@ -198,6 +330,11 @@ enum AppThemePreset: String, CaseIterable, Sendable {
         case .sargamGlass: "Indian glass, Sargam"
         case .midnight: "Dark, amber accents"
         case .synthesia: "Piano-roll falling notes"
+        // TODO(Task 1.4-1.8): refine subtitle for v2 bar presets
+        case .sargamGlassBars: "Indian glass, Sargam (v2)"
+        case .immersiveBars: "Clean focus, sheet music (v2)"
+        case .midnightBars: "Dark, amber accents (v2)"
+        case .popEra: "Pop zeitgeist accents"
         }
     }
 }
