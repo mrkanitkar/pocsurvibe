@@ -307,16 +307,16 @@ enum AppThemePreset: String, CaseIterable, Sendable {
     /// Human-readable display name for the theme picker.
     var displayName: String {
         switch self {
-        case .immersive: "Immersive"
-        case .neonRhythm: "Neon Rhythm"
-        case .sargamGlass: "Sargam Glass"
-        case .midnight: "Midnight"
-        case .synthesia: "Synthesia"
-        // TODO(Task 1.4-1.8): refine displayName for v2 bar presets
-        case .sargamGlassBars: "Sargam"
-        case .immersiveBars: "Western"
-        case .midnightBars: "Night"
-        case .popEra: "Pop Era"
+        case .sargamGlassBars: String(localized: "Sargam")
+        case .immersiveBars: String(localized: "Western")
+        case .midnightBars: String(localized: "Night")
+        case .popEra: String(localized: "Pop Era")
+        case .neonRhythm: String(localized: "Arcade")
+        // Legacy (hidden from picker; kept non-localized)
+        case .immersive: "Immersive (legacy)"
+        case .sargamGlass: "Sargam Glass (legacy)"
+        case .midnight: "Midnight (legacy)"
+        case .synthesia: "Synthesia (legacy)"
         }
     }
 
