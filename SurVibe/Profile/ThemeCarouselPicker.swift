@@ -23,7 +23,7 @@ struct ThemeCarouselPicker: View {
     /// Trigger value for sensory feedback on theme selection.
     @State private var feedbackTrigger: Bool = false
 
-    /// All available theme presets in display order.
+    // All available theme presets in display order.
     // TODO(Task 1.10a): switch to AppThemePreset.userVisibleCases to hide legacy themes.
     private let presets = AppThemePreset.allCases
 

@@ -82,7 +82,7 @@ enum AppThemePreset: String, CaseIterable, Sendable {
         .immersiveBars,
         .midnightBars,
         .popEra,
-        .neonRhythm
+        .neonRhythm,
     ]
 
     // MARK: - Play-Along Derived Properties
@@ -123,34 +123,42 @@ enum AppThemePreset: String, CaseIterable, Sendable {
     var backgroundGradient: [Color] {
         switch self {
         case .immersive:
-            [Color(red: 0.00, green: 0.65, blue: 0.72),
-             Color(red: 0.04, green: 0.47, blue: 0.54),
-             Color(red: 0.10, green: 0.23, blue: 0.42),
-             Color(red: 0.06, green: 0.12, blue: 0.23)]
+            [
+                Color(red: 0.00, green: 0.65, blue: 0.72),
+                Color(red: 0.04, green: 0.47, blue: 0.54),
+                Color(red: 0.10, green: 0.23, blue: 0.42),
+                Color(red: 0.06, green: 0.12, blue: 0.23),
+            ]
         case .neonRhythm:
             [Color(red: 0.07, green: 0.07, blue: 0.12)]
         case .sargamGlass:
-            [Color(red: 1.00, green: 0.97, blue: 0.94),
-             Color(red: 1.00, green: 0.88, blue: 0.70),
-             Color(red: 1.00, green: 0.80, blue: 0.74),
-             Color(red: 0.91, green: 0.84, blue: 0.96),
-             Color(red: 0.82, green: 0.77, blue: 0.89)]
+            [
+                Color(red: 1.00, green: 0.97, blue: 0.94),
+                Color(red: 1.00, green: 0.88, blue: 0.70),
+                Color(red: 1.00, green: 0.80, blue: 0.74),
+                Color(red: 0.91, green: 0.84, blue: 0.96),
+                Color(red: 0.82, green: 0.77, blue: 0.89),
+            ]
         case .midnight:
             [Color.black]
         case .synthesia:
             [Color(red: 0.04, green: 0.04, blue: 0.08)]
         // TODO(Task 1.4-1.8): refine backgroundGradient for v2 bar presets
         case .sargamGlassBars:
-            [Color(red: 1.00, green: 0.97, blue: 0.94),
-             Color(red: 1.00, green: 0.88, blue: 0.70),
-             Color(red: 1.00, green: 0.80, blue: 0.74),
-             Color(red: 0.91, green: 0.84, blue: 0.96),
-             Color(red: 0.82, green: 0.77, blue: 0.89)]
+            [
+                Color(red: 1.00, green: 0.97, blue: 0.94),
+                Color(red: 1.00, green: 0.88, blue: 0.70),
+                Color(red: 1.00, green: 0.80, blue: 0.74),
+                Color(red: 0.91, green: 0.84, blue: 0.96),
+                Color(red: 0.82, green: 0.77, blue: 0.89),
+            ]
         case .immersiveBars:
-            [Color(red: 0.00, green: 0.65, blue: 0.72),
-             Color(red: 0.04, green: 0.47, blue: 0.54),
-             Color(red: 0.10, green: 0.23, blue: 0.42),
-             Color(red: 0.06, green: 0.12, blue: 0.23)]
+            [
+                Color(red: 0.00, green: 0.65, blue: 0.72),
+                Color(red: 0.04, green: 0.47, blue: 0.54),
+                Color(red: 0.10, green: 0.23, blue: 0.42),
+                Color(red: 0.06, green: 0.12, blue: 0.23),
+            ]
         case .midnightBars:
             [Color.black]
         case .popEra:
@@ -162,24 +170,32 @@ enum AppThemePreset: String, CaseIterable, Sendable {
     var darkBackgroundGradient: [Color] {
         switch self {
         case .immersive:
-            [Color(red: 0.02, green: 0.20, blue: 0.25),
-             Color(red: 0.03, green: 0.12, blue: 0.20),
-             Color(red: 0.04, green: 0.08, blue: 0.14)]
+            [
+                Color(red: 0.02, green: 0.20, blue: 0.25),
+                Color(red: 0.03, green: 0.12, blue: 0.20),
+                Color(red: 0.04, green: 0.08, blue: 0.14),
+            ]
         case .sargamGlass:
-            [Color(red: 0.15, green: 0.10, blue: 0.08),
-             Color(red: 0.12, green: 0.08, blue: 0.15),
-             Color(red: 0.10, green: 0.08, blue: 0.18)]
+            [
+                Color(red: 0.15, green: 0.10, blue: 0.08),
+                Color(red: 0.12, green: 0.08, blue: 0.15),
+                Color(red: 0.10, green: 0.08, blue: 0.18),
+            ]
         case .neonRhythm, .midnight, .synthesia:
-            backgroundGradient // Already dark — same in both modes
+            backgroundGradient  // Already dark — same in both modes
         // TODO(Task 1.4-1.8): refine darkBackgroundGradient for v2 bar presets
         case .sargamGlassBars:
-            [Color(red: 0.15, green: 0.10, blue: 0.08),
-             Color(red: 0.12, green: 0.08, blue: 0.15),
-             Color(red: 0.10, green: 0.08, blue: 0.18)]
+            [
+                Color(red: 0.15, green: 0.10, blue: 0.08),
+                Color(red: 0.12, green: 0.08, blue: 0.15),
+                Color(red: 0.10, green: 0.08, blue: 0.18),
+            ]
         case .immersiveBars:
-            [Color(red: 0.02, green: 0.20, blue: 0.25),
-             Color(red: 0.03, green: 0.12, blue: 0.20),
-             Color(red: 0.04, green: 0.08, blue: 0.14)]
+            [
+                Color(red: 0.02, green: 0.20, blue: 0.25),
+                Color(red: 0.03, green: 0.12, blue: 0.20),
+                Color(red: 0.04, green: 0.08, blue: 0.14),
+            ]
         case .midnightBars, .popEra:
             backgroundGradient
         }
@@ -188,11 +204,11 @@ enum AppThemePreset: String, CaseIterable, Sendable {
     /// Primary accent color for interactive elements and highlights.
     var accentColor: Color {
         switch self {
-        case .immersive: Color(red: 0.00, green: 0.71, blue: 0.85) // #00B4D8
-        case .neonRhythm: Color(red: 1.00, green: 0.00, blue: 0.43) // #FF006E
-        case .sargamGlass: .rangNeel // #3F51B5
-        case .midnight: Color(red: 0.96, green: 0.65, blue: 0.14) // #F5A623
-        case .synthesia: Color(red: 0.30, green: 0.69, blue: 0.31) // #4CAF50
+        case .immersive: Color(red: 0.00, green: 0.71, blue: 0.85)  // #00B4D8
+        case .neonRhythm: Color(red: 1.00, green: 0.00, blue: 0.43)  // #FF006E
+        case .sargamGlass: .rangNeel  // #3F51B5
+        case .midnight: Color(red: 0.96, green: 0.65, blue: 0.14)  // #F5A623
+        case .synthesia: Color(red: 0.30, green: 0.69, blue: 0.31)  // #4CAF50
         // TODO(Task 1.4-1.8): refine accentColor for v2 bar presets
         case .sargamGlassBars: .rangNeel
         case .immersiveBars: Color(red: 0.00, green: 0.71, blue: 0.85)
@@ -204,11 +220,11 @@ enum AppThemePreset: String, CaseIterable, Sendable {
     /// Playhead color for the scrolling notation cursor.
     var playheadColor: Color {
         switch self {
-        case .immersive: Color(red: 0.00, green: 0.63, blue: 1.00) // #00A0FF
-        case .neonRhythm: Color(red: 1.00, green: 0.00, blue: 0.43) // #FF006E
+        case .immersive: Color(red: 0.00, green: 0.63, blue: 1.00)  // #00A0FF
+        case .neonRhythm: Color(red: 1.00, green: 0.00, blue: 0.43)  // #FF006E
         case .sargamGlass: .rangNeel
-        case .midnight: Color(red: 0.96, green: 0.65, blue: 0.14) // #F5A623
-        case .synthesia: Color(red: 0.30, green: 0.69, blue: 0.31) // #4CAF50
+        case .midnight: Color(red: 0.96, green: 0.65, blue: 0.14)  // #F5A623
+        case .synthesia: Color(red: 0.30, green: 0.69, blue: 0.31)  // #4CAF50
         // TODO(Task 1.4-1.8): refine playheadColor for v2 bar presets
         case .sargamGlassBars: .rangNeel
         case .immersiveBars: Color(red: 0.00, green: 0.63, blue: 1.00)
@@ -342,7 +358,7 @@ enum AppThemePreset: String, CaseIterable, Sendable {
     var rightHandColor: Color {
         switch self {
         case .immersive, .sargamGlass, .midnight, .synthesia,
-             .immersiveBars, .sargamGlassBars, .neonRhythm:
+            .immersiveBars, .sargamGlassBars, .neonRhythm:
             Color(red: 0.00, green: 0.48, blue: 1.00)  // #007AFF iOS blue
         case .midnightBars:
             Color(red: 0.31, green: 0.76, blue: 0.97)  // #4FC3F7 cyan (OLED contrast)
@@ -355,7 +371,7 @@ enum AppThemePreset: String, CaseIterable, Sendable {
     var leftHandColor: Color {
         switch self {
         case .immersive, .sargamGlass, .midnight, .synthesia,
-             .immersiveBars, .sargamGlassBars, .neonRhythm:
+            .immersiveBars, .sargamGlassBars, .neonRhythm:
             Color(red: 1.00, green: 0.23, blue: 0.19)  // #FF3B30 iOS red
         case .midnightBars:
             Color(red: 0.96, green: 0.65, blue: 0.14)  // #F5A623 amber
@@ -368,7 +384,7 @@ enum AppThemePreset: String, CaseIterable, Sendable {
     var chordColor: Color {
         switch self {
         case .immersive, .sargamGlass, .midnight, .synthesia,
-             .immersiveBars, .sargamGlassBars, .midnightBars, .neonRhythm:
+            .immersiveBars, .sargamGlassBars, .midnightBars, .neonRhythm:
             Color(red: 0.61, green: 0.15, blue: 0.69)  // #9C27B0 purple
         case .popEra:
             Color(red: 0.91, green: 0.47, blue: 0.98)  // #E879F9 fuchsia
@@ -428,25 +444,31 @@ enum AppThemePreset: String, CaseIterable, Sendable {
     var celebrationColors: [Color] {
         switch self {
         case .popEra:
-            [Color(red: 1.00, green: 0.41, blue: 0.71),  // pink
-             Color(red: 0.66, green: 0.33, blue: 0.97),  // purple
-             Color(red: 0.76, green: 0.97, blue: 1.00),  // sky
-             Color(red: 1.00, green: 0.84, blue: 0.00),  // gold
-             Color(red: 0.91, green: 0.47, blue: 0.98),  // fuchsia
-             Color(red: 1.00, green: 1.00, blue: 1.00)]  // white sparkle
+            [
+                Color(red: 1.00, green: 0.41, blue: 0.71),  // pink
+                Color(red: 0.66, green: 0.33, blue: 0.97),  // purple
+                Color(red: 0.76, green: 0.97, blue: 1.00),  // sky
+                Color(red: 1.00, green: 0.84, blue: 0.00),  // gold
+                Color(red: 0.91, green: 0.47, blue: 0.98),  // fuchsia
+                Color(red: 1.00, green: 1.00, blue: 1.00),
+            ]  // white sparkle
         case .neonRhythm:
-            [Color(red: 1.00, green: 0.00, blue: 0.43),
-             Color(red: 0.00, green: 1.00, blue: 0.82),
-             Color(red: 1.00, green: 0.74, blue: 0.04),
-             Color(red: 0.51, green: 0.22, blue: 0.93),
-             Color(red: 0.23, green: 0.52, blue: 1.00)]
+            [
+                Color(red: 1.00, green: 0.00, blue: 0.43),
+                Color(red: 0.00, green: 1.00, blue: 0.82),
+                Color(red: 1.00, green: 0.74, blue: 0.04),
+                Color(red: 0.51, green: 0.22, blue: 0.93),
+                Color(red: 0.23, green: 0.52, blue: 1.00),
+            ]
         default:
             // Rang-inspired palette for Sargam + Western + Night + legacy
-            [Color(red: 0.25, green: 0.32, blue: 0.71),   // Neel
-             Color(red: 0.22, green: 0.56, blue: 0.24),   // Hara
-             Color(red: 0.98, green: 0.66, blue: 0.14),   // Peela
-             Color(red: 0.83, green: 0.18, blue: 0.18),   // Lal
-             Color(red: 1.00, green: 0.70, blue: 0.00)]   // Sona
+            [
+                Color(red: 0.25, green: 0.32, blue: 0.71),  // Neel
+                Color(red: 0.22, green: 0.56, blue: 0.24),  // Hara
+                Color(red: 0.98, green: 0.66, blue: 0.14),  // Peela
+                Color(red: 0.83, green: 0.18, blue: 0.18),  // Lal
+                Color(red: 1.00, green: 0.70, blue: 0.00),
+            ]  // Sona
         }
     }
 
@@ -472,11 +494,11 @@ enum AppThemePreset: String, CaseIterable, Sendable {
     func eraAccentColor(for era: PopEra) -> Color {
         guard self == .popEra else { return accentColor }
         switch era {
-        case .taylor:   return Color(red: 1.00, green: 0.25, blue: 0.51)  // #FF4081 pink
-        case .olivia:   return Color(red: 0.66, green: 0.33, blue: 0.97)  // #A855F7 purple
-        case .sabrina:  return Color(red: 0.02, green: 0.71, blue: 0.83)  // #06B6D4 cyan
+        case .taylor: return Color(red: 1.00, green: 0.25, blue: 0.51)  // #FF4081 pink
+        case .olivia: return Color(red: 0.66, green: 0.33, blue: 0.97)  // #A855F7 purple
+        case .sabrina: return Color(red: 0.02, green: 0.71, blue: 0.83)  // #06B6D4 cyan
         case .chappell: return Color(red: 1.00, green: 0.41, blue: 0.71)  // #FF69B4 hot pink
-        case .brat:     return Color(red: 0.76, green: 0.97, blue: 0.23)  // #C3F73A lime
+        case .brat: return Color(red: 0.76, green: 0.97, blue: 0.23)  // #C3F73A lime
         }
     }
 
