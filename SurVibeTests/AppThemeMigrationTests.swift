@@ -79,4 +79,37 @@ struct AppThemeMigrationTests {
         // Should not re-migrate (already migrated flag is set)
         #expect(manager2.currentPreset == .sargamGlassBars)
     }
+
+    @Test @MainActor func unknownRawValueFallsBackToDefault() {
+        // Corrupt or forward-compatibility rawValue — migration helper
+        // returns .sargamGlassBars as the safe default.
+        Self.clearUserDefaults()
+        UserDefaults.standard.set("future_theme_from_v99", forKey: "appThemePreset")
+
+        let manager = AppThemeManager(colorScheme: .light)
+
+        #expect(manager.currentPreset == .sargamGlassBars)
+    }
+
+    @Test @MainActor func emptyRawValueFallsBackToDefault() {
+        Self.clearUserDefaults()
+        UserDefaults.standard.set("", forKey: "appThemePreset")
+
+        let manager = AppThemeManager(colorScheme: .light)
+
+        #expect(manager.currentPreset == .sargamGlassBars)
+    }
+
+    @Test @MainActor func alreadyV2RawValueWithoutMigrationFlagStaysPut() {
+        // User somehow has v2 rawValue but no migration flag (e.g., fresh
+        // install that wrote the default). Manager should accept v2 rawValue
+        // through the migration path (migrateFromV1 returns it unchanged).
+        Self.clearUserDefaults()
+        UserDefaults.standard.set("popEra", forKey: "appThemePreset")
+
+        let manager = AppThemeManager(colorScheme: .light)
+
+        #expect(manager.currentPreset == .popEra)
+        #expect(UserDefaults.standard.bool(forKey: "appThemeMigratedV2"))
+    }
 }
