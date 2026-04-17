@@ -96,9 +96,41 @@ struct SongPlayAlongView: View {
                 onSeek: { viewModel.seek(to: $0) }
             )
 
-            // Main content area — switches between visual modes
+            // Main content area — switches between visual modes.
+            //
+            // Gesture overlay summons/manages chrome. Gestures are attached
+            // HERE (not on the piano keyboard) so piano-key taps still route
+            // to `InteractivePianoView.onNoteOn`/`onNoteOff` without being
+            // swallowed. `.contentShape(Rectangle())` ensures the full area
+            // is hittable even when the underlying view renders `Color.clear`
+            // (e.g., `.hide` notation mode).
             contentArea
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    // Tap = "I want controls" → summon chrome.
+                    viewModel.summonChrome()
+                }
+                .gesture(
+                    // Swipe down (from top edge or anywhere on the content):
+                    // downward translation dominates → summon chrome.
+                    DragGesture(minimumDistance: 30)
+                        .onEnded { value in
+                            if value.translation.height > 30
+                                && abs(value.translation.width) < 50 {
+                                viewModel.summonChrome()
+                            }
+                        }
+                )
+                .onLongPressGesture(minimumDuration: 0.5) {
+                    // TODO(Task 2.11+): open a seek scrubber on long-press
+                    // instead of summoning chrome. For now, treat long-press
+                    // on notation as an intent to see controls.
+                    viewModel.summonChrome()
+                }
+                // TODO(Task 2.11+): implement native two-finger tap for
+                // wait-mode toggle via UIKit bridging (SwiftUI's TapGesture
+                // doesn't distinguish finger count on iOS).
 
             // Scoring HUD overlay — visible during playback OR when notes have been scored in guided mode
             CompactScoringHUD(
