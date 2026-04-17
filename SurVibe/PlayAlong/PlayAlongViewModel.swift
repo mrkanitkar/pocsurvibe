@@ -128,6 +128,21 @@ final class PlayAlongViewModel {
     /// Notation label display mode (Sargam, Western, dual, etc.).
     var notationMode: NotationDisplayMode = .sargam
 
+    // MARK: - Resolved Theme Colors (v2)
+
+    /// Right-hand accent color — set once at `.task` from theme.
+    ///
+    /// `@ObservationIgnored` prevents assignments from triggering SwiftUI
+    /// re-renders. Views receive these as `let` parameters at construction time.
+    @ObservationIgnored var rhColor: Color = .blue
+
+    @ObservationIgnored var lhColor: Color = .red
+    @ObservationIgnored var chordColor: Color = .purple
+    @ObservationIgnored var notationLineColor: Color = .black
+    @ObservationIgnored var notationSecondaryColor: Color = .gray
+    @ObservationIgnored var cardBackgroundColor: Color = .white.opacity(0.9)
+    @ObservationIgnored var karaokeBackgroundColor: Color = .black.opacity(0.55)
+
     /// Latency preset for mic pitch detection (controls FFT buffer size for chord detection).
     ///
     /// Persisted across sessions. Changing this value while detection is active
@@ -207,6 +222,56 @@ final class PlayAlongViewModel {
 
     /// Human-readable name of the connected MIDI device, if any.
     private(set) var midiDeviceName: String?
+
+    // MARK: - Chrome Visibility (v2)
+
+    /// Whether the PlayAlong toolbar/summoned chrome is visible.
+    ///
+    /// `.summoned`: toolbar slide-down is visible.
+    /// `.hidden`: only persistent chrome (pause dot, mic pill, tanpura pill)
+    /// is on screen — notation dominates the view.
+    enum ChromeVisibility: Sendable {
+        case hidden
+        case summoned
+    }
+
+    /// Current chrome state. Starts `.summoned` so users see controls on
+    /// first open; transitions to `.hidden` after `chromeAutoHideSeconds`
+    /// of inactivity.
+    private(set) var chromeVisibility: ChromeVisibility = .summoned
+
+    /// Seconds of inactivity before chrome auto-hides. `0` disables auto-hide.
+    var chromeAutoHideSeconds: Double = 6.0
+
+    /// Outstanding auto-hide timer. Cancel when user interacts.
+    @ObservationIgnored private var chromeAutoHideTask: Task<Void, Never>?
+
+    // MARK: - Chrome Actions (v2)
+
+    /// Show the chrome and start/restart the auto-hide countdown.
+    func summonChrome() {
+        chromeVisibility = .summoned
+        resetAutoHide()
+    }
+
+    /// Reset the auto-hide countdown (user interaction with a control).
+    func resetAutoHide() {
+        chromeAutoHideTask?.cancel()
+        guard chromeAutoHideSeconds > 0 else { return }
+        let seconds = chromeAutoHideSeconds
+        chromeAutoHideTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .seconds(seconds))
+            guard !Task.isCancelled else { return }
+            self?.chromeVisibility = .hidden
+        }
+    }
+
+    /// Hide chrome immediately. Cancels any pending auto-hide timer.
+    func hideChrome() {
+        chromeVisibility = .hidden
+        chromeAutoHideTask?.cancel()
+        chromeAutoHideTask = nil
+    }
 
     // MARK: - Guided Free-Play State
 

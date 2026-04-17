@@ -1,6 +1,21 @@
 import Foundation
 import SVAudio
 
+/// The performer's hand that is expected to play a given note.
+///
+/// Piano is two-handed. Each `NoteEvent` tags its expected hand so
+/// the notation renderer can color bars (RH = blue, LH = red) and the
+/// scoring engine can gate on a hand-focus setting.
+///
+/// Defaults to `.right` for historical content that was authored
+/// pre-v2 and didn't specify a hand (single-hand melody songs).
+public enum Hand: String, Codable, Sendable, CaseIterable {
+    /// Right hand — treble/melody notes. Default for legacy single-hand content.
+    case right
+    /// Left hand — bass/drone notes.
+    case left
+}
+
 /// A unified note event for play-along mode, bridging Sargam/Western notation
 /// and MIDI data into a single timeline-ready format.
 ///
@@ -47,6 +62,40 @@ struct NoteEvent: Identifiable, Equatable, Sendable {
 
     /// Key velocity (1–127). Used for SoundFont playback dynamics.
     let velocity: UInt8
+
+    /// Which hand is expected to play this note.
+    ///
+    /// Defaults to `.right` so that existing single-hand melody songs
+    /// (the common case pre-v2) continue to render as right-hand notes
+    /// without requiring migration.
+    let hand: Hand
+
+    /// Memberwise initializer.
+    ///
+    /// `hand` defaults to `.right` so existing call sites that construct
+    /// `NoteEvent` without specifying a hand continue to compile and
+    /// produce right-hand melody notes.
+    init(
+        id: UUID,
+        midiNote: UInt8,
+        swarName: String,
+        westernName: String,
+        octave: Int,
+        timestamp: TimeInterval,
+        duration: TimeInterval,
+        velocity: UInt8,
+        hand: Hand = .right
+    ) {
+        self.id = id
+        self.midiNote = midiNote
+        self.swarName = swarName
+        self.westernName = westernName
+        self.octave = octave
+        self.timestamp = timestamp
+        self.duration = duration
+        self.velocity = velocity
+        self.hand = hand
+    }
 
     // MARK: - Notation Path Factory
 

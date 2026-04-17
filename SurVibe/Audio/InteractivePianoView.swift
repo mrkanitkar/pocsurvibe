@@ -70,6 +70,25 @@ struct InteractivePianoView: View {
     /// in `.playAndRecord` mode.
     var manageSoundFont: Bool = true
 
+    /// Color used to highlight right-hand MIDI notes (from `highlightState?.rhNotes`).
+    ///
+    /// Defaults to system blue — matches the existing detection highlight color
+    /// so call sites that don't populate `rhNotes` see no visual change.
+    /// Passed as `let` to preserve the latency contract — no environment reads.
+    var rhColor: Color = .blue
+
+    /// Color used to highlight left-hand MIDI notes (from `highlightState?.lhNotes`).
+    ///
+    /// Defaults to system red.
+    var lhColor: Color = .red
+
+    /// Color used to highlight chord / both-hands MIDI notes
+    /// (from `highlightState?.chordNotes`, or notes present in both
+    /// `rhNotes` and `lhNotes`).
+    ///
+    /// Defaults to system purple.
+    var chordColor: Color = .purple
+
     // MARK: - Internal State
 
     /// MIDI notes currently held by touch (internal tracking for dual highlighting).
@@ -214,16 +233,43 @@ struct InteractivePianoView: View {
     /// (isolated observation — does not cause the parent view to re-render).
     /// `activeMidiNotes` covers mic and touch-highlight fallbacks.
     ///
-    /// - Returns: Blue for detection-only, green for touch-only, cyan for both, nil for none.
+    /// Preference cascade for "detected" color:
+    /// 1. If the note is in `highlightState.chordNotes`, or in BOTH `rhNotes`
+    ///    AND `lhNotes`, use `chordColor`.
+    /// 2. Else if in `highlightState.rhNotes`, use `rhColor`.
+    /// 3. Else if in `highlightState.lhNotes`, use `lhColor`.
+    /// 4. Else fall back to the existing blue (detection only).
+    ///
+    /// Touch, expected-note, and dual states are preserved unchanged.
+    ///
+    /// - Returns: Hand/chord color or blue for detection-only, green for touch-only,
+    ///   cyan for both detection+touch, orange for the expected next note,
+    ///   nil for none.
     private func highlightColor(for midiNote: Int) -> Color? {
+        let rh = highlightState?.rhNotes ?? []
+        let lh = highlightState?.lhNotes ?? []
+        let chord = highlightState?.chordNotes ?? []
+
         let isMIDIHighlighted = highlightState?.midiHighlightNotes.contains(midiNote) ?? false
         let isDetected = isMIDIHighlighted || activeMidiNotes.contains(midiNote)
         let isTouched = touchedMidiNotes.contains(midiNote)
         let isExpected = expectedMidiNote == midiNote
 
+        // Resolve the "detected" color with the RH/LH/chord cascade.
+        // When none of the hand sets contain the note, defaults to blue so
+        // existing callers that don't populate `rhNotes / lhNotes / chordNotes`
+        // continue to see the legacy single-color highlight.
+        let detectedColor: Color = {
+            if chord.contains(midiNote) { return chordColor }
+            if rh.contains(midiNote) && lh.contains(midiNote) { return chordColor }
+            if rh.contains(midiNote) { return rhColor }
+            if lh.contains(midiNote) { return lhColor }
+            return .blue
+        }()
+
         switch (isDetected, isTouched) {
         case (true, true): return .cyan
-        case (true, false): return .blue
+        case (true, false): return detectedColor
         case (false, true): return .green
         case (false, false):
             return isExpected ? .orange : nil
