@@ -91,6 +91,8 @@ struct SongPlayAlongView: View {
                         properties: ["enabled": viewModel.isSoundEnabled, "song_title": song.title]
                     )
                 },
+                onTanpuraToggle: { /* TODO(Task 2.9): wire to tanpura audio */ },
+                onModeTapped: { /* TODO(Task 2.9): present Profile appearance sheet */ },
                 onSeek: { viewModel.seek(to: $0) }
             )
 
