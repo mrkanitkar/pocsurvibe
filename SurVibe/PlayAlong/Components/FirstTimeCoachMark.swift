@@ -12,12 +12,14 @@ import SwiftUI
 struct FirstTimeCoachMark: View {
     @AppStorage("playAlongCoachMarkShown") private var shown: Bool = false
     @State private var visible = false
+    @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     var body: some View {
         if !shown {
             VStack(spacing: 6) {
                 Image(systemName: "hand.tap.fill")
                     .font(.title3)
+                    .accessibilityHidden(true)
                 Text("Tap anywhere to show controls")
                     .font(.caption.weight(.semibold))
                 Text("Swipe down from top · Tap screen during play")
@@ -29,10 +31,10 @@ struct FirstTimeCoachMark: View {
             .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 14))
             .opacity(visible ? 1 : 0)
             .onAppear {
-                withAnimation(.easeInOut(duration: 0.4)) { visible = true }
+                withAnimation(reduceMotion ? .none : .easeInOut(duration: 0.4)) { visible = true }
                 Task {
                     try? await Task.sleep(for: .seconds(4))
-                    withAnimation(.easeInOut(duration: 0.4)) { visible = false }
+                    withAnimation(reduceMotion ? .none : .easeInOut(duration: 0.4)) { visible = false }
                     try? await Task.sleep(for: .seconds(1))
                     shown = true
                 }

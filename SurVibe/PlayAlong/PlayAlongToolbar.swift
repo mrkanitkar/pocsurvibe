@@ -289,6 +289,7 @@ struct PlayAlongToolbar: View {
     private var waitModeButton: some View {
         Button(action: onWaitModeToggle) {
             Image(systemName: "hourglass")
+                .accessibilityHidden(true)
                 .font(.body)
                 .frame(width: 36, height: 36)
                 .foregroundStyle(isWaitModeEnabled ? .white : .primary)
@@ -317,6 +318,7 @@ struct PlayAlongToolbar: View {
     private var tanpuraToggleButton: some View {
         Button(action: onTanpuraToggle) {
             Image(systemName: "waveform.path.ecg")
+                .accessibilityHidden(true)
                 .font(.body)
                 .frame(width: 36, height: 36)
                 .foregroundStyle(isTanpuraEnabled ? .white : .primary)

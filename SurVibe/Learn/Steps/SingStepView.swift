@@ -361,6 +361,7 @@ struct SingStepView: View {
     private var stepBadge: some View {
         HStack(spacing: 6) {
             Image(systemName: "waveform")
+                .accessibilityHidden(true)
             Text("Sing Along")
                 .fontWeight(.semibold)
         }

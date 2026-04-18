@@ -146,6 +146,7 @@ struct DoorSelectorView: View {
     ) -> some View {
         VStack(spacing: 12) {
             Image(systemName: door.icon)
+                .accessibilityHidden(true)
                 .font(.largeTitle)
                 .foregroundStyle(iconForeground)
                 .frame(width: 56, height: 56)

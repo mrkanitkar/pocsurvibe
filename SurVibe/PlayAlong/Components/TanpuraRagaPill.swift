@@ -44,6 +44,7 @@ struct TanpuraRagaPill: View {
             Image(systemName: "heart.fill")
                 .font(.caption2)
                 .foregroundStyle(.pink)
+                .accessibilityHidden(true)
         case .westernKey:
             EmptyView()
         }

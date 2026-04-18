@@ -111,11 +111,13 @@ struct LessonDetailView: View {
                     if progress.isCompleted {
                         Image(systemName: "checkmark.circle.fill")
                             .foregroundStyle(themeManager.resolved.successColor)
+                            .accessibilityHidden(true)
                         Text("Completed")
                             .foregroundStyle(themeManager.resolved.successColor)
                     } else if progress.progressPercent > 0 {
                         Image(systemName: "chart.bar.fill")
                             .foregroundStyle(Color.accentColor)
+                            .accessibilityHidden(true)
                         Text("\(Int(progress.progressPercent * 100))% complete")
                             .foregroundStyle(Color.accentColor)
                     }

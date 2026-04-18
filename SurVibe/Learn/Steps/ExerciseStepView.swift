@@ -182,6 +182,7 @@ struct ExerciseStepView: View {
     private var stepBadge: some View {
         HStack(spacing: 6) {
             Image(systemName: "hand.tap")
+                .accessibilityHidden(true)
             Text("Exercise")
                 .fontWeight(.semibold)
         }

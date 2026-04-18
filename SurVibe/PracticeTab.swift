@@ -11,6 +11,7 @@ struct PracticeTab: View {
     @AppStorage("visualizationMode") private var visualizationModeRaw: String = VisualizationMode.tuner.rawValue
     @State var keyboardLayout: KeyboardLayoutMode = .piano
     @Environment(\.openURL) private var openURL
+    @Environment(\.accessibilityReduceMotion) var reduceMotion
 
     /// Current visualization mode, derived from persisted raw value.
     private var visualizationMode: VisualizationMode {
@@ -398,7 +399,9 @@ extension PracticeTab {
     /// Badge showing pitch expression type (vibrato, meend, gamaka).
     func expressionBadge(_ expression: ExpressionResult) -> some View {
         HStack(spacing: Spacing.xs) {
-            Image(systemName: expressionIcon(expression.type)).font(.caption)
+            Image(systemName: expressionIcon(expression.type))
+                .font(.caption)
+                .accessibilityHidden(true)
             Text(expression.type.displayName).font(.caption).fontWeight(.medium)
         }
         .padding(.horizontal, Spacing.sm).padding(.vertical, Spacing.xs)

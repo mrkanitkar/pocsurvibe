@@ -161,6 +161,7 @@ struct NotationPreferenceView: View {
             Image(systemName: "music.note.list")
                 .font(.body)
                 .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
             Text(verbatim: "5-line staff notation")
                 .font(.system(.body, design: .monospaced))
                 .foregroundStyle(.secondary)

@@ -40,6 +40,7 @@ struct IntroStepView: View {
     private var stepBadge: some View {
         HStack(spacing: 6) {
             Image(systemName: "text.book.closed")
+                .accessibilityHidden(true)
             Text("Introduction")
                 .fontWeight(.semibold)
         }

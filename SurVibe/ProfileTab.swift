@@ -50,6 +50,8 @@ struct ProfileTab: View {
                     LanguageSelectorView()
                 } else if destination == "appearance" {
                     ThemeCarouselPicker()
+                } else if destination == "display" {
+                    AppearanceSettingsView()
                 } else if destination == "achievements" {
                     if let am = gamificationService?.achievementManager {
                         AchievementGalleryView(achievementManager: am)
@@ -250,7 +252,7 @@ struct ProfileTab: View {
 
     // MARK: - Appearance Section
 
-    /// Appearance section -- navigates to the theme carousel picker.
+    /// Appearance section -- navigates to the theme carousel picker and display settings.
     private var appearanceSection: some View {
         Section(header: Text("Appearance")) {
             NavigationLink(value: "appearance") {
@@ -265,6 +267,19 @@ struct ProfileTab: View {
             .accessibilityHint(
                 "Current theme: \(themeManager.currentPreset.displayName). Double tap to change."
             )
+
+            NavigationLink(value: "display") {
+                HStack {
+                    Label("Display", systemImage: "moon.fill")
+                    Spacer()
+                    if themeManager.dimModeEnabled {
+                        Text("Dim")
+                            .foregroundStyle(.secondary)
+                    }
+                }
+            }
+            .accessibilityLabel("Display settings")
+            .accessibilityHint("Dim Mode and brightness options. Double tap to open.")
         }
     }
 

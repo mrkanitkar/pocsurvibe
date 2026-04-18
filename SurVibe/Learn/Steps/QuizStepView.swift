@@ -255,6 +255,7 @@ struct QuizStepView: View {
     private var stepBadge: some View {
         HStack(spacing: 6) {
             Image(systemName: "questionmark.circle")
+                .accessibilityHidden(true)
             Text("Quiz")
                 .fontWeight(.semibold)
         }

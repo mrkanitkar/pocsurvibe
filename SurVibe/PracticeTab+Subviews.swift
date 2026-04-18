@@ -8,7 +8,7 @@ extension PracticeTab {
     /// Toggle between piano and isomorphic sargam keyboard layouts.
     var keyboardLayoutToggle: some View {
         Button {
-            withAnimation(.easeInOut(duration: 0.2)) {
+            withAnimation(reduceMotion ? .none : .easeInOut(duration: 0.2)) {
                 keyboardLayout = keyboardLayout == .piano ? .isomorphic : .piano
             }
         } label: {
@@ -51,7 +51,10 @@ extension PracticeTab {
                 } label: {
                     HStack {
                         Text(preset.displayName)
-                        if preset == viewModel.latencyPreset { Image(systemName: "checkmark") }
+                        if preset == viewModel.latencyPreset {
+                            Image(systemName: "checkmark")
+                                .accessibilityHidden(true)
+                        }
                     }
                 }
             }

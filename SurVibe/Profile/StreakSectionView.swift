@@ -69,6 +69,7 @@ struct StreakSectionView: View {
     private var flameIcon: some View {
         Image(systemName: "flame.fill")
             .font(.system(size: 32))
+            .accessibilityHidden(true)
             .foregroundStyle(
                 currentStreak > 0
                     ? LinearGradient(
@@ -104,6 +105,7 @@ struct StreakSectionView: View {
         HStack(spacing: 4) {
             Image(systemName: "snowflake")
                 .font(.caption.weight(.semibold))
+                .accessibilityHidden(true)
             Text(verbatim: "\(freezeTokensAvailable)")
                 .font(.caption.weight(.bold))
         }
