@@ -1,9 +1,12 @@
+import SVCore
 import SwiftUI
 
 /// A small badge displaying a song's difficulty level with color coding.
 ///
 /// Maps the integer difficulty (1–5) to a human-readable label and
-/// a color from the Rang color system (Neel → Sona).
+/// a color from the Rang color system (Neel → Sona) via `RangLevel`.
+/// Badge text color is resolved through `AppThemeManager` to ensure
+/// legibility across all themes and dark-mode variants.
 ///
 /// Usage:
 /// ```swift
@@ -15,6 +18,8 @@ struct DifficultyBadge: View {
     /// The difficulty level (1–5).
     let difficulty: Int
 
+    @Environment(AppThemeManager.self) private var themeManager
+
     // MARK: - Body
 
     var body: some View {
@@ -23,7 +28,7 @@ struct DifficultyBadge: View {
             .fontWeight(.medium)
             .padding(.horizontal, 8)
             .padding(.vertical, 3)
-            .foregroundStyle(.white)
+            .foregroundStyle(themeManager.resolved.badgeTextColor)
             .background(
                 Capsule()
                     .fill(color)
@@ -45,16 +50,12 @@ struct DifficultyBadge: View {
         }
     }
 
-    /// Color for the difficulty badge (Rang system).
+    /// Capsule background color for the difficulty badge.
+    ///
+    /// Resolved via `RangLevel` so colors stay in sync with the canonical
+    /// Rang color system in SVCore. Falls back to `.gray` for out-of-range values.
     private var color: Color {
-        switch difficulty {
-        case 1: Color(red: 0.247, green: 0.318, blue: 0.710)  // Neel #3F51B5
-        case 2: Color(red: 0.220, green: 0.557, blue: 0.235)  // Hara #388E3C
-        case 3: Color(red: 0.757, green: 0.475, blue: 0.0)    // Peela Dark #C17900
-        case 4: Color(red: 0.827, green: 0.184, blue: 0.184)  // Lal #D32F2F
-        case 5: Color(red: 0.722, green: 0.467, blue: 0.0)    // Sona Dark #B87700
-        default: Color.gray
-        }
+        RangLevel(rawValue: difficulty)?.color ?? .gray
     }
 }
 
@@ -67,4 +68,5 @@ struct DifficultyBadge: View {
         }
     }
     .padding()
+    .environment(AppThemeManager())
 }

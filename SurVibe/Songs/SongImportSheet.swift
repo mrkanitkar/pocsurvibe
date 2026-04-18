@@ -19,6 +19,7 @@ struct SongImportSheet: View {
     @Environment(\.dismiss) private var dismiss
     @Environment(\.modelContext) private var modelContext
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(AppThemeManager.self) private var themeManager
 
     @State private var viewModel: SongImportViewModel?
 
@@ -284,8 +285,8 @@ struct SongImportSheet: View {
     private func warningColor(_ severity: ParseWarning.Severity) -> Color {
         switch severity {
         case .info: return .blue
-        case .warning: return .orange
-        case .error: return .red
+        case .warning: return themeManager.resolved.warningColor
+        case .error: return themeManager.resolved.errorColor
         }
     }
 }
