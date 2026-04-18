@@ -57,7 +57,7 @@ final class GamificationService {
         self.streakTracker = StreakTracker(modelContext: modelContext)
         self.achievementManager = AchievementManager(modelContext: modelContext, xpManager: xp)
 
-        streakTracker.recompute()
+        streakTracker.recompute(profile: fetchUserProfile())
     }
 
     // MARK: - Gameplay Event Handlers
@@ -112,7 +112,7 @@ final class GamificationService {
             xpManager.awardXP(amount: 50, source: .songProficiency, sourceId: songId)
         }
 
-        streakTracker.recompute()
+        streakTracker.recompute(profile: fetchUserProfile())
 
         let newRang = rangSystem.recalculate()
         evaluateAchievements(newRangLevel: newRang, hasProficientSong: songProficient)
@@ -131,10 +131,25 @@ final class GamificationService {
 
     /// Refresh streak data (call when ProfileTab appears or after practice).
     func refreshStreak() {
-        streakTracker.recompute()
+        streakTracker.recompute(profile: fetchUserProfile())
     }
 
     // MARK: - Private Methods
+
+    /// Fetch the singleton UserProfile from the model context, or nil on error.
+    ///
+    /// Used to pass the profile into streak-freeze logic without creating a new profile.
+    private func fetchUserProfile() -> UserProfile? {
+        let descriptor = FetchDescriptor<UserProfile>()
+        do {
+            return try modelContext.fetch(descriptor).first
+        } catch {
+            Self.logger.error(
+                "Failed to fetch UserProfile for streak freeze: \(error.localizedDescription, privacy: .public)"
+            )
+            return nil
+        }
+    }
 
     /// Build an `AchievementContext` from current SwiftData state and check triggers.
     ///
