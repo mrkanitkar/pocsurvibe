@@ -88,6 +88,34 @@ actor NoteMatchingActor {
         return diff
     }
 
+    /// Evaluate the completeness of a played chord (MAJ-2).
+    ///
+    /// Delegates to `ChordScoreCalculator.score` from SVLearning, which uses the
+    /// intersection-over-expected formula `|expected ∩ detected| / |expected|`.
+    /// Missing notes lower the score; extra notes (embellishments) are not
+    /// penalized.
+    ///
+    /// All inputs are `Sendable` value types; the actor serializes concurrent
+    /// callers so back-to-back chord evaluations are processed in order.
+    ///
+    /// - Parameters:
+    ///   - expectedChordNotes: MIDI note numbers that should be played
+    ///     simultaneously (the expected chord group).
+    ///   - detectedNotes: MIDI note numbers actually detected, typically derived
+    ///     from a `ChordResult.activeMidiNotes` snapshot.
+    /// - Returns: Completeness fraction in `0.0...1.0`. Returns `1.0` when the
+    ///   expected set is empty (degenerate input).
+    func evaluateChord(
+        expectedChordNotes: Set<Int>,
+        detectedNotes: Set<Int>
+    ) -> Double {
+        let result = ChordScoreCalculator.score(
+            expectedNotes: expectedChordNotes,
+            detectedNotes: detectedNotes
+        )
+        return result.completeness
+    }
+
     // MARK: - Private Helpers
 
     /// Compute cents deviation from the pitch result or a fallback.

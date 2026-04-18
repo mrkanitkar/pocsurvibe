@@ -398,6 +398,24 @@ final class PlayAlongViewModel {
     /// back to update `@Observable` state.
     private let noteMatchingActor = NoteMatchingActor()
 
+    /// Most recent chord analysis result from `audioProcessor.chordStream`.
+    ///
+    /// Written by `chordListenerTask` whenever the mic DSP reports ≥2 simultaneous
+    /// pitches. Read on `@MainActor` in `processNoteInput` to attach a chord
+    /// completeness score when the expected event is part of a chord group.
+    private var latestChordResult: ChordResult?
+
+    /// Background task that consumes `audioProcessor.chordStream` and keeps
+    /// `latestChordResult` current for chord-aware scoring (MAJ-2).
+    private var chordListenerTask: Task<Void, Never>?
+
+    /// Maximum timestamp gap (seconds) between two `NoteEvent`s to be considered
+    /// part of the same simultaneous chord group. Matches the design memory's
+    /// 10 ms window — tighter than the 20 ms MIDI dejitter window so a true
+    /// chord (notes authored at the same beat) is grouped while quick legato
+    /// runs are not.
+    private static let chordGroupingWindow: TimeInterval = 0.010
+
     private static let logger = Logger.survibe(category: "PlayAlong")
 
     // MARK: - Initialization
@@ -765,6 +783,10 @@ final class PlayAlongViewModel {
         pitchDetectionTask = nil
         chordDetectionTask?.cancel()
         chordDetectionTask = nil
+        // MAJ-2: cancel the chord listener so it does not outlive the session.
+        chordListenerTask?.cancel()
+        chordListenerTask = nil
+        latestChordResult = nil
         midiInput.onNoteEvent = nil
         midiInput.onControlChangeEvent = nil
         midiInput.stop()
@@ -1005,6 +1027,17 @@ final class PlayAlongViewModel {
         chordDetectionTask?.cancel()
         chordDetectionTask = Task { [weak self] in
             await self?.runChordDetectionLoop(realSamples: preset.realSamples)
+        }
+
+        // MAJ-2: subscribe to the chord stream so chord-aware scoring in
+        // `processNoteInput` always has a fresh `ChordResult` to consult.
+        chordListenerTask?.cancel()
+        chordListenerTask = Task { [weak self] in
+            guard let stream = self?.audioProcessor.chordStream else { return }
+            for await chord in stream {
+                guard !Task.isCancelled else { return }
+                self?.latestChordResult = chord
+            }
         }
     }
 
@@ -1529,7 +1562,7 @@ final class PlayAlongViewModel {
         // Pass 0 until note-off timestamps are captured in a future task.
         let durDeviation = 0.0
 
-        let diff = await noteMatchingActor.evaluate(
+        var diff = await noteMatchingActor.evaluate(
             midiNote: midiNote,
             expectedEvent: expectedEvent,
             currentPitch: pitch,
@@ -1538,6 +1571,26 @@ final class PlayAlongViewModel {
             timingDeviationSeconds: onsetDeviation,
             durationDeviation: durDeviation
         )
+
+        // MAJ-2: if the expected event belongs to a chord group AND a fresh
+        // chord analysis is available from the mic stream, attach a completeness
+        // score and blend it into the per-note accuracy. Single-note events
+        // skip this path entirely (chordCompleteness stays nil).
+        if let chordGroup = findChordGroup(for: expectedEvent),
+           let chord = latestChordResult {
+            let expectedSet = Set(chordGroup.map { Int($0.midiNote) })
+            let detectedSet = chord.activeMidiNotes
+            let completeness = await noteMatchingActor.evaluateChord(
+                expectedChordNotes: expectedSet,
+                detectedNotes: detectedSet
+            )
+            diff.chordCompleteness = completeness
+            if let baseScore = diff.score {
+                diff = applyChordCompleteness(
+                    completeness, to: diff, baseScore: baseScore
+                )
+            }
+        }
 
         // Apply the diff back on @MainActor — only three writes, no re-render
         // of the full note list.
@@ -1566,6 +1619,61 @@ final class PlayAlongViewModel {
     private func swarNameFromMIDI(_ midiNote: UInt8) -> String {
         let semitone = Int(midiNote) % 12
         return Swar.nameForSemitone[semitone] ?? Swar.sa.rawValue
+    }
+
+    /// Group `NoteEvent`s that share the given event's onset within the
+    /// `chordGroupingWindow` (10 ms) into a single chord group.
+    ///
+    /// The returned group includes the input event itself. Returns `nil` when
+    /// the event has no neighbours inside the window — i.e. it is a single
+    /// melodic note, not part of a chord.
+    ///
+    /// - Parameter event: The expected event currently under evaluation.
+    /// - Returns: All `NoteEvent`s within ±`chordGroupingWindow` of `event`'s
+    ///   timestamp, or `nil` when no other event qualifies.
+    private func findChordGroup(for event: NoteEvent) -> [NoteEvent]? {
+        let window = Self.chordGroupingWindow
+        let group = noteEvents.filter { abs($0.timestamp - event.timestamp) <= window }
+        return group.count >= 2 ? group : nil
+    }
+
+    /// Blend a chord-completeness factor into an existing per-note `NoteScore`.
+    ///
+    /// Returns a `ScoringDiff` with `score.accuracy` multiplied by the
+    /// completeness fraction (so missing chord notes pull the per-note accuracy
+    /// down). The `chordCompleteness` field is preserved on the returned diff.
+    ///
+    /// - Parameters:
+    ///   - completeness: Chord completeness fraction in `0.0...1.0`.
+    ///   - diff: The existing scoring diff with `chordCompleteness` already set.
+    ///   - baseScore: The non-blended `NoteScore` produced by `NoteMatchingActor`.
+    /// - Returns: A new diff carrying a blended-accuracy score.
+    private func applyChordCompleteness(
+        _ completeness: Double,
+        to diff: ScoringDiff,
+        baseScore: NoteScore
+    ) -> ScoringDiff {
+        let blended = NoteScore(
+            id: baseScore.id,
+            grade: baseScore.grade,
+            accuracy: baseScore.accuracy * completeness,
+            pitchDeviationCents: baseScore.pitchDeviationCents,
+            timingDeviationSeconds: baseScore.timingDeviationSeconds,
+            durationDeviation: baseScore.durationDeviation,
+            expectedNote: baseScore.expectedNote,
+            detectedNote: baseScore.detectedNote,
+            isOutOfRaga: baseScore.isOutOfRaga,
+            expressionResult: baseScore.expressionResult,
+            timestamp: baseScore.timestamp
+        )
+        return ScoringDiff(
+            noteEventID: diff.noteEventID,
+            newState: diff.newState,
+            score: blended,
+            streakOutcome: diff.streakOutcome,
+            probeToken: diff.probeToken,
+            chordCompleteness: completeness
+        )
     }
 
     // MARK: - Private Methods — Score Bookkeeping
