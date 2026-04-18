@@ -5,17 +5,6 @@ import SVCore
 import Synchronization
 import os.log
 
-/// A detected note for display in the history list.
-struct DetectedNote: Identifiable {
-    let id = UUID()
-    let swarName: String
-    let westernName: String
-    let octave: Int
-    let centsOffset: Double
-    let frequency: Double
-    let timestamp: Date
-}
-
 /// Thread-safe boolean flag using Mutex for compiler-verified Sendable.
 final class AtomicFlag: Sendable {
     private let value = Mutex<Bool>(false)

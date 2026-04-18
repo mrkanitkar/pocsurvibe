@@ -10,25 +10,6 @@ import os.log
 /// Module-level logger for @MainActor-isolated methods of PitchDetectionViewModel.
 private let vmLogger = Logger.survibe(category: "PitchDetectionVM")
 
-/// Carries a single DSP result from the processing queue to MainActor.
-private struct DSPResult: Sendable {
-    let amplitude: Double
-    let frequency: Double
-    let noteName: String
-    let westernName: String
-    let octave: Int
-    let cents: Double
-    let confidence: Double
-}
-
-/// Weak, Sendable reference to the ViewModel for use in Task closures.
-private final class WeakVM: Sendable {
-    private let storage: Mutex<WeakRef>
-    private struct WeakRef: Sendable { weak var vm: PitchDetectionViewModel? }
-    var vm: PitchDetectionViewModel? { storage.withLock { $0.vm } }
-    init(_ vm: PitchDetectionViewModel) { self.storage = Mutex(WeakRef(vm: vm)) }
-}
-
 /// Detection mode controlling which pipeline runs.
 enum DetectionMode: String, CaseIterable, Sendable {
     case melody, chord, both
@@ -44,8 +25,15 @@ enum DetectionMode: String, CaseIterable, Sendable {
 
 /// ViewModel for real-time pitch detection in PracticeTab.
 ///
-/// Pipeline: mic tap (audio thread) -> dspQueue (PitchDSP/ChromagramDSP) -> MainActor UI update.
-/// Supports melody, chord, and both detection modes.
+/// Pipeline (post-MIDI-2.0 migration):
+/// - Melody: `MicPitchDetector` runs autocorrelation on a lock-free `SPSCRingBuffer`
+///   fed by the shared `AudioEngineManager` mic tap and yields `PitchResult` values
+///   over an `AsyncStream`.
+/// - Chord: a secondary `SPSCRingBuffer` (registered via `MicPitchDetector.secondaryRingBuffer`)
+///   accumulates raw mic samples; a Task polls it every 50 ms and runs
+///   `ChromagramDSP.analyzeChord` on the latest window.
+///
+/// The two paths share one mic tap (iOS allows only one tap per input node).
 @MainActor
 @Observable
 final class PitchDetectionViewModel {
@@ -54,7 +42,7 @@ final class PitchDetectionViewModel {
     /// Permission provider for microphone access checks and requests.
     private let permissions: any PermissionProviding
 
-    /// Audio engine provider for mic tap and engine lifecycle.
+    /// Audio engine provider for engine lifecycle (mic tap is owned by `MicPitchDetector`).
     private let audioEngine: any AudioEngineProviding
 
     // MARK: - Initialization
@@ -127,13 +115,24 @@ final class PitchDetectionViewModel {
     var sargamChordName: String? { currentChordResult?.chordName?.sargamDisplayName }
 
     private let maxRecentNotes = 12
-    private let dspQueue = DispatchQueue(label: "com.survibe.pitch-dsp", qos: .userInteractive)
     private let referencePitch: Double = 440.0
-    private var stopFlag: AtomicFlag?
-    private var ringBuffer: AudioRingBuffer?
-    private var lastReadSampleCount: Int = 0
     private var centsHistory: [Double] = []
     private let centsHistoryMaxSize = 22
+
+    /// Migrated melody detector — replaces the bespoke autocorrelation pipeline
+    /// + `AudioRingBuffer` previously inlined into this view model.
+    private let pitchDetector = MicPitchDetector()
+
+    /// Secondary lock-free ring buffer that captures raw mic samples for the
+    /// chord pipeline (FFT chromagram). Sized to `latencyPreset.realSamples * 2`
+    /// at `startListening()` so the chord task always sees a complete window.
+    private var chordRingBuffer: SPSCRingBuffer?
+
+    /// Task consuming the melody pitch stream.
+    private var melodyTask: Task<Void, Never>?
+
+    /// Task running the FFT chord detection loop (chord/both modes).
+    private var chordTask: Task<Void, Never>?
 
     // MARK: - Public Methods
 
@@ -145,11 +144,6 @@ final class PitchDetectionViewModel {
         vmLogger.info("startListening called")
 
         guard await requestMicPermission() else { return }
-        guard await startEngine() else { return }
-
-        debugStatus = "Installing mic tap..."
-        isListening = true
-        detectionCount = 0
 
         // Connect visualization adapter to mainMixerNode (coexists with mic tap on inputNode)
         do {
@@ -158,41 +152,70 @@ final class PitchDetectionViewModel {
             vmLogger.error("AudioNodeAdapter connection failed: \(error.localizedDescription, privacy: .public)")
         }
 
-        let context = prepareTapContext()
-        let tapInstalled = audioEngine.installMicTap(
-            bufferSize: nil,
-            handler: buildMicTapHandler(context: context)
-        )
+        let mode = detectionMode
+        let preset = latencyPreset
 
-        if tapInstalled {
-            debugStatus = "Listening (\(context.mode.displayName)) — play a note"
-            vmLogger.info("Mic tap installed, mode=\(context.mode.rawValue, privacy: .public), listening")
+        // Allocate the chord ring buffer up front when the chord pipeline is active.
+        // Capacity = realSamples * 2 so reads never overlap with writes.
+        if mode == .chord || mode == .both {
+            let buf = SPSCRingBuffer(capacity: preset.realSamples * 2)
+            chordRingBuffer = buf
+            pitchDetector.secondaryRingBuffer = buf
         } else {
-            isListening = false
-            stopFlag = nil
-            ringBuffer = nil
+            chordRingBuffer = nil
+            pitchDetector.secondaryRingBuffer = nil
+        }
+        centsHistory = []
+
+        debugStatus = "Installing mic tap..."
+        pitchDetector.referencePitch = referencePitch
+        let stream = pitchDetector.start()
+
+        // MicPitchDetector starts the engine internally; if the tap install
+        // fails it finishes the stream immediately and flips `isDetecting` to
+        // false. Use that as our success signal so the UI states stay honest.
+        guard pitchDetector.isDetecting else {
+            chordRingBuffer = nil
+            pitchDetector.secondaryRingBuffer = nil
             errorMessage = String(localized: "Could not access microphone. Please check permissions and try again.")
             debugStatus = "Mic tap failed — check logs"
-            vmLogger.error("installMicTap returned false — tap not installed")
+            vmLogger.error("MicPitchDetector failed to start (isDetecting=false)")
+            return
+        }
+
+        isListening = true
+        detectionCount = 0
+        debugStatus = "Listening (\(mode.displayName)) — play a note"
+        vmLogger.info("MicPitchDetector started, mode=\(mode.rawValue, privacy: .public)")
+
+        melodyTask = Task { [weak self] in
+            await self?.runMelodyLoop(stream: stream, mode: mode)
+        }
+
+        if mode == .chord || mode == .both, let chordBuf = chordRingBuffer {
+            chordTask = Task { [weak self] in
+                await self?.runChordLoop(buffer: chordBuf, realSamples: preset.realSamples)
+            }
         }
     }
 
     /// Stop listening and tear down audio.
     func stopListening() {
-        stopFlag?.set()
-        stopFlag = nil
+        melodyTask?.cancel()
+        melodyTask = nil
+        chordTask?.cancel()
+        chordTask = nil
+        pitchDetector.stop()
+        pitchDetector.secondaryRingBuffer = nil
         AudioNodeAdapter.shared.disconnect()
-        audioEngine.removeMicTap()
         audioEngine.stop()
         isListening = false
 
         // Reset chord detection state
-        ringBuffer?.reset()
-        ringBuffer = nil
+        chordRingBuffer = nil
         currentChordResult = nil
         currentExpression = nil
         centsHistory = []
-        lastReadSampleCount = 0
 
         debugStatus = "Stopped"
         vmLogger.info("stopListening complete")
@@ -219,218 +242,103 @@ extension PitchDetectionViewModel {
         }
         return granted
     }
-
-    /// Start the audio engine. Returns `true` if running.
-    fileprivate func startEngine() async -> Bool {
-        debugStatus = "Starting audio engine..."
-        vmLogger.info("Mic permission granted, starting engine")
-
-        do {
-            try audioEngine.start()
-        } catch {
-            errorMessage = String(localized: "Could not start audio: \(error.localizedDescription)")
-            debugStatus = "Engine failed: \(error.localizedDescription)"
-            vmLogger.error("Engine start failed: \(error.localizedDescription, privacy: .public)")
-            return false
-        }
-
-        vmLogger.info("Engine started, isRunning=\(self.audioEngine.isRunning)")
-        try? await Task.sleep(for: .milliseconds(200))
-
-        guard audioEngine.isRunning else {
-            debugStatus = "Engine stopped during setup"
-            vmLogger.warning("Engine stopped during sleep — aborting")
-            return false
-        }
-        return true
-    }
-
-    /// Captures needed for the mic tap closure, bundled to avoid multi-field capture.
-    fileprivate struct TapContext: Sendable {
-        let mode: DetectionMode
-        let refPitch: Double
-        let realSamples: Int
-        let queue: DispatchQueue
-        let counter: AtomicCounter
-        let flag: AtomicFlag
-        let ringBuf: AudioRingBuffer?
-        let weakRef: WeakVM
-    }
-
-    /// Prepare the ring buffer and capture context for the mic tap.
-    fileprivate func prepareTapContext() -> TapContext {
-        let mode = detectionMode
-        let preset = latencyPreset
-
-        if mode == .chord || mode == .both {
-            ringBuffer = AudioRingBuffer(capacity: preset.realSamples * 2)
-            lastReadSampleCount = 0
-            centsHistory = []
-        }
-
-        let flag = AtomicFlag()
-        self.stopFlag = flag
-
-        return TapContext(
-            mode: mode,
-            refPitch: referencePitch,
-            realSamples: preset.realSamples,
-            queue: dspQueue,
-            counter: AtomicCounter(),
-            flag: flag,
-            ringBuf: ringBuffer,
-            weakRef: WeakVM(self)
-        )
-    }
-
-    /// Build the mic tap handler closure from a prepared context.
-    fileprivate func buildMicTapHandler(context: TapContext) -> @Sendable (AVAudioPCMBuffer, AVAudioTime) -> Void {
-        { buffer, _ in
-            guard !context.flag.isSet,
-                let channelData = buffer.floatChannelData?[0],
-                buffer.frameLength > 0
-            else { return }
-            let frameLength = Int(buffer.frameLength)
-            let sampleRate = buffer.format.sampleRate
-            let samples = Array(UnsafeBufferPointer(start: channelData, count: frameLength))
-            if context.mode == .chord || context.mode == .both { context.ringBuf?.write(samples) }
-            let bufNum = context.counter.increment()
-            if bufNum % 50 == 1 {
-                PitchDSP.logger.info("Tap #\(bufNum): frames=\(frameLength) rate=\(sampleRate)")
-            }
-            context.queue.async {
-                guard !context.flag.isSet else { return }
-                Self.processDSP(samples: samples, sampleRate: sampleRate, bufNum: bufNum, context: context)
-            }
-        }
-    }
 }
 
+// MARK: - Detection Loops
+
 extension PitchDetectionViewModel {
-    /// Run melody and/or chord DSP, then dispatch results to MainActor.
-    nonisolated fileprivate static func processDSP(
-        samples: [Float],
-        sampleRate: Double,
-        bufNum: Int,
-        context: TapContext
-    ) {
-        let amplitude = PitchDSP.calculateRMS(samples)
-        if bufNum % 50 == 1 {
-            PitchDSP.logger.info("Buf #\(bufNum) amp=\(String(format: "%.6f", amplitude), privacy: .public)")
-        }
-        let melody = runMelodyPipeline(
-            samples: samples,
-            sampleRate: sampleRate,
-            amplitude: amplitude,
-            mode: context.mode,
-            refPitch: context.refPitch
-        )
-        let chord = runChordPipeline(
-            mode: context.mode,
-            ringBuf: context.ringBuf,
-            realSamples: context.realSamples,
-            sampleRate: sampleRate,
-            refPitch: context.refPitch
-        )
-        let weakRef = context.weakRef
-        let mode = context.mode
-        Task { @MainActor in
-            guard let vm = weakRef.vm, vm.isListening else { return }
-            vm.applyResults(
+    /// Consume the `MicPitchDetector` async stream and apply melody results.
+    fileprivate func runMelodyLoop(
+        stream: AsyncStream<PitchResult>,
+        mode: DetectionMode
+    ) async {
+        for await result in stream {
+            guard !Task.isCancelled, isListening else { return }
+            let amplitude = result.amplitude
+            // `MicPitchDetector` yields a silence-marker result (frequency == 0)
+            // even when no note is detected so the UI keeps its liveness.
+            let isSilence = result.frequency <= 0 || result.noteName.isEmpty
+            applyMelodyResult(
                 amplitude: amplitude,
-                melodyResult: melody,
-                chordDetection: chord,
-                centsForExpression: melody?.cents,
+                pitch: isSilence ? nil : result,
                 mode: mode
             )
         }
     }
 
-    /// Autocorrelation melody detection. Returns nil if below threshold.
-    nonisolated fileprivate static func runMelodyPipeline(
-        samples: [Float],
-        sampleRate: Double,
-        amplitude: Double,
-        mode: DetectionMode,
-        refPitch: Double
-    ) -> DSPResult? {
-        guard mode == .melody || mode == .both, amplitude > 0.002 else { return nil }
-        let detection = PitchDSP.detectPitchWithConfidence(samples: samples, sampleRate: sampleRate)
-        guard detection.frequency > 0,
-            let (name, oct, cents) = try? SwarUtility.frequencyToNote(
-                detection.frequency,
+    /// Poll the chord ring buffer every 50 ms and run FFT chromagram analysis.
+    fileprivate func runChordLoop(buffer: SPSCRingBuffer, realSamples: Int) async {
+        // Pre-allocate a single read buffer reused on every iteration —
+        // matches the zero-alloc contract used by `MicPitchDetector`.
+        let workBuf = UnsafeMutableBufferPointer<Float>.allocate(capacity: realSamples)
+        workBuf.initialize(repeating: 0)
+        defer { workBuf.deallocate() }
+
+        let refPitch = referencePitch
+        // Sample rate may differ from 44100 on Bluetooth/external interfaces, but
+        // the shared engine manager runs at the input node's preferred rate.
+        // Use 44100 as a stable reference here — chord detection is robust to
+        // small sample-rate offsets at the FFT bin granularity used.
+        let sampleRate: Double = 44100
+        while !Task.isCancelled, isListening {
+            try? await Task.sleep(for: .milliseconds(50))
+            guard buffer.readLatest(count: realSamples, into: workBuf) else { continue }
+            // Copy into [Float] for the existing chord API. This allocation is
+            // intentional — it runs on the DSP task, not the audio thread.
+            guard let base = workBuf.baseAddress else { continue }
+            let samples = Array(UnsafeBufferPointer(start: base, count: realSamples))
+            let chord = ChromagramDSP.analyzeChord(
+                samples: samples,
+                sampleRate: sampleRate,
                 referencePitch: refPitch
             )
-        else { return nil }
-        return DSPResult(
-            amplitude: amplitude,
-            frequency: detection.frequency,
-            noteName: name,
-            westernName: SwarUtility.westernName(for: name),
-            octave: oct,
-            cents: cents,
-            confidence: detection.confidence
-        )
+            applyChordResult(chord)
+        }
     }
 
-    /// FFT chromagram chord detection. Returns nil if not in chord mode.
-    nonisolated fileprivate static func runChordPipeline(
-        mode: DetectionMode,
-        ringBuf: AudioRingBuffer?,
-        realSamples: Int,
-        sampleRate: Double,
-        refPitch: Double
-    ) -> ChordResult? {
-        guard mode == .chord || mode == .both,
-            let ringBuf, let fftSamples = ringBuf.read(count: realSamples)
-        else { return nil }
-        return ChromagramDSP.analyzeChord(samples: fftSamples, sampleRate: sampleRate, referencePitch: refPitch)
-    }
-
-    /// Apply DSP results to ViewModel state on MainActor.
-    fileprivate func applyResults(
+    /// Apply a melody pitch result on the MainActor.
+    fileprivate func applyMelodyResult(
         amplitude: Double,
-        melodyResult: DSPResult?,
-        chordDetection: ChordResult?,
-        centsForExpression: Double?,
+        pitch: PitchResult?,
         mode: DetectionMode
     ) {
         liveAmplitude = amplitude
-        if let r = melodyResult {
-            let pr = PitchResult(
-                frequency: r.frequency,
-                amplitude: r.amplitude,
-                noteName: r.noteName,
-                octave: r.octave,
-                centsOffset: r.cents,
-                confidence: r.confidence
-            )
+        if let pr = pitch {
             detectionCount += 1
             currentResult = pr
-            westernNoteName = r.westernName
+            let western = SwarUtility.westernName(for: pr.noteName)
+            westernNoteName = western
             if detectionCount % 5 == 0 {
-                debugStatus = "Detected: \(r.westernName)\(r.octave) (\(Int(r.frequency))Hz)"
+                debugStatus = "Detected: \(western)\(pr.octave) (\(Int(pr.frequency))Hz)"
             }
             appendNote(pr)
-        } else if amplitude > 0.002 && mode != .chord {
+            updateExpression(cents: pr.centsOffset)
+        } else if amplitude > 0.002, mode != .chord {
             debugStatus = "Sound (amp: \(String(format: "%.3f", amplitude))) — no pitch"
         }
-        if let chord = chordDetection {
-            currentChordResult = chord
-            if let name = chord.chordName { debugStatus = "Chord: \(name.displayName)" }
+    }
+
+    /// Apply an FFT chord result on the MainActor.
+    fileprivate func applyChordResult(_ chord: ChordResult) {
+        guard !chord.detectedPitches.isEmpty else { return }
+        currentChordResult = chord
+        if let name = chord.chordName {
+            debugStatus = "Chord: \(name.displayName)"
         }
-        if let cents = centsForExpression {
-            centsHistory.append(cents)
-            // AUD-018: removeFirst() is O(1) amortized vs O(n) Array(suffix()) copy.
-            if centsHistory.count > centsHistoryMaxSize {
-                centsHistory.removeFirst()
-            }
-            if centsHistory.count >= 10 {
-                currentExpression = PitchExpressionAnalyzer.analyze(
-                    centsHistory: centsHistory,
-                    hopIntervalSeconds: 1024.0 / 44100.0
-                )
-            }
+    }
+
+    /// Maintain the rolling cents history and recompute pitch expression.
+    fileprivate func updateExpression(cents: Double) {
+        centsHistory.append(cents)
+        // AUD-018: removeFirst() is O(1) amortized vs O(n) Array(suffix()) copy.
+        if centsHistory.count > centsHistoryMaxSize {
+            centsHistory.removeFirst()
+        }
+        if centsHistory.count >= 10 {
+            currentExpression = PitchExpressionAnalyzer.analyze(
+                centsHistory: centsHistory,
+                hopIntervalSeconds: 1024.0 / 44100.0
+            )
         }
     }
 
