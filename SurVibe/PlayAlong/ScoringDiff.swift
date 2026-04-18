@@ -30,6 +30,15 @@ struct ScoringDiff: Sendable {
     /// and record the complete pipeline measurement.
     var probeToken: ProbeToken?
 
+    /// Chord completeness fraction (0.0–1.0) when this event is part of a
+    /// simultaneous chord; `nil` for single-note events.
+    ///
+    /// Populated by `PlayAlongViewModel` after the per-note evaluate when the
+    /// expected event belongs to a chord group (multiple `NoteEvent`s within a
+    /// 10 ms window) and a fresh `ChordResult` is available from the mic chord
+    /// stream. Used to blend chord completeness into the per-note accuracy.
+    var chordCompleteness: Double?
+
     /// Streak outcome for a note attempt.
     enum StreakOutcome: Sendable {
         /// Note was hit — streak increments. Grade is carried for display.
