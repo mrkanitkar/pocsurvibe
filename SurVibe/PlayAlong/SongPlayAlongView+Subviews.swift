@@ -104,6 +104,7 @@ extension SongPlayAlongView {
         return HStack(spacing: 8) {
             Image(systemName: isCorrect ? "checkmark.circle.fill" : "xmark.circle.fill")
                 .font(.title3.bold())
+                .accessibilityHidden(true)
             Text(isCorrect ? "Correct!" : "Try again")
                 .font(.headline)
         }
@@ -126,7 +127,7 @@ extension SongPlayAlongView {
                 .foregroundStyle(.orange)
             HStack(spacing: 16) {
                 Button {
-                    withAnimation {
+                    withAnimation(reduceMotion ? .none : .default) {
                         viewModel.skipGuidedNote()
                     }
                 } label: {
@@ -169,17 +170,17 @@ extension SongPlayAlongView {
         case .wrong:
             flashCorrectnessBanner(color: .red, hideAfterMs: 400)
         case .waitingForNote, .stuck:
-            withAnimation { showCorrectnessBanner = false }
+            withAnimation(reduceMotion ? .none : .default) { showCorrectnessBanner = false }
         }
     }
 
     /// Show the correctness banner briefly, then auto-hide.
     private func flashCorrectnessBanner(color: Color, hideAfterMs: Int) {
         correctnessBannerColor = color
-        withAnimation { showCorrectnessBanner = true }
+        withAnimation(reduceMotion ? .none : .default) { showCorrectnessBanner = true }
         Task { @MainActor in
             try? await Task.sleep(for: .milliseconds(hideAfterMs))
-            withAnimation { showCorrectnessBanner = false }
+            withAnimation(reduceMotion ? .none : .default) { showCorrectnessBanner = false }
         }
     }
 }
