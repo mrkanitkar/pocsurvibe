@@ -1,3 +1,4 @@
+import SVCore
 import SwiftUI
 
 /// Displays a listening step with audio playback controls.
@@ -22,6 +23,7 @@ struct ListenStepView: View {
     @State private var engine = SongPlaybackEngine()
     @State private var hasListened = false
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(AppThemeManager.self) private var themeManager
 
     // MARK: - Body
 
@@ -69,10 +71,10 @@ struct ListenStepView: View {
                 .fontWeight(.semibold)
         }
         .font(.subheadline)
-        .foregroundStyle(.purple)
+        .foregroundStyle(StepTypeColorSystem.color(for: .listen))
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
-        .background(Capsule().fill(.purple.opacity(0.15)))
+        .background(Capsule().fill(StepTypeColorSystem.color(for: .listen).opacity(0.15)))
         .accessibilityLabel(Text("Step type: Listen"))
     }
 
@@ -103,7 +105,7 @@ struct ListenStepView: View {
         .padding()
         .background(
             RoundedRectangle(cornerRadius: 12)
-                .fill(Color(.tertiarySystemBackground))
+                .fill(themeManager.resolved.nestedSurfaceColor)
         )
     }
 
@@ -114,7 +116,7 @@ struct ListenStepView: View {
         } label: {
             Image(systemName: playButtonIcon)
                 .font(.system(size: 36))
-                .foregroundStyle(.purple)
+                .foregroundStyle(StepTypeColorSystem.color(for: .listen))
                 .frame(width: 64, height: 64)
                 .contentShape(Rectangle())
         }
@@ -129,7 +131,7 @@ struct ListenStepView: View {
         VStack(spacing: 8) {
             Image(systemName: "music.note")
                 .font(.system(size: 32))
-                .foregroundStyle(.purple.opacity(0.5))
+                .foregroundStyle(StepTypeColorSystem.color(for: .listen).opacity(0.5))
                 .accessibilityHidden(true)
             Text("Listen to the song, then mark as complete.")
                 .font(.subheadline)
@@ -152,7 +154,7 @@ struct ListenStepView: View {
                 .padding(.vertical, 12)
         }
         .buttonStyle(.borderedProminent)
-        .tint(.purple)
+        .tint(StepTypeColorSystem.color(for: .listen))
         .accessibilityLabel(Text("Mark as listened"))
         .accessibilityHint(Text("Double tap to confirm you have listened to the audio"))
     }
@@ -160,7 +162,7 @@ struct ListenStepView: View {
     /// Confirmation label shown after the step is complete.
     private var listenedConfirmation: some View {
         Label("Listened", systemImage: "checkmark.circle.fill")
-            .foregroundStyle(.green)
+            .foregroundStyle(themeManager.resolved.successColor)
             .font(.subheadline)
             .fontWeight(.medium)
             .accessibilityLabel(Text("Audio listening completed"))

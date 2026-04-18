@@ -1,3 +1,4 @@
+import SVCore
 import SwiftUI
 
 /// A row-style card displaying a single lesson in the library list.
@@ -10,6 +11,8 @@ struct LessonCardView: View {
 
     /// The lesson paired with its progress state.
     let item: LessonWithProgress
+
+    @Environment(AppThemeManager.self) private var themeManager
 
     // MARK: - Body
 
@@ -62,7 +65,7 @@ struct LessonCardView: View {
         .padding(.horizontal, 12)
         .background(
             RoundedRectangle(cornerRadius: 12)
-                .fill(Color(.secondarySystemBackground))
+                .fill(themeManager.resolved.cardBackgroundColor)
         )
         .opacity(isLocked ? 0.6 : 1.0)
         .accessibilityElement(children: .combine)
@@ -79,7 +82,7 @@ struct LessonCardView: View {
         case .completed:
             Image(systemName: "checkmark.circle.fill")
                 .font(.title3)
-                .foregroundStyle(.green)
+                .foregroundStyle(themeManager.resolved.successColor)
                 .accessibilityLabel(Text("Completed"))
 
         case .inProgress(let percent):
@@ -129,16 +132,10 @@ struct LessonCardView: View {
         return "\(minutes) min"
     }
 
-    /// Difficulty color from the Rang system.
+    /// Difficulty color routed through SVCore's RangLevel.bodyTextColor —
+    /// WCAG-safe variants (Peela/Sona use Dark forms for body-text contrast).
     private var difficultyColor: Color {
-        switch item.lesson.difficulty {
-        case 1: Color(red: 0.247, green: 0.318, blue: 0.710)  // Neel
-        case 2: Color(red: 0.220, green: 0.557, blue: 0.235)  // Hara
-        case 3: Color(red: 0.757, green: 0.475, blue: 0.0)  // Peela Dark
-        case 4: Color(red: 0.827, green: 0.184, blue: 0.184)  // Lal
-        case 5: Color(red: 0.722, green: 0.467, blue: 0.0)  // Sona Dark
-        default: Color.gray
-        }
+        RangLevel(rawValue: item.lesson.difficulty)?.bodyTextColor ?? .gray
     }
 
     /// Accessibility label combining all relevant information.
