@@ -51,8 +51,27 @@ public final class PracticeAudioProcessor {
         return stream
     }
 
+    /// The async stream of polyphonic chord analysis results (MIN-21).
+    ///
+    /// Yields a `ChordResult` after each DSP cycle in which `ChromagramDSP`
+    /// detects two or more simultaneous pitches. Single-pitch results from
+    /// monophonic input are filtered out to keep the stream limited to genuine
+    /// chord events — `lastChordResult` still mirrors every analysis for
+    /// keyboard-highlight consumers.
+    ///
+    /// The stream terminates when `stop()` is called.
+    public var chordStream: AsyncStream<ChordResult> {
+        guard let stream = _chordStream else {
+            return AsyncStream { $0.finish() }
+        }
+        return stream
+    }
+
     private var _pitchStream: AsyncStream<PitchResult>?
     private var continuation: AsyncStream<PitchResult>.Continuation?
+
+    private var _chordStream: AsyncStream<ChordResult>?
+    private var _chordContinuation: AsyncStream<ChordResult>.Continuation?
 
     /// Lock-free SPSC ring buffer shared between the audio callback and DSP task.
     ///
@@ -134,6 +153,11 @@ public final class PracticeAudioProcessor {
         _pitchStream = stream
         continuation = cont
 
+        // MIN-21: Create the chord AsyncStream alongside pitchStream.
+        let (chordStreamLocal, chordCont) = AsyncStream<ChordResult>.makeStream()
+        _chordStream = chordStreamLocal
+        _chordContinuation = chordCont
+
         // AUD-007: Create the signal stream before installing the tap so the
         // DSP task can begin awaiting it immediately.
         let (signal, signalCont) = AsyncStream<Void>.makeStream(
@@ -190,6 +214,9 @@ public final class PracticeAudioProcessor {
             cont.finish()
             _pitchStream = nil
             continuation = nil
+            chordCont.finish()
+            _chordStream = nil
+            _chordContinuation = nil
             Self.logger.error("Failed to install mic tap")
             throw PracticeAudioProcessorError.micTapFailed
         }
@@ -215,6 +242,10 @@ public final class PracticeAudioProcessor {
         continuation?.finish()
         continuation = nil
         _pitchStream = nil
+        // MIN-21: terminate the chord stream so consumers' `for await` exits.
+        _chordContinuation?.finish()
+        _chordContinuation = nil
+        _chordStream = nil
         lastChordResult = nil
         isActive = false
         Self.logger.info("PracticeAudioProcessor stopped")
@@ -296,6 +327,13 @@ public final class PracticeAudioProcessor {
                 let chordResult = Self.analyzeChordFromBuffer(
                     workBuf, count: bufferSize, referencePitch: refPitch
                 )
+                // MIN-21: yield to the chord stream only when ≥2 simultaneous
+                // pitches are detected — filters single-note chromagram noise
+                // produced by monophonic input. AsyncStream.Continuation is
+                // Sendable, so yielding does not require an actor hop.
+                if chordResult.detectedPitches.count >= 2 {
+                    self?._chordContinuation?.yield(chordResult)
+                }
                 await MainActor.run { [weak self] in
                     self?.lastChordResult = chordResult
                 }
