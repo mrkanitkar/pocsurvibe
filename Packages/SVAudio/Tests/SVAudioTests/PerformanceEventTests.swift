@@ -69,4 +69,70 @@ struct PerformanceEventTests {
         #expect(event.probeToken != nil)
         #expect(event.probeToken?.t0 != .zero)
     }
+
+    @Test func velocity16BitPassedThrough() {
+        let event = PerformanceEvent.midi(
+            noteNumber: 60,
+            velocity: 100,
+            channel: 0,
+            probeToken: nil,
+            velocity16Bit: 32768
+        )
+        #expect(event.velocity16Bit == 32768)
+    }
+
+    @Test func midiTimestampPassedThrough() {
+        let event = PerformanceEvent.midi(
+            noteNumber: 60,
+            velocity: 100,
+            channel: 0,
+            probeToken: nil,
+            velocity16Bit: 0,
+            midiTimestamp: 12345
+        )
+        #expect(event.midiTimestamp == 12345)
+    }
+
+    @Test func factoryFromMIDIInputEventPreservesVelocity16Bit() {
+        let inputEvent = MIDIInputEvent(
+            noteNumber: 64,
+            velocity: 100,
+            channel: 1,
+            velocity16Bit: 51200
+        )
+        let event = PerformanceEvent.from(inputEvent)
+        #expect(event.velocity16Bit == 51200)
+    }
+
+    @Test func pitchBendCaseProperties() {
+        let bendEvent = MIDIPitchBendEvent(value: 1000, channel: 2)
+        let event = PerformanceEvent.pitchBend(event: bendEvent)
+        #expect(event.isPitchBend)
+        #expect(!event.isMIDI)
+        #expect(!event.isMic)
+        #expect(event.noteNumber == nil)
+        #expect(event.velocity == nil)
+        #expect(event.probeToken == nil)
+    }
+
+    @Test func pressureCaseProperties() {
+        let pressureEvent = MIDIPressureEvent(noteNumber: 60, pressure: 5000)
+        let event = PerformanceEvent.pressure(event: pressureEvent)
+        #expect(event.isPressure)
+        #expect(!event.isMIDI)
+    }
+
+    @Test func programChangeCaseProperties() {
+        let pgmEvent = MIDIProgramChangeEvent(program: 42)
+        let event = PerformanceEvent.programChange(event: pgmEvent)
+        #expect(event.isProgramChange)
+        #expect(!event.isMIDI)
+    }
+
+    @Test func defaultVelocity16BitIsZero() {
+        let event = PerformanceEvent.midi(
+            noteNumber: 60, velocity: 100, channel: 0, probeToken: nil
+        )
+        #expect(event.velocity16Bit == 0)
+    }
 }

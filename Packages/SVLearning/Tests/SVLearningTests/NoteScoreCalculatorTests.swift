@@ -238,4 +238,39 @@ struct NoteScoreCalculatorTests {
             + PracticeConstants.durationWeight
         #expect(abs(total - 1.0) < 0.001)
     }
+
+    // MARK: - 16-bit Velocity Dynamics
+
+    @Test
+    func highResVelocityMapsToCorrectDynamicsScore() {
+        // 16-bit velocity 32768 >> 9 = 64 (7-bit), expected 64 → perfect match
+        let score = NoteScoreCalculator.score(
+            expectedNote: "Sa",
+            detectedNote: "Sa",
+            pitchDeviationCents: 0,
+            timingDeviationSeconds: 0,
+            durationDeviation: 0,
+            playedVelocity: UInt8(32768 >> 9),
+            expectedVelocity: 64
+        )
+        // Velocity 64 vs expected 64 = perfect dynamics, high accuracy
+        #expect(score.accuracy > 0.9)
+    }
+
+    @Test
+    func extremeVelocityDifferenceReducesScore() {
+        // Played: 16-bit 65535 >> 9 = 127, Expected: 1
+        let score = NoteScoreCalculator.score(
+            expectedNote: "Sa",
+            detectedNote: "Sa",
+            pitchDeviationCents: 0,
+            timingDeviationSeconds: 0,
+            durationDeviation: 0,
+            playedVelocity: 127,
+            expectedVelocity: 1
+        )
+        // Delta of 126 zeroes the dynamics component (~15% weight),
+        // so composite drops to ~0.85 with all other deviations at zero.
+        #expect(score.accuracy < 0.9)
+    }
 }

@@ -5,7 +5,11 @@ import os
 /// Uses @MainActor isolation for thread-safe callback management.
 ///
 /// Category: .playAndRecord, Mode: .measurement
-/// Options: [.defaultToSpeaker, .allowBluetoothHFP, .mixWithOthers]
+/// Options: [.defaultToSpeaker, .mixWithOthers]
+///
+/// Bluetooth HFP is intentionally NOT enabled. HFP forces narrowband
+/// 8/16 kHz mono audio which destroys pitch detection accuracy. Users
+/// on BT headsets fall back to the built-in speaker and mic.
 @MainActor
 public final class AudioSessionManager {
     public static let shared = AudioSessionManager()
@@ -56,7 +60,7 @@ public final class AudioSessionManager {
             try session.setCategory(
                 .playAndRecord,
                 mode: .measurement,
-                options: [.defaultToSpeaker, .allowBluetoothHFP, .mixWithOthers]
+                options: [.defaultToSpeaker, .mixWithOthers]
             )
             // Request 44100 Hz sample rate per spec
             try session.setPreferredSampleRate(44100)
@@ -64,6 +68,22 @@ public final class AudioSessionManager {
             // PracticeAudioProcessor accumulates its own buffer, so pitch detection is unaffected.
             try session.setPreferredIOBufferDuration(256.0 / 44100.0)
             try session.setActive(true)
+            // Some iPad models ship with inputGain=0.5; quiet voice/acoustic
+            // playing then registers below the DSP's 0.002 RMS gate. Raise to
+            // full scale when the hardware allows it — does not affect
+            // latency, only SNR above the noise floor. Apple documents that
+            // most built-in mics return `isInputGainSettable == false`, so
+            // the guard is expected to short-circuit on several devices.
+            if session.isInputGainSettable {
+                do {
+                    try session.setInputGain(1.0)
+                    Self.logger.info("Input gain set to 1.0")
+                } catch {
+                    Self.logger.warning(
+                        "setInputGain(1.0) failed: \(error.localizedDescription, privacy: .public)"
+                    )
+                }
+            }
             isMicUnavailable = false
             Self.logger.info("Audio session configured: .playAndRecord")
         } catch {
@@ -167,7 +187,8 @@ public final class AudioSessionManager {
 
     private func handleInterruption(typeValue: UInt?, optionsValue: UInt?) {
         guard let typeValue,
-              let type = AVAudioSession.InterruptionType(rawValue: typeValue) else {
+            let type = AVAudioSession.InterruptionType(rawValue: typeValue)
+        else {
             return
         }
 

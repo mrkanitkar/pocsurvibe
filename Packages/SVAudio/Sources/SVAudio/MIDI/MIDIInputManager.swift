@@ -57,8 +57,16 @@ final class NoteCallbackBox: Sendable {
         lock.withLock { $0 = cb }
     }
 
+    /// Fire the callback — **snapshot under lock, invoke outside**.
+    ///
+    /// The caller runs on the CoreMIDI receive thread (small stack, RT-priority).
+    /// Holding the lock while invoking the closure combines with any Swift
+    /// runtime allocation inside the closure (e.g. `DispatchQueue.async { }`
+    /// first-use metadata cache install) to overflow the guard page.
+    /// See crash reports #3/#4/#5 and code-review audit.
     func fire(_ event: MIDIInputEvent) {
-        lock.withLock { $0?(event) }
+        let cb = lock.withLock { $0 }
+        cb?(event)
     }
 }
 
@@ -76,8 +84,10 @@ final class CCCallbackBox: Sendable {
         lock.withLock { $0 = cb }
     }
 
+    /// Fire the callback — snapshot under lock, invoke outside. See `NoteCallbackBox.fire`.
     func fire(_ event: MIDIControlChangeEvent) {
-        lock.withLock { $0?(event) }
+        let cb = lock.withLock { $0 }
+        cb?(event)
     }
 }
 
@@ -133,6 +143,16 @@ public final class MIDIInputManager: MIDIInputProviding {
 
     /// Shared singleton for use across the app.
     public static let shared = MIDIInputManager()
+
+    /// Fan-out router for MIDI event consumers.
+    ///
+    /// Additive delivery alongside existing `onNoteEvent` callback and
+    /// `noteOnStream`. Register handlers via `router.onNote { ... }` and
+    /// `router.onControlChange { ... }`.
+    public let router = MidiRouter()
+
+    /// Device manager for multi-device enumeration and selection.
+    public let deviceManager = MIDIDeviceManager()
 
     // MARK: - Observable UI State (main actor)
 
@@ -212,6 +232,41 @@ public final class MIDIInputManager: MIDIInputProviding {
         set { ccCallbackBox.set(newValue) }
     }
 
+    /// Direct `@Sendable` callback for MIDI pitch bend events.
+    public var onPitchBendEvent: (@Sendable (MIDIPitchBendEvent) -> Void)? {
+        get { pitchBendCallbackBox.get() }
+        set { pitchBendCallbackBox.set(newValue) }
+    }
+
+    /// Direct `@Sendable` callback for MIDI pressure (aftertouch) events.
+    public var onPressureEvent: (@Sendable (MIDIPressureEvent) -> Void)? {
+        get { pressureCallbackBox.get() }
+        set { pressureCallbackBox.set(newValue) }
+    }
+
+    /// Direct `@Sendable` callback for MIDI program change events.
+    public var onProgramChangeEvent: (@Sendable (MIDIProgramChangeEvent) -> Void)? {
+        get { programChangeCallbackBox.get() }
+        set { programChangeCallbackBox.set(newValue) }
+    }
+
+    // MARK: - Device Management (MIDIInputProviding)
+
+    /// Forward to device manager for available MIDI device names.
+    @MainActor public var availableDeviceNames: [String] {
+        deviceManager.availableDeviceNames
+    }
+
+    /// Forward to device manager for selected device name.
+    @MainActor public var selectedDeviceName: String? {
+        deviceManager.selectedDeviceName
+    }
+
+    /// Forward to device manager for device selection.
+    public func selectDevice(named name: String) {
+        deviceManager.selectDevice(named: name)
+    }
+
     /// Optional event logger for persisting MIDI events to SwiftData.
     public var eventLogger: (any EventLogging)? {
         get { eventLoggerBox.get() }
@@ -269,6 +324,15 @@ public final class MIDIInputManager: MIDIInputProviding {
 
     /// Sendable box holding the direct low-latency Control Change callback.
     let ccCallbackBox = CCCallbackBox()
+
+    /// Sendable box holding the direct low-latency pitch bend callback.
+    let pitchBendCallbackBox = PitchBendCallbackBox()
+
+    /// Sendable box holding the direct low-latency pressure callback.
+    let pressureCallbackBox = PressureCallbackBox()
+
+    /// Sendable box holding the direct low-latency program change callback.
+    let programChangeCallbackBox = ProgramChangeCallbackBox()
 
     /// Sendable box holding the optional event logger for persisting MIDI events.
     private let eventLoggerBox = EventLoggerBox()
@@ -356,9 +420,15 @@ public final class MIDIInputManager: MIDIInputProviding {
         // The read block fires on CoreMIDI's high-priority thread.
         // Capture only Sendable boxes and the de-jitter filter — never `self`.
         let box = continuationBox
-        let cbBox = callbackBox
-        let ccBox = ccCallbackBox
+        let cbSet = MIDICallbackSet(
+            note: callbackBox,
+            cc: ccCallbackBox,
+            pitchBend: pitchBendCallbackBox,
+            pressure: pressureCallbackBox,
+            programChange: programChangeCallbackBox
+        )
         let djFilter = deJitterFilter
+        let midiRouter = router
         let portStatus = MIDIInputPortCreateWithProtocol(
             clientRef,
             "SurVibe Input Port" as CFString,
@@ -366,8 +436,8 @@ public final class MIDIInputManager: MIDIInputProviding {
             &portRef
         ) { eventList, _ in
             MIDIInputManager.parseEventList(
-                eventList, into: box, callback: cbBox,
-                ccCallback: ccBox, deJitter: djFilter
+                eventList, into: box, callbacks: cbSet,
+                deJitter: djFilter, router: midiRouter
             )
         }
 

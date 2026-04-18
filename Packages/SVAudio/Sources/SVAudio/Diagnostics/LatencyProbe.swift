@@ -89,4 +89,45 @@ public final class LatencyProbe: Sendable {
             s.lastElapsedMicros = 0
         }
     }
+
+    // MARK: - Per-Stage Breakdown
+
+    /// Cached mach timebase info for tick-to-nanosecond conversion.
+    private static let cachedTimebaseInfo: mach_timebase_info_data_t = {
+        var info = mach_timebase_info_data_t()
+        mach_timebase_info(&info)
+        return info
+    }()
+
+    /// Per-stage latency breakdown from a completed probe token.
+    public struct StageSummary: Sendable {
+        /// Input received to DSP complete (microseconds).
+        public let inputToDSP: UInt64
+        /// DSP complete to match complete (microseconds).
+        public let dspToMatch: UInt64
+        /// Match complete to frame presented (microseconds).
+        public let matchToFrame: UInt64
+        /// Total end-to-end (microseconds).
+        public let total: UInt64
+    }
+
+    /// Extract per-stage latency from a completed probe token.
+    ///
+    /// Converts mach absolute time deltas between each pipeline stage into
+    /// microseconds using the cached timebase info. Returns nil if the token
+    /// is incomplete (missing any stage timestamp).
+    ///
+    /// - Parameter token: A probe token with all stages stamped.
+    /// - Returns: Stage breakdown in microseconds, or nil if incomplete.
+    public static func stageSummary(from token: ProbeToken) -> StageSummary? {
+        guard token.isComplete else { return nil }
+        let info = Self.cachedTimebaseInfo
+
+        return StageSummary(
+            inputToDSP: (token.t1 - token.t0) * UInt64(info.numer) / UInt64(info.denom) / 1000,
+            dspToMatch: (token.t2 - token.t1) * UInt64(info.numer) / UInt64(info.denom) / 1000,
+            matchToFrame: (token.t3 - token.t2) * UInt64(info.numer) / UInt64(info.denom) / 1000,
+            total: (token.t3 - token.t0) * UInt64(info.numer) / UInt64(info.denom) / 1000
+        )
+    }
 }

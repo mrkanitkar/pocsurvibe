@@ -82,4 +82,7 @@ public enum AnalyticsEvent: String, Sendable {
     // Song CRUD events (user-imported songs)
     case songEdited = "song_edited"
     case songDeleted = "song_deleted"
+
+    // Diagnostics events
+    case latencySnapshot = "latency_snapshot"
 }

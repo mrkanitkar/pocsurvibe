@@ -17,6 +17,14 @@ import Synchronization
 /// ```
 public final class LatencyHistogram: Sendable {
 
+    // MARK: - Shared Instance
+
+    /// Shared histogram for session-wide latency aggregation.
+    ///
+    /// Use this for pipeline-level metrics that need a single collection point.
+    /// Per-component histograms can still be created via `init(capacity:)`.
+    public static let shared = LatencyHistogram()
+
     // MARK: - Constants
 
     /// Default number of probes retained in the circular buffer.
