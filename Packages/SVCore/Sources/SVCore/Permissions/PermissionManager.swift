@@ -26,9 +26,9 @@ public final class PermissionManager: PermissionProviding {
 
     /// Whether the user has been shown the denied-state message.
     ///
-    /// Set to `true` after the "microphone denied" inline message is displayed in PracticeTab,
-    /// so the message is not repeatedly shown on every view appearance. Will be wired up
-    /// in Sprint 1 when the full practice flow is implemented.
+    /// Set to `true` after the "microphone denied" inline message is displayed in a
+    /// pitch-detection view (Sing/Exercise step), so the message is not repeatedly shown
+    /// on every view appearance.
     public var hasShownDeniedMessage: Bool = false
 
     private static let logger = Logger.survibe(category: "Permissions")

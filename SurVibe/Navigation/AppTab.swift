@@ -5,9 +5,9 @@ import SwiftUI
 /// Each tab case provides its display label and SF Symbol for consistent
 /// rendering across the tab bar and any tab-related UI.
 ///
-/// The standalone pitch-detection practice screen (`PracticeTab`) is no
-/// longer a top-level tab — real-instrument detection is now integrated
-/// directly into the play-along experience (`SongPlayAlongView`).
+/// Real-instrument pitch detection lives inside the play-along experience
+/// (`SongPlayAlongView`) and the Sing/Exercise lesson steps; there is no
+/// standalone practice tab.
 enum AppTab: String, CaseIterable, Hashable {
     case home
     case learn

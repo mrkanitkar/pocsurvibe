@@ -85,6 +85,7 @@ struct MIDIDevicePickerView: View {
                     .font(.title3)
                     .foregroundStyle(.secondary)
                     .frame(width: 28)
+                    .accessibilityHidden(true)
 
                 VStack(alignment: .leading, spacing: 4) {
                     HStack(spacing: 6) {

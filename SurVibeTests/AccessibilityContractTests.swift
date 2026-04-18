@@ -14,7 +14,14 @@ import Testing
 /// mentioning patterns don't trigger false positives.
 struct AccessibilityContractTests {
 
-    private static let projectRoot = "/Users/maheshwar/Developer/SurVibe"
+    /// Project root derived from this file's path so the test works from any
+    /// worktree (`#filePath` resolves to the actual on-disk location of the
+    /// test source file at compile time).
+    private static let projectRoot: String = {
+        let testFile = URL(fileURLWithPath: #filePath)
+        // SurVibeTests/AccessibilityContractTests.swift → up 2 levels = project root
+        return testFile.deletingLastPathComponent().deletingLastPathComponent().path
+    }()
 
     // MARK: - Exemptions
 
@@ -34,12 +41,15 @@ struct AccessibilityContractTests {
 
     private static func swiftFiles(in directory: String) -> [String] {
         let url = URL(fileURLWithPath: "\(projectRoot)/\(directory)")
-        guard let enumerator = FileManager.default.enumerator(
-            at: url, includingPropertiesForKeys: nil
-        ) else { return [] }
+        guard
+            let enumerator = FileManager.default.enumerator(
+                at: url,
+                includingPropertiesForKeys: nil
+            )
+        else { return [] }
         var result: [String] = []
         for case let fileURL as URL in enumerator
-            where fileURL.pathExtension == "swift" {
+        where fileURL.pathExtension == "swift" {
             let relative = String(fileURL.path.dropFirst(projectRoot.count + 1))
             result.append(relative)
         }
@@ -53,7 +63,8 @@ struct AccessibilityContractTests {
         guard let content = try? String(contentsOfFile: full, encoding: .utf8) else {
             return nil
         }
-        return content
+        return
+            content
             .split(separator: "\n", omittingEmptySubsequences: false)
             .map(String.init)
             .filter { line in
@@ -68,10 +79,11 @@ struct AccessibilityContractTests {
     /// Every `Image(systemName:)` must be followed within 5 lines by
     /// `.accessibilityLabel`, `.accessibilityHidden`, a parent `Label(`, or
     /// `.accessibilityElement` — ensuring VoiceOver has the right information.
-    @Test func everyIconIsLabeledOrHidden() throws {
+    @Test
+    func everyIconIsLabeledOrHidden() throws {
         var violations: [String] = []
         for path in Self.swiftFiles(in: "SurVibe")
-            where !Self.iconCheckExemptFiles.contains(path) {
+        where !Self.iconCheckExemptFiles.contains(path) {
             guard let code = Self.codeOnly(for: path) else { continue }
             let lines = code.split(separator: "\n", omittingEmptySubsequences: false).map(String.init)
             for (idx, line) in lines.enumerated() where line.contains("Image(systemName:") {
@@ -82,7 +94,9 @@ struct AccessibilityContractTests {
                 let hasParentLabel = window.contains("Label(")
                 let hasElement = window.contains(".accessibilityElement")
                 if !(hasLabel || hasHidden || hasParentLabel || hasElement) {
-                    violations.append("\(path):\(idx + 1) — Image(systemName:) without accessibilityLabel/accessibilityHidden/parent Label within 5 lines")
+                    violations.append(
+                        "\(path):\(idx + 1) — Image(systemName:) without accessibilityLabel/accessibilityHidden/parent Label within 5 lines"
+                    )
                 }
             }
         }
@@ -95,18 +109,20 @@ struct AccessibilityContractTests {
     /// This is a file-level heuristic — it catches gross omissions such as adding
     /// animation to a new view without wiring `@Environment(\.accessibilityReduceMotion)`.
     /// Per-call-site precision is enforced in code review.
-    @Test func filesWithAnimationsReferenceReduceMotion() throws {
+    @Test
+    func filesWithAnimationsReferenceReduceMotion() throws {
         var violations: [String] = []
         for path in Self.swiftFiles(in: "SurVibe")
-            where !Self.motionCheckExemptFiles.contains(path) {
+        where !Self.motionCheckExemptFiles.contains(path) {
             guard let code = Self.codeOnly(for: path) else { continue }
             guard code.contains("withAnimation(") else { continue }
-            let referencesMotion = code.contains("reduceMotion")
+            let referencesMotion =
+                code.contains("reduceMotion")
                 || code.contains("accessibilityReduceMotion")
             if !referencesMotion {
                 violations.append(
-                    "\(path) — uses withAnimation( but doesn't reference reduceMotion. " +
-                    "Add @Environment(\\.accessibilityReduceMotion) and guard the call."
+                    "\(path) — uses withAnimation( but doesn't reference reduceMotion. "
+                        + "Add @Environment(\\.accessibilityReduceMotion) and guard the call."
                 )
             }
         }
