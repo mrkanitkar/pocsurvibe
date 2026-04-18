@@ -28,6 +28,17 @@ struct ExerciseStepView: View {
     /// Callback when the exercise is complete.
     let onComplete: () -> Void
 
+    /// Exercise step-type color (StepTypeColorSystem.color(for: .exercise) by default).
+    /// Passed by parent — never read from @Environment to preserve audio
+    /// latency contract (spec §5.5, §7).
+    let exerciseStepColor: Color
+
+    /// Nested surface color for chips inside the step card.
+    let nestedSurfaceColor: Color
+
+    /// Error color for incorrect-note feedback.
+    let errorColor: Color
+
     @State var waitEngine = WaitModeEngine(
         configuration: WaitModeConfiguration(isEnabled: true)
     )
@@ -40,6 +51,37 @@ struct ExerciseStepView: View {
     var reduceMotion
     @Environment(\.openURL)
     var openURL
+
+    // MARK: - Initialization
+
+    /// Creates an exercise step view.
+    ///
+    /// Theme colors default to the canonical StepTypeColorSystem values so existing
+    /// call sites compile without change. The parent (`LessonStepView+StepContent`)
+    /// overrides them with resolved theme values for full theme-awareness.
+    ///
+    /// - Parameters:
+    ///   - step: The lesson step to display.
+    ///   - song: Resolved song for this step, or nil if unavailable.
+    ///   - onComplete: Callback invoked when the exercise is complete.
+    ///   - exerciseStepColor: Accent color for exercise badge and progress elements.
+    ///   - nestedSurfaceColor: Background color for the note display card.
+    ///   - errorColor: Color for incorrect-note or inactive mic feedback.
+    init(
+        step: LessonStep,
+        song: Song?,
+        onComplete: @escaping () -> Void,
+        exerciseStepColor: Color = StepTypeColorSystem.color(for: .exercise),
+        nestedSurfaceColor: Color = Color(.tertiarySystemBackground),
+        errorColor: Color = .red
+    ) {
+        self.step = step
+        self.song = song
+        self.onComplete = onComplete
+        self.exerciseStepColor = exerciseStepColor
+        self.nestedSurfaceColor = nestedSurfaceColor
+        self.errorColor = errorColor
+    }
 
     // MARK: - Body
 
@@ -144,10 +186,10 @@ struct ExerciseStepView: View {
                 .fontWeight(.semibold)
         }
         .font(.subheadline)
-        .foregroundStyle(.green)
+        .foregroundStyle(exerciseStepColor)
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
-        .background(Capsule().fill(.green.opacity(0.15)))
+        .background(Capsule().fill(exerciseStepColor.opacity(0.15)))
         .accessibilityLabel(Text("Step type: Exercise"))
     }
 
@@ -163,7 +205,7 @@ struct ExerciseStepView: View {
                 value: Double(min(current, total)),
                 total: Double(total)
             )
-            .tint(.green)
+            .tint(exerciseStepColor)
 
             Text(verbatim: "\(min(current, total)) / \(total)")
                 .font(.caption)
@@ -186,7 +228,7 @@ struct ExerciseStepView: View {
                 let note = notes[currentNoteIdx]
                 Text(verbatim: noteDisplayName(note))
                     .font(.system(size: 48, weight: .bold, design: .rounded))
-                    .foregroundStyle(waitEngine.state == .waiting ? .green : .primary)
+                    .foregroundStyle(waitEngine.state == .waiting ? exerciseStepColor : .primary)
                     .scaleEffect(waitEngine.state == .waiting ? 1.1 : 1.0)
                     .animation(
                         reduceMotion ? .none : .easeInOut(duration: 0.3),
@@ -201,7 +243,7 @@ struct ExerciseStepView: View {
             } else {
                 Image(systemName: "checkmark.circle.fill")
                     .font(.system(size: 48))
-                    .foregroundStyle(.green)
+                    .foregroundStyle(exerciseStepColor)
                     .accessibilityHidden(true)
 
                 Text("All notes complete")
@@ -213,7 +255,7 @@ struct ExerciseStepView: View {
         .padding(.vertical, 20)
         .background(
             RoundedRectangle(cornerRadius: 12)
-                .fill(Color(.tertiarySystemBackground))
+                .fill(nestedSurfaceColor)
         )
     }
 
@@ -271,7 +313,7 @@ struct ExerciseStepView: View {
     private var micStatusIndicator: some View {
         HStack(spacing: 6) {
             Circle()
-                .fill(pitchVM.isListening ? .green : .red)
+                .fill(pitchVM.isListening ? exerciseStepColor : errorColor)
                 .frame(width: 8, height: 8)
             Text(pitchVM.isListening ? "Listening" : "Mic inactive")
                 .font(.caption)
@@ -283,10 +325,10 @@ struct ExerciseStepView: View {
         )
     }
 
-    /// Green completion checkmark shown after the exercise is done.
+    /// Completion checkmark shown after the exercise is done.
     private var completionBanner: some View {
         Label("Exercise Complete", systemImage: "checkmark.circle.fill")
-            .foregroundStyle(.green)
+            .foregroundStyle(exerciseStepColor)
             .font(.subheadline)
             .fontWeight(.medium)
             .accessibilityLabel(Text("Exercise completed"))

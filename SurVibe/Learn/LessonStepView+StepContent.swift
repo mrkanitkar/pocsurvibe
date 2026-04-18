@@ -67,9 +67,16 @@ extension LessonStepView {
         song: Song?,
         viewModel: LessonPlayerViewModel
     ) -> some View {
-        ExerciseStepView(step: step, song: song) {
-            viewModel.exerciseCompleted()
-        }
+        ExerciseStepView(
+            step: step,
+            song: song,
+            onComplete: {
+                viewModel.exerciseCompleted()
+            },
+            exerciseStepColor: StepTypeColorSystem.color(for: .exercise),
+            nestedSurfaceColor: themeManager.resolved.nestedSurfaceColor,
+            errorColor: themeManager.resolved.errorColor
+        )
     }
 
     /// Content view for quiz step type.
