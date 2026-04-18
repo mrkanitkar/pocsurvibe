@@ -224,8 +224,13 @@ struct PitchDetectionViewModelTests {
         #expect(vm.errorMessage != nil)
     }
 
-    @Test("startListening installs mic tap when permission granted and engine starts")
+    @Test("startListening transitions to listening state when permission is granted")
     func startListeningSuccess() async {
+        // Post-MIDI-2.0 wiring (PR #8): MicPitchDetector internally owns
+        // AudioEngineManager.shared.start() and the mic tap install — the
+        // injected mock engine is no longer touched on the start path. We
+        // assert only the user-visible state transition; engine-level
+        // interactions are covered by MicPitchDetector's own tests.
         let permMock = MockPermissionProvider()
         permMock.requestMicrophoneAccessResult = true
         permMock.microphoneStatus = .notDetermined
@@ -235,8 +240,6 @@ struct PitchDetectionViewModelTests {
             audioEngine: engineMock
         )
         await vm.startListening()
-        #expect(engineMock.startCallCount == 1)
-        #expect(engineMock.installMicTapCallCount == 1)
         #expect(vm.isListening == true)
     }
 }
