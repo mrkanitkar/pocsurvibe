@@ -44,6 +44,16 @@ final class AppThemeManager {
     /// The last-known system color scheme, used for re-resolution.
     private var lastColorScheme: ColorScheme
 
+    // MARK: - Dim Mode (Phase 5)
+
+    /// Whether Dim Mode is currently active.
+    ///
+    /// When true, the resolved theme applies an 88% opacity multiplier to the
+    /// background gradient, reducing brightness for late-night practice sessions.
+    /// Also auto-enabled when the system "Reduce Transparency" accessibility
+    /// setting is on (see ContentView).
+    private(set) var dimModeEnabled: Bool
+
     // MARK: - Storage Keys
 
     /// UserDefaults key for persisting the selected theme.
@@ -58,6 +68,9 @@ final class AppThemeManager {
     /// persisted preset value. Prevents re-migration if a user manually
     /// flips the stored rawValue back to a legacy case.
     private static let migrationFlagKey = "appThemeMigratedV2"
+
+    /// UserDefaults key for persisting the Dim Mode toggle state.
+    private static let dimModeKey = "dimModeEnabled"
 
     // MARK: - Initialization
 
@@ -91,14 +104,17 @@ final class AppThemeManager {
         }
 
         let storedEra = defaults.string(forKey: Self.popEraKey).flatMap(PopEra.init(rawValue:)) ?? .olivia
+        let storedDim = defaults.bool(forKey: Self.dimModeKey)
 
         self.currentPreset = preset
         self.popEra = storedEra
+        self.dimModeEnabled = storedDim
         self.lastColorScheme = colorScheme
         self.resolved = AppThemeDefinition.resolve(
             preset: preset,
             popEra: storedEra,
-            colorScheme: colorScheme
+            colorScheme: colorScheme,
+            dimMode: storedDim
         )
     }
 
@@ -116,7 +132,8 @@ final class AppThemeManager {
         resolved = AppThemeDefinition.resolve(
             preset: preset,
             popEra: popEra,
-            colorScheme: lastColorScheme
+            colorScheme: lastColorScheme,
+            dimMode: dimModeEnabled
         )
         AnalyticsManager.shared.track(
             .themeChanged,
@@ -136,11 +153,30 @@ final class AppThemeManager {
         resolved = AppThemeDefinition.resolve(
             preset: currentPreset,
             popEra: era,
-            colorScheme: lastColorScheme
+            colorScheme: lastColorScheme,
+            dimMode: dimModeEnabled
         )
         AnalyticsManager.shared.track(
             .themeChanged,
             properties: ["era": era.rawValue, "source": "era_picker"]
+        )
+    }
+
+    /// Toggle Dim Mode on or off and persist the choice to UserDefaults.
+    ///
+    /// Updates the `dimModeEnabled` state and triggers a full theme re-resolution
+    /// so that all surfaces observing `resolved` pick up the new brightness
+    /// multiplier immediately.
+    ///
+    /// - Parameter enabled: `true` to activate Dim Mode, `false` to deactivate.
+    func setDimMode(_ enabled: Bool) {
+        dimModeEnabled = enabled
+        UserDefaults.standard.set(enabled, forKey: Self.dimModeKey)
+        resolved = AppThemeDefinition.resolve(
+            preset: currentPreset,
+            popEra: popEra,
+            colorScheme: lastColorScheme,
+            dimMode: enabled
         )
     }
 
@@ -155,7 +191,8 @@ final class AppThemeManager {
         resolved = AppThemeDefinition.resolve(
             preset: currentPreset,
             popEra: popEra,
-            colorScheme: colorScheme
+            colorScheme: colorScheme,
+            dimMode: dimModeEnabled
         )
     }
 }

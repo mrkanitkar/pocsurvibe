@@ -121,12 +121,12 @@ struct PostOnboardingWelcomeView: View {
     private func featuredSongCard(_ song: Song) -> some View {
         HStack(spacing: 14) {
             Image(systemName: "music.note.list")
+                .accessibilityHidden(true)
                 .font(.title2)
                 .foregroundStyle(.white)
                 .frame(width: 48, height: 48)
                 .background(Color.accentColor)
                 .clipShape(RoundedRectangle(cornerRadius: 10))
-                .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(verbatim: song.title)
@@ -168,12 +168,12 @@ struct PostOnboardingWelcomeView: View {
     private func featuredLessonCard(_ lesson: Lesson) -> some View {
         HStack(spacing: 14) {
             Image(systemName: "book.fill")
+                .accessibilityHidden(true)
                 .font(.title2)
                 .foregroundStyle(.white)
                 .frame(width: 48, height: 48)
                 .background(themeManager.resolved.successColor)
                 .clipShape(RoundedRectangle(cornerRadius: 10))
-                .accessibilityHidden(true)
 
             VStack(alignment: .leading, spacing: 4) {
                 Text(verbatim: lesson.title)

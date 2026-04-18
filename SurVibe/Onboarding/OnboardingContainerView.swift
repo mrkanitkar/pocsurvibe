@@ -126,6 +126,7 @@ struct OnboardingContainerView: View {
                 } label: {
                     HStack(spacing: 4) {
                         Image(systemName: "chevron.left")
+                            .accessibilityHidden(true)
                         Text("Back")
                     }
                     .font(.body)

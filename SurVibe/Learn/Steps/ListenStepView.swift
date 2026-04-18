@@ -67,6 +67,7 @@ struct ListenStepView: View {
     private var stepBadge: some View {
         HStack(spacing: 6) {
             Image(systemName: "headphones")
+                .accessibilityHidden(true)
             Text("Listen")
                 .fontWeight(.semibold)
         }
@@ -119,6 +120,7 @@ struct ListenStepView: View {
                 .foregroundStyle(StepTypeColorSystem.color(for: .listen))
                 .frame(width: 64, height: 64)
                 .contentShape(Rectangle())
+                .accessibilityHidden(true)
         }
         .accessibilityLabel(Text(playButtonAccessibilityLabel))
         .accessibilityHint(Text(playButtonAccessibilityHint))

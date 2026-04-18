@@ -21,6 +21,7 @@ struct ContentView: View {
     @Environment(AppThemeManager.self) private var themeManager
     @Environment(\.colorScheme) private var colorScheme
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityReduceTransparency) private var systemReduceTransparency
 
     /// Controls the post-onboarding welcome sheet.
     @State private var showPostOnboarding = false
@@ -56,6 +57,19 @@ struct ContentView: View {
         .environment(router)
         .onChange(of: colorScheme) { _, newScheme in
             themeManager.updateColorScheme(newScheme)
+        }
+        .onChange(of: systemReduceTransparency) { _, newValue in
+            // Honor the system "Reduce Transparency" accessibility preference by
+            // auto-enabling Dim Mode. Does not auto-disable — user toggle wins.
+            if newValue && !themeManager.dimModeEnabled {
+                themeManager.setDimMode(true)
+            }
+        }
+        .task {
+            // Apply system preference on first launch (in case it was on before the app ran).
+            if systemReduceTransparency && !themeManager.dimModeEnabled {
+                themeManager.setDimMode(true)
+            }
         }
         .onChange(of: selectedTab) { _, newTab in
             router.switchTab(to: newTab)

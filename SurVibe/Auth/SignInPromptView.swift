@@ -95,6 +95,7 @@ struct SignInPromptView: View {
                         HStack(spacing: 8) {
                             Image(systemName: "apple.logo")
                                 .font(.title3)
+                                .accessibilityHidden(true)
                             Text("Sign in with Apple")
                                 .font(.body.weight(.medium))
                         }

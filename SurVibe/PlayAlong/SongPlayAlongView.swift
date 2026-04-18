@@ -52,7 +52,7 @@ struct SongPlayAlongView: View {
     @Environment(AppThemeManager.self) var themeManager  // internal so the +Subviews extension (separate file) can read it
     @Environment(\.modelContext) private var modelContext
     @Environment(\.dismiss) private var dismiss
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityReduceMotion) var reduceMotion
 
     // MARK: - Body
 
