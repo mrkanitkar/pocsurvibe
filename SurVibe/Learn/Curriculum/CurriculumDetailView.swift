@@ -18,6 +18,9 @@ struct CurriculumDetailView: View {
     @Query(sort: \Lesson.orderIndex)
     private var allLessons: [Lesson]
 
+    @Environment(AppThemeManager.self)
+    private var themeManager
+
     @Environment(LessonProgressManager.self)
     private var progressManager
 
@@ -165,7 +168,7 @@ struct CurriculumDetailView: View {
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding()
-        .background(Color.green.opacity(0.1))
+        .background(themeManager.resolved.successColor.opacity(0.1))
         .accessibilityElement(children: .combine)
         .accessibilityLabel(
             Text("Curriculum complete: \(curriculum.title)")

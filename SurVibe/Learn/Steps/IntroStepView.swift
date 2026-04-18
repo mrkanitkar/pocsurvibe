@@ -1,3 +1,4 @@
+import SVCore
 import SwiftUI
 
 /// Displays introduction content for a lesson step.
@@ -43,10 +44,10 @@ struct IntroStepView: View {
                 .fontWeight(.semibold)
         }
         .font(.subheadline)
-        .foregroundStyle(.blue)
+        .foregroundStyle(StepTypeColorSystem.color(for: .intro))
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
-        .background(Capsule().fill(.blue.opacity(0.15)))
+        .background(Capsule().fill(StepTypeColorSystem.color(for: .intro).opacity(0.15)))
         .accessibilityLabel(Text("Step type: Introduction"))
     }
 
