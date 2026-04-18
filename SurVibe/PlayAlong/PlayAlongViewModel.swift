@@ -324,11 +324,13 @@ final class PlayAlongViewModel {
     /// The loaded Song model.
     private var song: Song?
 
-    /// Ring buffer for accumulating audio samples for FFT chord detection.
+    /// Lock-free SPSC ring buffer for accumulating audio samples for FFT chord
+    /// detection. Sized to `latencyPreset.realSamples * 2` on each detection
+    /// start so reads of the latest window never overlap with writes.
     ///
-    /// Sized to `latencyPreset.realSamples * 2` on each detection start.
-    /// Written by the mic tap callback; read by the DSP loop in `PracticeAudioProcessor`.
-    private var ringBuffer: AudioRingBuffer?
+    /// Written by the audio tap callback inside `PracticeAudioProcessor` (lock-
+    /// free pointer write); drained by `runChordDetectionLoop`.
+    private var ringBuffer: SPSCRingBuffer?
 
     /// Task running the note-by-note playback scheduler.
     private var playbackTask: Task<Void, Never>?
@@ -944,12 +946,13 @@ final class PlayAlongViewModel {
     /// Starts `PracticeAudioProcessor` and launches two concurrent detection tasks:
     /// 1. **Melody task** — reads `PitchResult` from the processor's async stream,
     ///    enriches with raga context, updates `currentPitch`, and routes to scoring.
-    /// 2. **Chord task** — accumulates audio samples in an `AudioRingBuffer` sized
-    ///    by `latencyPreset`, runs `ChromagramDSP.analyzeChord` every 50 ms, and
-    ///    exposes results via `audioProcessor.ringBufferRef` for multi-note display.
+    /// 2. **Chord task** — accumulates audio samples in a lock-free `SPSCRingBuffer`
+    ///    sized by `latencyPreset`, runs `ChromagramDSP.analyzeChord` every 50 ms,
+    ///    and exposes results for multi-note display.
     ///
-    /// The ring buffer is fed by a secondary tap on `AudioEngineManager` that runs
-    /// alongside the `PracticeAudioProcessor` tap (both coexist on different node taps).
+    /// The ring buffer is fed by `PracticeAudioProcessor`'s mic tap (via its
+    /// `ringBuffer` hook), so the two pipelines share a single tap on
+    /// `AudioEngineManager` — iOS only allows one tap per input node.
     ///
     /// Detection starts at song load so users can play immediately without pressing Play.
     private func startPitchDetection() {
@@ -960,8 +963,10 @@ final class PlayAlongViewModel {
 
         // Allocate a fresh ring buffer sized to the current latency preset.
         // Capacity = realSamples * 2 so we always have a full window available.
+        // SPSCRingBuffer rounds up to the next power of two internally, so the
+        // request is a hint — the actual capacity may be larger.
         let preset = latencyPreset
-        let newRingBuffer = AudioRingBuffer(capacity: preset.realSamples * 2)
+        let newRingBuffer = SPSCRingBuffer(capacity: preset.realSamples * 2)
         ringBuffer = newRingBuffer
 
         // Give PracticeAudioProcessor the ring buffer reference BEFORE start(),
@@ -1012,11 +1017,18 @@ final class PlayAlongViewModel {
         let buf = ringBuffer
         let refPitch = 440.0
         let amplitudeGate: Float = 0.01
+        // Pre-allocate the read buffer once; reuse on every poll. Owned by
+        // the chord task so it is deallocated when the task exits (cancel
+        // or stop). Avoids per-iteration heap churn at 20 Hz.
+        let workBuf = UnsafeMutableBufferPointer<Float>.allocate(capacity: realSamples)
+        workBuf.initialize(repeating: 0)
+        defer { workBuf.deallocate() }
         while !Task.isCancelled {
             try? await Task.sleep(for: .milliseconds(50))
-            guard let buf,
-                let samples = buf.read(count: realSamples)
+            guard let buf, buf.readLatest(count: realSamples, into: workBuf),
+                let base = workBuf.baseAddress
             else { continue }
+            let samples = Array(UnsafeBufferPointer(start: base, count: realSamples))
             let rms = Self.calculateRMS(samples)
             guard rms >= amplitudeGate else { continue }
             let result = ChromagramDSP.analyzeChord(
