@@ -8,22 +8,18 @@ struct AppThemeViewDispatchTests {
         // Phase 3.5 + the 9-theme picker exposed the original Drop variants too.
         for preset in AppThemePreset.userVisibleCases {
             switch preset {
-            // Bars + Pop Era family — BarsOnStaffView (or SargamDualRowView for sargam)
+            // Bars-style grand staff with horizontal colored bars
             case .sargamGlassBars:
-                _ = preset.notationMode  // SargamDualRowView
+                _ = preset.notationMode  // SargamDualRowView (dual-row Sargam)
             case .immersiveBars, .midnightBars, .popEra:
-                _ = preset.notationMode  // BarsOnStaffView
+                _ = preset.notationMode  // BarsOnStaffView (grand staff + bars)
 
-            // Drop variants — scrolling sheet renderers (originals)
-            case .sargamGlass:
-                _ = preset.notationMode  // .sargamPlusSheet → SargamDualRowView (drop)
-            case .immersive, .midnight:
-                _ = preset.notationMode  // .sheetMusic → ScrollingSheetView (drop)
+            // Drop variants — ScrollingSheetView with classical round notes
+            case .immersive, .midnight, .sargamGlass:
+                _ = preset.notationMode  // ScrollingSheetView (sheetMusic / sargamPlusSheet)
 
-            // Falling-notes lanes
-            case .synthesia:
-                _ = preset.notationMode  // .western → FallingNotesView
-            case .neonRhythm:
+            // Falling-notes lanes (vertical drop)
+            case .synthesia, .neonRhythm:
                 _ = preset.notationMode  // SplitLaneView
             }
         }

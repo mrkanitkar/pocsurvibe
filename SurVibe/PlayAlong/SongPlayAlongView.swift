@@ -356,7 +356,8 @@ struct SongPlayAlongView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             switch themeManager.currentPreset {
-            case .sargamGlassBars, .sargamGlass:
+            // Sargam Glass · Bars (v2) — dual-row Sargam with horizontal bars
+            case .sargamGlassBars:
                 SargamDualRowView(
                     noteEvents: viewModel.noteEvents,
                     currentTime: viewModel.currentTime,
@@ -367,7 +368,9 @@ struct SongPlayAlongView: View {
                 )
                 .accessibilityLabel("Sargam dual-row notation")
 
-            case .immersiveBars, .immersive, .midnightBars, .midnight, .popEra:
+            // Bars-style grand staff with horizontal colored bars (Yousician-like).
+            // Used by Immersive Bars (#6), Midnight Bars (#7), Pop Era (#9).
+            case .immersiveBars, .midnightBars, .popEra:
                 BarsOnStaffView(
                     noteEvents: viewModel.noteEvents,
                     currentTime: viewModel.currentTime,
@@ -381,6 +384,22 @@ struct SongPlayAlongView: View {
                 )
                 .accessibilityLabel("Horizontal-bar grand-staff notation")
 
+            // Drop variants — classical scrolling sheet with round notes.
+            // Per spec §5.1:
+            //   #1 Immersive · Drop  → grand staff, round notes (sheetMusic)
+            //   #3 Sargam Glass · Drop → Devanagari ribbon + round mini-staff (sargamPlusSheet)
+            //   #4 Midnight · Drop  → OLED grand staff, amber round notes (sheetMusic)
+            case .immersive, .midnight, .sargamGlass:
+                ScrollingSheetView(
+                    song: song,
+                    currentNoteIndex: viewModel.currentNoteIndex,
+                    notationMode: viewModel.notationMode,
+                    currentPitch: viewModel.currentPitch,
+                    highlightState: viewModel.highlightState
+                )
+                .accessibilityLabel("Scrolling sheet notation, grand staff with round notes")
+
+            // Falling-notes lanes (vertical drop) — Synthesia/Neon-style.
             case .neonRhythm, .synthesia:
                 SplitLaneView(
                     noteEvents: viewModel.noteEvents,
