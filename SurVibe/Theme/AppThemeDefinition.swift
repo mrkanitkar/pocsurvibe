@@ -67,6 +67,20 @@ struct AppThemeDefinition: Sendable {
     let notationLineColor: Color
     let notationSecondaryColor: Color
 
+    // MARK: - v2 Phase 3 — Learn-tab tokens
+
+    /// Divider / progress-track color. Light mode and dark variants resolved
+    /// via `AppThemePreset.dividerColor` / `darkDividerColor`.
+    let dividerColor: Color
+
+    /// Nested surface color — for chips, capsules, and inset content inside
+    /// a `cardBackgroundColor` container. Preserves elevation hierarchy.
+    let nestedSurfaceColor: Color
+
+    /// Warning / attention feedback color — for time pressure, streak-at-risk,
+    /// and attention cues.
+    let warningColor: Color
+
     // MARK: - Factory
 
     /// Resolve a theme preset for a given color scheme, with Pop Era awareness.
@@ -111,7 +125,11 @@ struct AppThemeDefinition: Sendable {
                 : preset.eraAccentColor(for: popEra),
 
             notationLineColor: isDark ? preset.darkNotationLineColor : preset.notationLineColor,
-            notationSecondaryColor: isDark ? preset.darkNotationSecondaryColor : preset.notationSecondaryColor
+            notationSecondaryColor: isDark ? preset.darkNotationSecondaryColor : preset.notationSecondaryColor,
+
+            dividerColor: isDark ? preset.darkDividerColor : preset.dividerColor,
+            nestedSurfaceColor: isDark ? preset.darkNestedSurfaceColor : preset.nestedSurfaceColor,
+            warningColor: isDark ? preset.darkWarningColor : preset.warningColor
         )
     }
 

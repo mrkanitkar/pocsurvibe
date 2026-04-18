@@ -32,6 +32,20 @@ struct SingStepView: View {
     /// Callback when user manually skips past the singing exercise.
     let onManualAdvance: () -> Void
 
+    /// Sing step-type color. Passed by parent — never read from @Environment
+    /// to preserve audio-latency contract (spec §5.5, §7). This view has the
+    /// highest mutation frequency in the Learn tab (pitch @ 20–40 Hz).
+    let singStepColor: Color
+
+    /// Warning color for mic-permission-denied / low-accuracy hints.
+    let warningColor: Color
+
+    /// Nested surface color for chips inside the step card.
+    let nestedSurfaceColor: Color
+
+    /// Success color for accuracy-reached confirmations.
+    let successColor: Color
+
     @State private var pitchVM = PitchDetectionViewModel()
     @State private var accuracy: Double = 0.0
     @State private var notesMatched: Int = 0
@@ -43,6 +57,44 @@ struct SingStepView: View {
 
     @Environment(\.accessibilityReduceMotion)
     private var reduceMotion
+
+    // MARK: - Initialization
+
+    /// Creates a sing step view with theme colors injected by the parent.
+    ///
+    /// All theme colors are required parameters — there are no defaults.
+    /// Theme colors are `let` params rather than `@Environment` reads to preserve the
+    /// audio-latency contract — `PitchDetectionViewModel` publishes at 20–40 Hz and
+    /// reading from the environment on every render cycle would add overhead (spec §5.5, §7).
+    ///
+    /// - Parameters:
+    ///   - step: The lesson step to display.
+    ///   - song: The resolved song, or nil for manual-fallback mode.
+    ///   - onComplete: Called with accuracy (0.0–1.0) when singing finishes.
+    ///   - onManualAdvance: Called when the user skips the exercise.
+    ///   - singStepColor: Accent color for sing-type UI elements.
+    ///   - warningColor: Color for mic-denied and low-accuracy warnings.
+    ///   - nestedSurfaceColor: Background fill for nested chip surfaces.
+    ///   - successColor: Color for pass-threshold and completion indicators.
+    init(
+        step: LessonStep,
+        song: Song?,
+        onComplete: @escaping (Double) -> Void,
+        onManualAdvance: @escaping () -> Void,
+        singStepColor: Color = StepTypeColorSystem.color(for: .sing),
+        warningColor: Color,
+        nestedSurfaceColor: Color,
+        successColor: Color
+    ) {
+        self.step = step
+        self.song = song
+        self.onComplete = onComplete
+        self.onManualAdvance = onManualAdvance
+        self.singStepColor = singStepColor
+        self.warningColor = warningColor
+        self.nestedSurfaceColor = nestedSurfaceColor
+        self.successColor = successColor
+    }
 
     // MARK: - Body
 
@@ -105,7 +157,7 @@ struct SingStepView: View {
         .padding(.vertical, 20)
         .background(
             RoundedRectangle(cornerRadius: 12)
-                .fill(Color(.tertiarySystemBackground))
+                .fill(nestedSurfaceColor)
         )
     }
 
@@ -119,7 +171,7 @@ struct SingStepView: View {
             if let result = pitchVM.currentResult {
                 Text(verbatim: result.noteName)
                     .font(.system(size: 48, weight: .bold, design: .rounded))
-                    .foregroundStyle(.pink)
+                    .foregroundStyle(singStepColor)
                     .accessibilityLabel(Text("Detected note: \(result.noteName)"))
 
                 Text("Confidence: \(Int(result.confidence * 100))%")
@@ -131,7 +183,7 @@ struct SingStepView: View {
             } else if pitchVM.isListening {
                 Image(systemName: "waveform")
                     .font(.system(size: 48))
-                    .foregroundStyle(.pink.opacity(0.5))
+                    .foregroundStyle(singStepColor.opacity(0.5))
                     .accessibilityHidden(true)
 
                 Text("Listening...")
@@ -140,7 +192,7 @@ struct SingStepView: View {
             } else {
                 Image(systemName: "music.mic")
                     .font(.system(size: 48))
-                    .foregroundStyle(.pink.opacity(0.5))
+                    .foregroundStyle(singStepColor.opacity(0.5))
                     .accessibilityHidden(true)
 
                 Text("Starting microphone...")
@@ -164,11 +216,11 @@ struct SingStepView: View {
                 Text("\(Int(accuracy * 100))%")
                     .font(.subheadline)
                     .fontWeight(.semibold)
-                    .foregroundStyle(accuracy >= 0.60 ? .green : .primary)
+                    .foregroundStyle(accuracy >= 0.60 ? successColor : .primary)
             }
 
             ProgressView(value: accuracy, total: 1.0)
-                .tint(accuracy >= 0.60 ? .green : .pink)
+                .tint(accuracy >= 0.60 ? successColor : singStepColor)
                 .animation(
                     reduceMotion ? nil : .easeInOut(duration: 0.3),
                     value: accuracy
@@ -187,7 +239,7 @@ struct SingStepView: View {
         VStack(spacing: 12) {
             Image(systemName: "mic.slash.fill")
                 .font(.system(size: 36))
-                .foregroundStyle(.orange)
+                .foregroundStyle(warningColor)
                 .accessibilityHidden(true)
 
             Text("Microphone access is needed for pitch detection")
@@ -222,7 +274,7 @@ struct SingStepView: View {
         VStack(spacing: 12) {
             Image(systemName: "music.mic")
                 .font(.system(size: 48))
-                .foregroundStyle(.pink.opacity(0.5))
+                .foregroundStyle(singStepColor.opacity(0.5))
                 .accessibilityHidden(true)
 
             Text("Sing Along Mode")
@@ -237,7 +289,7 @@ struct SingStepView: View {
         .padding(.vertical, 24)
         .background(
             RoundedRectangle(cornerRadius: 12)
-                .fill(Color(.tertiarySystemBackground))
+                .fill(nestedSurfaceColor)
         )
         .accessibilityElement(children: .combine)
         .accessibilityLabel(Text("Sing along area — tap Done Singing when finished"))
@@ -283,7 +335,7 @@ struct SingStepView: View {
                         .padding(.vertical, 12)
                 }
                 .buttonStyle(.borderedProminent)
-                .tint(.pink)
+                .tint(singStepColor)
                 .accessibilityLabel(Text("Done singing"))
                 .accessibilityHint(
                     Text("Double tap to mark the singing exercise as complete")
@@ -297,7 +349,7 @@ struct SingStepView: View {
     /// Checkmark badge shown after the step is completed.
     private var completionBadge: some View {
         Label("Singing Complete", systemImage: "checkmark.circle.fill")
-            .foregroundStyle(.green)
+            .foregroundStyle(successColor)
             .font(.subheadline)
             .fontWeight(.medium)
             .accessibilityLabel(Text("Singing exercise completed"))
@@ -313,10 +365,10 @@ struct SingStepView: View {
                 .fontWeight(.semibold)
         }
         .font(.subheadline)
-        .foregroundStyle(.pink)
+        .foregroundStyle(singStepColor)
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
-        .background(Capsule().fill(.pink.opacity(0.15)))
+        .background(Capsule().fill(singStepColor.opacity(0.15)))
         .accessibilityLabel(Text("Step type: Sing Along"))
     }
 

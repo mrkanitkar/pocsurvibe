@@ -28,6 +28,8 @@ struct LessonCompletionView: View {
     /// Callback to dismiss the lesson player.
     let onDismiss: () -> Void
 
+    @Environment(AppThemeManager.self) private var themeManager
+
     @Environment(\.accessibilityReduceMotion)
     private var reduceMotion
 
@@ -39,8 +41,12 @@ struct LessonCompletionView: View {
     var body: some View {
         ZStack {
             // Confetti overlay
-            ConfettiView(isActive: $showConfetti)
-                .ignoresSafeArea()
+            ConfettiView(
+                isActive: $showConfetti,
+                celebrationColors: themeManager.resolved.celebrationColors,
+                successColor: themeManager.resolved.successColor
+            )
+            .ignoresSafeArea()
 
             ScrollView {
                 VStack(spacing: 24) {
@@ -126,7 +132,7 @@ struct LessonCompletionView: View {
         .padding()
         .background(
             RoundedRectangle(cornerRadius: 12)
-                .fill(Color(.secondarySystemBackground))
+                .fill(themeManager.resolved.cardBackgroundColor)
         )
     }
 

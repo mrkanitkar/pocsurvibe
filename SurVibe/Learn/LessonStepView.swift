@@ -1,3 +1,4 @@
+import SVCore
 import SwiftData
 import SwiftUI
 
@@ -37,6 +38,8 @@ struct LessonStepView: View {
     private var modelContext
     @Environment(GamificationService.self)
     private var gamificationService: GamificationService?
+    @Environment(AppThemeManager.self)
+    var themeManager  // internal so the +StepContent extension (separate file) can read it
 
     /// The lesson player view model managing state and progression.
     @State
@@ -149,7 +152,7 @@ struct LessonStepView: View {
         GeometryReader { geometry in
             ZStack(alignment: .leading) {
                 Rectangle()
-                    .fill(Color(.systemGray5))
+                    .fill(themeManager.resolved.dividerColor)
 
                 Rectangle()
                     .fill(Color.accentColor)
@@ -207,17 +210,17 @@ struct LessonStepView: View {
     private func stepTypeBadge(step: LessonStep) -> some View {
         HStack {
             Image(systemName: stepTypeIcon(step.stepType))
-                .foregroundStyle(stepTypeColor(step.stepType))
+                .foregroundStyle(StepTypeColorSystem.color(forStepType: step.stepType))
             Text(stepTypeLabel(step.stepType))
                 .fontWeight(.semibold)
-                .foregroundStyle(stepTypeColor(step.stepType))
+                .foregroundStyle(StepTypeColorSystem.color(forStepType: step.stepType))
         }
         .font(.subheadline)
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
         .background(
             Capsule()
-                .fill(stepTypeColor(step.stepType).opacity(0.15))
+                .fill(StepTypeColorSystem.color(forStepType: step.stepType).opacity(0.15))
         )
         .accessibilityElement(children: .combine)
         .accessibilityLabel(Text("Step type: \(stepTypeLabel(step.stepType))"))
@@ -285,7 +288,7 @@ private extension LessonStepView {
         HStack(spacing: 8) {
             Image(systemName: "lock.fill")
                 .font(.caption)
-                .foregroundStyle(.orange)
+                .foregroundStyle(themeManager.resolved.warningColor)
                 .accessibilityHidden(true)
 
             Text(reason)
@@ -295,7 +298,7 @@ private extension LessonStepView {
         .padding(.horizontal)
         .padding(.vertical, 8)
         .frame(maxWidth: .infinity, alignment: .leading)
-        .background(Color(.secondarySystemBackground))
+        .background(themeManager.resolved.cardBackgroundColor)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(Text("Step locked: \(reason)"))
     }
@@ -343,7 +346,7 @@ private extension LessonStepView {
         Button { animatedAction { viewModel.goToNextStep() } } label: {
             Text("Complete Lesson")
                 .font(.body).fontWeight(.semibold)
-                .foregroundStyle(.white)
+                .foregroundStyle(themeManager.resolved.badgeTextColor)
                 .padding(.horizontal, 20).padding(.vertical, 10)
                 .background(Capsule().fill(viewModel.canGoNext ? .green : .gray))
         }
@@ -373,7 +376,7 @@ private extension LessonStepView {
         VStack(spacing: 20) {
             Image(systemName: "checkmark.circle.fill")
                 .font(.system(size: 60))
-                .foregroundStyle(.green)
+                .foregroundStyle(themeManager.resolved.successColor)
                 .accessibilityHidden(true)
 
             Text("Lesson Complete!")
@@ -399,7 +402,7 @@ private extension LessonStepView {
                     .font(.headline)
                     .frame(maxWidth: .infinity)
                     .padding(.vertical, 14)
-                    .foregroundStyle(.white)
+                    .foregroundStyle(themeManager.resolved.badgeTextColor)
                     .background(
                         RoundedRectangle(cornerRadius: 14)
                             .fill(Color.accentColor)

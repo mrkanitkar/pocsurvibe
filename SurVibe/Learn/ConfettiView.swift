@@ -9,13 +9,25 @@ import SwiftUI
 ///
 /// ## Usage
 /// ```swift
-/// ConfettiView(isActive: $showConfetti)
+/// ConfettiView(
+///     isActive: $showConfetti,
+///     celebrationColors: themeManager.resolved.celebrationColors,
+///     successColor: themeManager.resolved.successColor
+/// )
 /// ```
 struct ConfettiView: View {
     // MARK: - Properties
 
     /// Whether the confetti animation is active.
     @Binding var isActive: Bool
+
+    /// Particle colors sourced from the active theme's `celebrationColors`.
+    /// Pass `themeManager.resolved.celebrationColors` from the parent view.
+    let celebrationColors: [Color]
+
+    /// Success color for the reduce-motion static fallback (the checkmark seal).
+    /// Pass `themeManager.resolved.successColor` from the parent view.
+    let successColor: Color
 
     @Environment(\.accessibilityReduceMotion)
     private var reduceMotion
@@ -30,7 +42,7 @@ struct ConfettiView: View {
             if isActive {
                 Image(systemName: "checkmark.seal.fill")
                     .font(.system(size: 64))
-                    .foregroundStyle(.green)
+                    .foregroundStyle(successColor)
                     .accessibilityLabel(Text("Celebration"))
             }
         } else {
@@ -73,7 +85,12 @@ struct ConfettiView: View {
     ///
     /// - Parameter size: The available size of the parent container.
     private func generateParticles(in size: CGSize) {
-        let colors: [Color] = [.red, .blue, .green, .yellow, .orange, .purple, .pink]
+        // Theme-driven palette. If the theme provides no celebration colors
+        // (shouldn't happen post-Phase-1 but guard defensively), fall back
+        // to a rainbow palette so the celebration still reads visually.
+        let colors: [Color] = celebrationColors.isEmpty
+            ? [.red, .blue, .green, .yellow, .orange, .purple, .pink]
+            : celebrationColors
         particles = (0..<30).map { index in
             ConfettiParticle(
                 id: index,

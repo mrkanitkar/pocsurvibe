@@ -1,3 +1,4 @@
+import SVCore
 import SwiftUI
 
 // MARK: - Step Type Views
@@ -49,7 +50,11 @@ extension LessonStepView {
             },
             onManualAdvance: {
                 viewModel.singManualAdvance()
-            }
+            },
+            singStepColor: StepTypeColorSystem.color(for: .sing),
+            warningColor: themeManager.resolved.warningColor,
+            nestedSurfaceColor: themeManager.resolved.nestedSurfaceColor,
+            successColor: themeManager.resolved.successColor
         )
     }
 
@@ -66,9 +71,16 @@ extension LessonStepView {
         song: Song?,
         viewModel: LessonPlayerViewModel
     ) -> some View {
-        ExerciseStepView(step: step, song: song) {
-            viewModel.exerciseCompleted()
-        }
+        ExerciseStepView(
+            step: step,
+            song: song,
+            onComplete: {
+                viewModel.exerciseCompleted()
+            },
+            exerciseStepColor: StepTypeColorSystem.color(for: .exercise),
+            nestedSurfaceColor: themeManager.resolved.nestedSurfaceColor,
+            errorColor: themeManager.resolved.errorColor
+        )
     }
 
     /// Content view for quiz step type.
@@ -119,7 +131,7 @@ extension LessonStepView {
         .padding(.vertical, 32)
         .background(
             RoundedRectangle(cornerRadius: 12)
-                .fill(Color(.tertiarySystemBackground))
+                .fill(themeManager.resolved.nestedSurfaceColor)
         )
         .accessibilityElement(children: .combine)
         .accessibilityLabel(Text("\(title): \(description)"))
@@ -156,23 +168,6 @@ extension LessonStepView {
         case "quiz": "questionmark.circle"
         case "sing": "waveform"
         default: "circle"
-        }
-    }
-
-    /// Color associated with a step type.
-    ///
-    /// - Parameter type: The step type string identifier.
-    /// - Returns: A color for the step badge and icon.
-    func stepTypeColor(_ type: String) -> Color {
-        switch type {
-        case "intro": .blue
-        case "listen": .purple
-        case "read": .orange
-        case "exercise": .green
-        case "practice": .red
-        case "quiz": .yellow
-        case "sing": .pink
-        default: .gray
         }
     }
 
