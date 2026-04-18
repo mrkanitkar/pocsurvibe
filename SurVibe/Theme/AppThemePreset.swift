@@ -76,13 +76,25 @@ enum AppThemePreset: String, CaseIterable, Sendable {
     case popEra
 
     /// User-visible presets in the Profile theme picker.
-    /// Legacy cases are hidden compat fallbacks during migration.
+    ///
+    /// All 9 themes are first-class — both Bars and Drop play-along
+    /// styles are supported. Order groups related themes adjacent
+    /// (Bars + Drop variants together) for swipe-to-compare UX, with
+    /// Pop Era and Arcade at the end as special opt-ins.
     static let userVisibleCases: [AppThemePreset] = [
-        .sargamGlassBars,
-        .immersiveBars,
-        .midnightBars,
-        .popEra,
-        .neonRhythm,
+        // Sargam family
+        .sargamGlassBars,    // Bars · default
+        .sargamGlass,        // Drop variant
+        // Western family
+        .immersiveBars,      // Bars
+        .immersive,          // Drop variant
+        .synthesia,          // Drop · piano-roll
+        // Night family
+        .midnightBars,       // Bars
+        .midnight,           // Drop variant
+        // Special
+        .popEra,             // Pop Era (with era sub-picker)
+        .neonRhythm          // Arcade (opt-in)
     ]
 
     // MARK: - Play-Along Derived Properties
@@ -312,11 +324,11 @@ enum AppThemePreset: String, CaseIterable, Sendable {
         case .midnightBars: String(localized: "Night")
         case .popEra: String(localized: "Pop Era")
         case .neonRhythm: String(localized: "Arcade")
-        // Legacy (hidden from picker; kept non-localized)
-        case .immersive: "Immersive (legacy)"
-        case .sargamGlass: "Sargam Glass (legacy)"
-        case .midnight: "Midnight (legacy)"
-        case .synthesia: "Synthesia (legacy)"
+        // Drop-style variants — first-class themes with falling-notes play-along
+        case .immersive: String(localized: "Immersive · Drop")
+        case .sargamGlass: String(localized: "Sargam Glass · Drop")
+        case .midnight: String(localized: "Midnight · Drop")
+        case .synthesia: String(localized: "Synthesia")
         }
     }
 

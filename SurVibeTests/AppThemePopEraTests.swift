@@ -28,11 +28,11 @@ struct AppThemePopEraTests {
         }
     }
 
-    @Test func userVisibleCasesHasFivePresets() {
-        // Profile picker shows: Sargam, Western, Night, Pop Era, Arcade.
-        // Legacy cases (immersive, sargamGlass, midnight, synthesia) are hidden
-        // compat and switched away from in Task 1.10a.
-        #expect(AppThemePreset.userVisibleCases.count == 5)
+    @Test func userVisibleCasesHasNinePresets() {
+        // All 9 themes are first-class — both Bars and Drop play-along styles
+        // are user-selectable. Pop Era's 5 era sub-variants are exposed via the
+        // inline era picker inside the Pop Era card, not as separate presets.
+        #expect(AppThemePreset.userVisibleCases.count == 9)
     }
 
     @Test func allCasesHasNineTotal() {

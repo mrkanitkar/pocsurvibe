@@ -4,8 +4,9 @@ import Testing
 
 struct ThemeCarouselPickerTests {
     @Test @MainActor func presetsArrayUsesUserVisibleCases() {
-        // Ensure the carousel shows the 5 user-visible themes, not 9 legacy+new
-        // (5 because popEra expands inline)
-        #expect(AppThemePreset.userVisibleCases.count == 5)
+        // Carousel shows all 9 first-class themes (5 Bars + 4 Drop variants).
+        // Pop Era's 5 era sub-variants are exposed via the inline era picker
+        // inside the Pop Era card, not as separate carousel pages.
+        #expect(AppThemePreset.userVisibleCases.count == 9)
     }
 }
