@@ -62,6 +62,7 @@ struct SingStepView: View {
 
     /// Creates a sing step view with theme colors injected by the parent.
     ///
+    /// All theme colors are required parameters — there are no defaults.
     /// Theme colors are `let` params rather than `@Environment` reads to preserve the
     /// audio-latency contract — `PitchDetectionViewModel` publishes at 20–40 Hz and
     /// reading from the environment on every render cycle would add overhead (spec §5.5, §7).
@@ -81,9 +82,9 @@ struct SingStepView: View {
         onComplete: @escaping (Double) -> Void,
         onManualAdvance: @escaping () -> Void,
         singStepColor: Color = StepTypeColorSystem.color(for: .sing),
-        warningColor: Color = .orange,
-        nestedSurfaceColor: Color = Color(.tertiarySystemBackground),
-        successColor: Color = .green
+        warningColor: Color,
+        nestedSurfaceColor: Color,
+        successColor: Color
     ) {
         self.step = step
         self.song = song
