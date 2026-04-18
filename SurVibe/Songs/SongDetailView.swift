@@ -31,6 +31,9 @@ struct SongDetailView: View {
     @Environment(GamificationService.self)
     private var gamificationService: GamificationService?
 
+    @Environment(AppThemeManager.self)
+    private var themeManager: AppThemeManager
+
     /// Whether the practice session full-screen cover is shown.
     @State private var showPractice = false
 
@@ -69,7 +72,7 @@ struct SongDetailView: View {
                         .frame(maxWidth: .infinity)
                 }
                 .buttonStyle(.borderedProminent)
-                .tint(.blue)
+                .tint(themeManager.resolved.accentColor)
                 .accessibilityLabel("Play along with this song")
                 .accessibilityHint(
                     "Open an interactive play-along session with falling notes and scoring"
@@ -174,7 +177,7 @@ struct SongDetailView: View {
             )
         }
         .padding()
-        .background(.fill.quaternary, in: RoundedRectangle(cornerRadius: 12))
+        .background(themeManager.resolved.cardBackgroundColor, in: RoundedRectangle(cornerRadius: 12))
     }
 
     /// Playback controls section with a section header.
