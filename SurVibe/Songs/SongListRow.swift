@@ -10,6 +10,8 @@ import SwiftUI
 struct SongListRow: View {
     // MARK: - Properties
 
+    @Environment(AppThemeManager.self) private var themeManager
+
     /// The song to display metadata for.
     let song: Song
 
@@ -59,7 +61,11 @@ struct SongListRow: View {
         HStack(spacing: 3) {
             ForEach(1...5, id: \.self) { level in
                 Circle()
-                    .fill(level <= song.difficulty ? Color.rangNeel : Color.gray.opacity(0.3))
+                    .fill(
+                        level <= song.difficulty
+                            ? (RangLevel(rawValue: song.difficulty)?.bodyTextColor ?? .gray)
+                            : themeManager.resolved.dividerColor
+                    )
                     .frame(width: 8, height: 8)
             }
         }
