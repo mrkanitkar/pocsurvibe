@@ -118,13 +118,17 @@ struct SPSCRingBufferTests {
     }
 
     @Test func oversizeWriteClampedToCapacity() {
-        // Writing more than capacity: only last `capacity` samples are retained
-        let buf = SPSCRingBuffer(capacity: 64)
-        let large: [Float] = (0..<200).map { Float($0) }
+        // SPSCRingBuffer enforces a minimum capacity of 256 (rounded to next
+        // power of two). Requesting capacity=64 yields an actual capacity of
+        // 256. write() clamps to min(samples.count, capacity), so writing 200
+        // samples into a 256-capacity buffer writes all 200 without clamping.
+        // Use capacity >= 256 to exercise the clamping path.
+        let buf = SPSCRingBuffer(capacity: 256)
+        let large: [Float] = (0..<400).map { Float($0) }
         large.withUnsafeBufferPointer { buf.write($0) }
 
-        // write() clamps to capacity (64), so only 64 samples written
-        #expect(buf.totalSamplesWritten == 64)
+        // write() clamps to capacity (256), so only 256 samples counted
+        #expect(buf.totalSamplesWritten == 256)
     }
 
     // MARK: - Concurrent Producer/Consumer

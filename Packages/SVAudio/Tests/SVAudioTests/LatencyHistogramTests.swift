@@ -133,6 +133,24 @@ struct LatencyHistogramTests {
         #expect(histogram.summary().count == .zero)
     }
 
+    // MARK: - Shared Singleton
+
+    @Test func sharedInstanceRetainsData() {
+        LatencyHistogram.shared.reset()
+        for i in 1...10 {
+            LatencyHistogram.shared.recordMicroseconds(UInt64(i * 100))
+        }
+        let summary = LatencyHistogram.shared.summary()
+        #expect(summary.count == 10)
+        LatencyHistogram.shared.reset()
+    }
+
+    @Test func sharedInstanceIsSameReference() {
+        let a = LatencyHistogram.shared
+        let b = LatencyHistogram.shared
+        #expect(a === b)
+    }
+
     // MARK: - Window Duration
 
     @Test func windowDurationReflectsTimeSpan() {

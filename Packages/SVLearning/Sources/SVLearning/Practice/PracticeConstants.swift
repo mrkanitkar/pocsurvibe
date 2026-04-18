@@ -10,10 +10,13 @@ public enum PracticeConstants {
 
     /// Minimum amplitude threshold below which a pitch result is ignored.
     ///
-    /// Set to 0.005 to capture acoustic piano and other instruments played
-    /// 0.5–2m from the device microphone. The pre-filter in PracticeAudioProcessor
-    /// uses the same threshold so only non-trivially-loud buffers are processed.
-    public static let silenceThreshold: Double = 0.005
+    /// Matches the producer-side gate in `MicPitchDetector.processWorkBuffer`
+    /// (`amplitude > 0.002`). On iPad built-in microphones under
+    /// `.measurement` mode at the default input gain, voice and piano RMS
+    /// typically registers 0.003–0.01. A higher consumer threshold silently
+    /// discarded valid pitch detections the DSP had already confirmed with
+    /// sufficient confidence. Closes `micissues.md` I4.
+    public static let silenceThreshold: Double = 0.002
 
     /// Minimum confidence threshold for a pitch detection result to be scored.
     ///
@@ -66,6 +69,19 @@ public enum PracticeConstants {
 
     /// Weight of duration accuracy in the composite score (20%).
     public static let durationWeight: Double = 0.20
+
+    // MARK: - Expression Scoring Weights (when expression markers present)
+
+    /// Pitch weight when expression scoring is active.
+    public static let pitchWeightWithExpression: Double = 0.40
+    /// Timing weight when expression scoring is active.
+    public static let timingWeightWithExpression: Double = 0.25
+    /// Duration weight when expression scoring is active.
+    public static let durationWeightWithExpression: Double = 0.15
+    /// Dynamics weight when expression scoring is active.
+    public static let dynamicsWeightWithExpression: Double = 0.10
+    /// Expression technique weight.
+    public static let expressionWeight: Double = 0.10
 
     // MARK: - XP Calculation
 
