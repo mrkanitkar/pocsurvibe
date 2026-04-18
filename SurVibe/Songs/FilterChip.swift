@@ -1,3 +1,4 @@
+import SVCore
 import SwiftUI
 
 /// A reusable capsule-shaped filter chip for the song library filter bar.
@@ -13,6 +14,8 @@ import SwiftUI
 /// ```
 struct FilterChip: View {
     // MARK: - Properties
+
+    @Environment(AppThemeManager.self) private var themeManager
 
     /// The text label displayed on the chip.
     let label: String
@@ -46,7 +49,7 @@ struct FilterChip: View {
             .foregroundStyle(isActive ? .white : .primary)
             .background(
                 Capsule()
-                    .fill(isActive ? Color.accentColor : Color(.secondarySystemBackground))
+                    .fill(isActive ? themeManager.resolved.accentColor : themeManager.resolved.nestedSurfaceColor)
             )
         }
         .buttonStyle(.plain)

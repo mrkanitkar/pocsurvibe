@@ -1,3 +1,4 @@
+import SVCore
 import SwiftUI
 
 /// A compact horizontal preview of sargam notes for a song card.
@@ -11,6 +12,8 @@ import SwiftUI
 /// ```
 struct MiniNotationPreview: View {
     // MARK: - Properties
+
+    @Environment(AppThemeManager.self) private var themeManager
 
     /// The song whose notation to preview.
     let song: Song
@@ -74,18 +77,21 @@ struct MiniNotationPreview: View {
 
     /// Color for a note based on its position in the sargam scale.
     ///
+    /// Uses the Rang color system (`Color.rang*` from SVCore) for
+    /// consistent sargam note differentiation across the app.
+    ///
     /// - Parameter note: The sargam note.
     /// - Returns: A color for visual differentiation.
     private func noteColor(_ note: SargamNote) -> Color {
         switch note.note {
-        case "Sa": .primary
-        case "Re": Color(red: 0.247, green: 0.318, blue: 0.710)  // Neel
-        case "Ga": Color(red: 0.220, green: 0.557, blue: 0.235)  // Hara
-        case "Ma": Color(red: 0.757, green: 0.475, blue: 0.0)    // Peela Dark
-        case "Pa": .primary
-        case "Dha": Color(red: 0.827, green: 0.184, blue: 0.184) // Lal
-        case "Ni": Color(red: 0.722, green: 0.467, blue: 0.0)    // Sona Dark
-        default: .secondary
+        case "Sa": themeManager.resolved.notationLineColor
+        case "Re": .rangNeel
+        case "Ga": .rangHara
+        case "Ma": .rangPeelaDark
+        case "Pa": themeManager.resolved.notationLineColor
+        case "Dha": .rangLal
+        case "Ni": .rangSonaDark
+        default: themeManager.resolved.notationSecondaryColor
         }
     }
 

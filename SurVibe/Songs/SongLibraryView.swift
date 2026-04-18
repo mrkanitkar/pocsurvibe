@@ -12,6 +12,7 @@ import SwiftUI
 struct SongLibraryView: View {
     // MARK: - Properties
 
+    @Environment(AppThemeManager.self) private var themeManager
     @Environment(SongLibraryViewModel.self) private var viewModel
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -162,7 +163,7 @@ struct SongLibraryView: View {
             LazyVGrid(columns: columns, spacing: 16) {
                 ForEach(0..<6, id: \.self) { _ in
                     RoundedRectangle(cornerRadius: 12)
-                        .fill(Color(.secondarySystemBackground))
+                        .fill(themeManager.resolved.cardBackgroundColor)
                         .frame(height: 200)
                         .shimmer()
                 }
@@ -199,7 +200,7 @@ struct SongLibraryView: View {
             .padding(.vertical, 4)
             .background(
                 Capsule()
-                    .fill(Color(.tertiarySystemBackground))
+                    .fill(themeManager.resolved.nestedSurfaceColor)
             )
             .accessibilityLabel(Text("\(viewModel.filteredSongs.count) songs"))
     }

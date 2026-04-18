@@ -40,6 +40,10 @@ struct DoorCard: View {
     /// Action to perform when the enabled card is tapped.
     let action: () -> Void
 
+    /// Theme manager providing resolved semantic colors for the current theme.
+    @Environment(AppThemeManager.self)
+    private var themeManager
+
     /// User preference for reduced motion animations.
     @Environment(\.accessibilityReduceMotion)
     private var reduceMotion
@@ -55,16 +59,16 @@ struct DoorCard: View {
             VStack(spacing: 8) {
                 Image(systemName: icon)
                     .font(.system(size: 32))
-                    .foregroundStyle(.white)
+                    .foregroundStyle(themeManager.resolved.badgeTextColor)
                     .accessibilityHidden(true)
 
                 Text(title)
                     .font(.headline)
-                    .foregroundStyle(.white)
+                    .foregroundStyle(themeManager.resolved.badgeTextColor)
 
                 Text(subtitle)
                     .font(.caption)
-                    .foregroundStyle(.white.opacity(0.85))
+                    .foregroundStyle(themeManager.resolved.badgeTextColor.opacity(0.85))
                     .multilineTextAlignment(.center)
                     .lineLimit(2)
             }
@@ -111,7 +115,7 @@ struct DoorCard: View {
         Text("Coming Soon")
             .font(.caption2)
             .fontWeight(.semibold)
-            .foregroundStyle(.white)
+            .foregroundStyle(themeManager.resolved.badgeTextColor)
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
             .background(.ultraThinMaterial)
@@ -128,7 +132,7 @@ struct DoorCard: View {
         icon: "music.note",
         title: "Songs",
         subtitle: "Explore melodies from Indian cinema",
-        gradientColors: [.rangNeel, Color(red: 0.18, green: 0.22, blue: 0.55)],
+        gradientColors: [.rangNeel, Color(red: 0.18, green: 0.22, blue: 0.55)], // brand-darker companion to rangNeel
         isEnabled: true
     ) {
         // preview action
@@ -142,7 +146,7 @@ struct DoorCard: View {
         icon: "heart.fill",
         title: "Moods",
         subtitle: "Play by emotion",
-        gradientColors: [.rangLal, Color(red: 0.65, green: 0.12, blue: 0.12)],
+        gradientColors: [.rangLal, Color(red: 0.65, green: 0.12, blue: 0.12)], // brand-darker companion to rangLal
         isEnabled: false
     ) {
         // preview action

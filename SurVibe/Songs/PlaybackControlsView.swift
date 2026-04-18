@@ -16,6 +16,9 @@ struct PlaybackControlsView: View {
     /// The playback engine driving audio output and position tracking.
     let engine: SongPlaybackEngine
 
+    @Environment(AppThemeManager.self)
+    private var themeManager
+
     /// Whether the user is currently dragging the progress slider.
     @State
     private var isUserSeeking = false
@@ -118,7 +121,7 @@ struct PlaybackControlsView: View {
         case .error(let message):
             Text(message)
                 .font(.caption)
-                .foregroundStyle(.red)
+                .foregroundStyle(themeManager.resolved.errorColor)
                 .multilineTextAlignment(.center)
                 .accessibilityLabel("Playback error: \(message)")
 

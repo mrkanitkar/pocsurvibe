@@ -18,6 +18,7 @@ struct PostOnboardingWelcomeView: View {
 
     // MARK: - Properties
 
+    @Environment(AppThemeManager.self) private var themeManager
     @Environment(OnboardingManager.self) private var onboardingManager
     @Environment(AppRouter.self) private var router
     @Environment(\.dismiss) private var dismiss
@@ -154,7 +155,7 @@ struct PostOnboardingWelcomeView: View {
         .padding(14)
         .background(
             RoundedRectangle(cornerRadius: 12)
-                .fill(Color(.secondarySystemBackground))
+                .fill(themeManager.resolved.cardBackgroundColor)
         )
         .accessibilityElement(children: .combine)
         .accessibilityLabel(Text("Featured song: \(song.title) by \(song.artist)"))
@@ -170,7 +171,7 @@ struct PostOnboardingWelcomeView: View {
                 .font(.title2)
                 .foregroundStyle(.white)
                 .frame(width: 48, height: 48)
-                .background(Color.green)
+                .background(themeManager.resolved.successColor)
                 .clipShape(RoundedRectangle(cornerRadius: 10))
                 .accessibilityHidden(true)
 
@@ -188,13 +189,13 @@ struct PostOnboardingWelcomeView: View {
 
             Image(systemName: "chevron.right.circle.fill")
                 .font(.title2)
-                .foregroundStyle(.green)
+                .foregroundStyle(themeManager.resolved.successColor)
                 .accessibilityHidden(true)
         }
         .padding(14)
         .background(
             RoundedRectangle(cornerRadius: 12)
-                .fill(Color(.secondarySystemBackground))
+                .fill(themeManager.resolved.cardBackgroundColor)
         )
         .accessibilityElement(children: .combine)
         .accessibilityLabel(Text("Featured lesson: \(lesson.title)"))
@@ -313,6 +314,7 @@ struct PostOnboardingWelcomeView: View {
 
 #Preview {
     PostOnboardingWelcomeView()
+        .environment(AppThemeManager())
         .environment(OnboardingManager())
         .environment(AppRouter())
 }

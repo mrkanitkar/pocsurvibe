@@ -18,6 +18,7 @@ struct SkillLevelView: View {
     // MARK: - Properties
 
     @Environment(OnboardingManager.self) private var onboardingManager
+    @Environment(AppThemeManager.self) private var themeManager
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     // MARK: - Body
@@ -63,10 +64,12 @@ struct SkillLevelView: View {
     /// - Returns: A styled card view with icon, label, and description.
     private func skillCard(for level: SkillLevel) -> some View {
         let isSelected = onboardingManager.skillLevel == level
-        let fillColor: Color = isSelected ? Color.accentColor.opacity(0.08) : Color(.secondarySystemBackground)
-        let strokeColor: Color = isSelected ? Color.accentColor : .clear
-        let iconBackground: Color = isSelected ? Color.accentColor : Color.accentColor.opacity(0.12)
-        let iconForeground: Color = isSelected ? .white : Color.accentColor
+        let accent = themeManager.resolved.accentColor
+        let rangColor = RangLevel(rawValue: level.difficulty)?.bodyTextColor ?? accent
+        let fillColor: Color = isSelected ? accent.opacity(0.08) : themeManager.resolved.cardBackgroundColor
+        let strokeColor: Color = isSelected ? accent : .clear
+        let iconBackground: Color = isSelected ? accent : accent.opacity(0.12)
+        let iconForeground: Color = isSelected ? .white : rangColor
 
         return Button {
             if reduceMotion {
@@ -131,7 +134,7 @@ struct SkillLevelView: View {
             if isSelected {
                 Image(systemName: "checkmark.circle.fill")
                     .font(.title3)
-                    .foregroundStyle(Color.accentColor)
+                    .foregroundStyle(themeManager.resolved.accentColor)
                     .accessibilityHidden(true)
             }
         }
@@ -143,4 +146,5 @@ struct SkillLevelView: View {
 #Preview {
     SkillLevelView()
         .environment(OnboardingManager())
+        .environment(AppThemeManager())
 }

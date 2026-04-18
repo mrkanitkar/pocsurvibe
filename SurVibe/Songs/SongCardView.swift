@@ -1,3 +1,4 @@
+import SVCore
 import SwiftUI
 
 /// A card view displaying a single song in the library grid.
@@ -15,6 +16,7 @@ struct SongCardView: View {
     let song: Song
 
     @Environment(SongLibraryViewModel.self) private var viewModel
+    @Environment(AppThemeManager.self) private var themeManager
 
     // MARK: - Body
 
@@ -50,7 +52,7 @@ struct SongCardView: View {
         }
         .background(
             RoundedRectangle(cornerRadius: 12)
-                .fill(Color(.secondarySystemBackground))
+                .fill(themeManager.resolved.cardBackgroundColor)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 12)
@@ -115,7 +117,7 @@ struct SongCardView: View {
                 } label: {
                     Image(systemName: song.isFavorite ? "heart.fill" : "heart")
                         .font(.caption)
-                        .foregroundStyle(song.isFavorite ? .red : .white)
+                        .foregroundStyle(song.isFavorite ? themeManager.resolved.errorColor : .white)
                         .padding(6)
                         .background(Circle().fill(.black.opacity(0.3)))
                 }
@@ -130,21 +132,12 @@ struct SongCardView: View {
     // MARK: - Private Methods
 
     /// Gradient colors for the artwork area based on the song's difficulty.
+    ///
+    /// Routes through `RangLevel.color` so artwork tints stay consistent with
+    /// the Rang color system defined in SVCore and adapt to dark-mode variants.
     private var artworkGradientColors: [Color] {
-        switch song.difficulty {
-        case 1:
-            [Color(red: 0.247, green: 0.318, blue: 0.710), Color(red: 0.247, green: 0.318, blue: 0.710).opacity(0.7)]
-        case 2:
-            [Color(red: 0.220, green: 0.557, blue: 0.235), Color(red: 0.220, green: 0.557, blue: 0.235).opacity(0.7)]
-        case 3:
-            [Color(red: 0.757, green: 0.475, blue: 0.0), Color(red: 0.757, green: 0.475, blue: 0.0).opacity(0.7)]
-        case 4:
-            [Color(red: 0.827, green: 0.184, blue: 0.184), Color(red: 0.827, green: 0.184, blue: 0.184).opacity(0.7)]
-        case 5:
-            [Color(red: 0.722, green: 0.467, blue: 0.0), Color(red: 0.722, green: 0.467, blue: 0.0).opacity(0.7)]
-        default:
-            [Color.gray, Color.gray.opacity(0.7)]
-        }
+        let base = RangLevel(rawValue: song.difficulty)?.color ?? .gray
+        return [base, base.opacity(0.7)]
     }
 
     /// Combined accessibility label for the song card.
