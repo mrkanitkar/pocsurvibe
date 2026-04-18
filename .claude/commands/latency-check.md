@@ -5,7 +5,7 @@ Audit all audio latency paths and verify they meet SurVibe's performance budget.
 ## When to use
 
 - Before any release or TestFlight build
-- After changes to `AudioEngineManager`, `AudioSessionManager`, `SoundFontManager`, `MetronomePlayer`, `SongPlaybackEngine`, `AudioKitPitchDetector`, or `MIDIInputManager`
+- After changes to `AudioEngineManager`, `AudioSessionManager`, `SoundFontManager`, `MetronomePlayer`, `SongPlaybackEngine`, `MicPitchDetector`, or `MIDIInputManager`
 - When users report audio lag or timing issues
 
 ## Latency Budget
@@ -38,8 +38,8 @@ Read `AudioEngineManager.swift` mic tap installation:
 - [ ] DSP processing on `.userInteractive` queue: typically <5ms for autocorrelation
 - [ ] **Total mic→pitch: ~28ms** (within 30ms target)
 
-Read `AudioKitPitchDetector.swift`:
-- [ ] Uses `SPSCRingBuffer` (lock-free) NOT `AudioRingBuffer` (Mutex)
+Read `MicPitchDetector.swift`:
+- [ ] Uses `SPSCRingBuffer` (lock-free) for sample transfer from the mic tap to the DSP task
 - [ ] DSP dispatch queue QoS is `.userInteractive`
 - [ ] Continuation yield happens on processing queue, not render thread
 
@@ -107,7 +107,7 @@ Check for:
 - I/O Buffer: X frames (Yms)
 - Pitch Buffer: X samples (Yms)
 - DSP Queue QoS: .userInteractive
-- Ring Buffer Type: SPSCRingBuffer / AudioRingBuffer
+- Ring Buffer Type: SPSCRingBuffer
 
 ### Instrumentation Status
 - [ ] OSSignposter present for pitch detection

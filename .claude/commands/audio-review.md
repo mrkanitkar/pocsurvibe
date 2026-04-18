@@ -32,7 +32,7 @@ These violations can cause audio glitches, deadlocks, or crashes on the real-tim
   - Acquire `Mutex`, `NSLock`, `os_unfair_lock`, or `DispatchSemaphore`
   - Call `@MainActor`-isolated methods
   - Use `DispatchQueue.sync`
-- [ ] **SPSCRingBuffer for audio data transfer** — data from tap callback to processing queue must use `SPSCRingBuffer` (lock-free, pre-allocated), NOT `AudioRingBuffer` (Mutex + Array)
+- [ ] **SPSCRingBuffer for audio data transfer** — data from tap callback to processing queue must use `SPSCRingBuffer` (lock-free, pre-allocated). Never use Mutex- or Array-backed buffers in the tap closure.
 - [ ] **Tap callback is `@Sendable`** — mic tap handler must be annotated `@Sendable`
 - [ ] **No `try?` on engine.start()** — must use `do/catch` with `logger.error`. Silent failure = user hears nothing
 

@@ -13,7 +13,7 @@ paths:
 
 ## Pitch Detection
 - Two implementations behind `PitchDetectorProtocol` (defined in `SVAudio/Pitch/PitchDetector.swift`):
-  1. **AudioKitPitchDetector** — autocorrelation via `vDSP_dotpr` + `vDSP_vsmul` (primary).
+  1. **MicPitchDetector** — autocorrelation via `vDSP_dotpr` + `vDSP_vsmul` over a lock-free `SPSCRingBuffer` (primary; owns the engine + mic tap).
   2. **YINPitchDetector** — YIN algorithm using `Accelerate/vDSP` (fallback).
 - Chord detection uses `LatencyPreset` for user-configurable FFT window sizes:
   - **Ultra Fast**: 1024 samples (~23ms) — fastest response, lower frequency resolution

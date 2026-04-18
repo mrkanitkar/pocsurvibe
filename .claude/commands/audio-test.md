@@ -50,9 +50,8 @@ Search: `grep -r "engine.*start\|engine.*stop\|EngineMode\|engineManager" Packag
 - [ ] SPSCRingBuffer overflow handling (does not crash)
 - [ ] SPSCRingBuffer concurrent producer/consumer
 - [ ] Buffer power-of-two capacity enforcement
-- [ ] AudioRingBuffer (if still used) — verify no allocation under lock
 
-Search: `grep -r "RingBuffer\|SPSCRing\|AudioRingBuffer" Packages/SVAudio/Tests/`
+Search: `grep -r "RingBuffer\|SPSCRing" Packages/SVAudio/Tests/`
 
 #### Route Change Recovery
 - [ ] Simulate route change notification → engine reconnects
