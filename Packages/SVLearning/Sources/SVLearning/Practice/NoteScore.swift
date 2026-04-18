@@ -1,4 +1,5 @@
 import Foundation
+import SVAudio
 
 /// Score result for a single note attempt during practice.
 ///
@@ -37,6 +38,9 @@ public struct NoteScore: Sendable, Equatable, Identifiable {
     /// `nil` when no raga context was active during scoring.
     public let isOutOfRaga: Bool?
 
+    /// Expression result detected during this note (logged for data collection, scored in Phase 5).
+    public var expressionResult: ExpressionResult?
+
     /// Timestamp of this score.
     public let timestamp: Date
 
@@ -50,6 +54,7 @@ public struct NoteScore: Sendable, Equatable, Identifiable {
         expectedNote: String,
         detectedNote: String? = nil,
         isOutOfRaga: Bool? = nil,
+        expressionResult: ExpressionResult? = nil,
         timestamp: Date = Date()
     ) {
         self.id = id
@@ -61,6 +66,7 @@ public struct NoteScore: Sendable, Equatable, Identifiable {
         self.expectedNote = expectedNote
         self.detectedNote = detectedNote
         self.isOutOfRaga = isOutOfRaga
+        self.expressionResult = expressionResult
         self.timestamp = timestamp
     }
 }

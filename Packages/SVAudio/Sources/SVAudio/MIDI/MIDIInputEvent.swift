@@ -13,6 +13,15 @@ public struct MIDIInputEvent: Sendable, Equatable {
     /// A velocity of 0 on a note-on message is equivalent to note-off.
     public let velocity: UInt8
 
+    /// Full 16-bit velocity from MIDI 2.0 Channel Voice messages.
+    ///
+    /// MIDI 2.0 note-on messages carry 16-bit velocity (0-65535) in word2[31:16].
+    /// `velocity` is derived from the top 7 bits (`velocity16Bit >> 9`) for
+    /// backward compatibility. Use this field for high-resolution dynamics scoring.
+    ///
+    /// Zero when the event originated from a MIDI 1.0 source or a test double.
+    public let velocity16Bit: UInt16
+
     /// Whether this is a note-on event (true) or note-off event (false).
     public var isNoteOn: Bool { velocity > 0 }
 
@@ -54,10 +63,12 @@ public struct MIDIInputEvent: Sendable, Equatable {
         channel: UInt8 = 0,
         midiTimestamp: MIDITimeStamp? = nil,
         timestamp: Date = Date(),
-        probeToken: ProbeToken? = nil
+        probeToken: ProbeToken? = nil,
+        velocity16Bit: UInt16 = 0
     ) {
         self.noteNumber = noteNumber
         self.velocity = velocity
+        self.velocity16Bit = velocity16Bit
         self.channel = channel
         self.midiTimestamp = midiTimestamp
         self.timestamp = timestamp

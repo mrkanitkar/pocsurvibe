@@ -24,7 +24,7 @@ public final class YINPitchDetector: PitchDetectorProtocol {
     /// YIN threshold (lower = stricter, typical range 0.1 to 0.2).
     public var threshold: Double = 0.15
 
-    /// Current detector status for UI feedback (consistent with AudioKitPitchDetector API).
+    /// Current detector status for UI feedback (consistent with MicPitchDetector API).
     public private(set) var status: String = "Idle"
 
     /// Dedicated queue for YIN DSP — keeps audio render thread clear (AUD-004).

@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 import Testing
 
 @testable import SVAudio
@@ -178,5 +179,76 @@ struct MIDIInputEventConcurrencyTests {
             timestamp: timestamp
         )
         #expect(event1 != event2)
+    }
+
+    // MARK: - MIDICallbackSet Tests
+
+    @Test("MIDICallbackSet creates with default empty boxes")
+    func callbackSetDefaults() {
+        let noteBox = NoteCallbackBox()
+        let ccBox = CCCallbackBox()
+        let set = MIDICallbackSet(note: noteBox, cc: ccBox)
+
+        // Default boxes should have nil callbacks
+        #expect(set.pitchBend.get() == nil)
+        #expect(set.pressure.get() == nil)
+        #expect(set.programChange.get() == nil)
+    }
+
+    @Test("PitchBendCallbackBox fires callback")
+    func pitchBendBoxFires() {
+        let box = PitchBendCallbackBox()
+        let received = Mutex<MIDIPitchBendEvent?>(nil)
+        box.set { event in received.withLock { $0 = event } }
+
+        let event = MIDIPitchBendEvent(value: 500, channel: 1)
+        box.fire(event)
+        #expect(received.withLock { $0?.value } == 500)
+    }
+
+    @Test("PressureCallbackBox fires callback")
+    func pressureBoxFires() {
+        let box = PressureCallbackBox()
+        let received = Mutex<MIDIPressureEvent?>(nil)
+        box.set { event in received.withLock { $0 = event } }
+
+        let event = MIDIPressureEvent(noteNumber: 60, pressure: 1000)
+        box.fire(event)
+        #expect(received.withLock { $0?.noteNumber } == 60)
+    }
+
+    @Test("ProgramChangeCallbackBox fires callback")
+    func programChangeBoxFires() {
+        let box = ProgramChangeCallbackBox()
+        let received = Mutex<MIDIProgramChangeEvent?>(nil)
+        box.set { event in received.withLock { $0 = event } }
+
+        let event = MIDIProgramChangeEvent(program: 42)
+        box.fire(event)
+        #expect(received.withLock { $0?.program } == 42)
+    }
+
+    @Test("Callback box set to nil does not crash on fire")
+    func callbackBoxNilSafe() {
+        let box = PitchBendCallbackBox()
+        // No callback set — fire should be a no-op
+        let event = MIDIPitchBendEvent(value: 0)
+        box.fire(event)
+        // No crash = pass
+    }
+
+    @Test("MIDIInputEvent velocity16Bit backward compatibility")
+    func velocity16BitBackwardCompat() {
+        // Existing call sites that do not pass velocity16Bit should compile and default to 0
+        let event = MIDIInputEvent(noteNumber: 60, velocity: 100)
+        #expect(event.velocity16Bit == 0)
+    }
+
+    @Test("MIDIInputEvent velocity16Bit stores value")
+    func velocity16BitStored() {
+        let event = MIDIInputEvent(
+            noteNumber: 60, velocity: 100, velocity16Bit: 51200
+        )
+        #expect(event.velocity16Bit == 51200)
     }
 }

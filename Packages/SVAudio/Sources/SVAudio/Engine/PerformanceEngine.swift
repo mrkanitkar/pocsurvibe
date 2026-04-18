@@ -41,6 +41,19 @@ import os
 /// ```
 public final class PerformanceEngine: Sendable {
 
+    // MARK: - Delivery Mode
+
+    /// Controls how events are delivered to the subscriber.
+    public enum DeliveryMode: Sendable {
+        /// Deliver synchronously on the caller's thread (minimum latency).
+        case synchronous
+        /// Deliver via `Task { @MainActor in }` for safe UI updates.
+        case mainActor
+    }
+
+    /// The delivery mode for subscriber invocation.
+    public let deliveryMode: DeliveryMode
+
     // MARK: - Subscriber
 
     /// Lock-protected subscriber closure for thread-safe delivery.
@@ -50,12 +63,48 @@ public final class PerformanceEngine: Sendable {
 
     /// The subscriber closure that receives unified performance events.
     ///
-    /// Set this before wiring input sources. The closure is called synchronously
-    /// on the thread that delivers the event (CoreMIDI thread for MIDI, DSP task
-    /// for mic). Implementations must be non-blocking.
+    /// Set this before wiring input sources. When `deliveryMode` is `.synchronous`,
+    /// the closure is called on the thread that delivers the event (CoreMIDI thread
+    /// for MIDI, DSP task for mic). When `.mainActor`, delivery is wrapped in
+    /// `Task { @MainActor in }`.
     public var subscriber: (@Sendable (PerformanceEvent) -> Void)? {
         get { subscriberLock.withLock { $0 } }
         set { subscriberLock.withLock { $0 = newValue } }
+    }
+
+    // MARK: - Expression Subscriber
+
+    /// Lock-protected expression subscriber for thread-safe delivery.
+    private let expressionSubscriberLock = OSAllocatedUnfairLock<(@Sendable (ExpressionResult) -> Void)?>(
+        initialState: nil
+    )
+
+    /// Subscriber closure that receives expression analysis results.
+    ///
+    /// Expression events are delivered separately from note events because
+    /// pitch bend messages arrive at ~100+ Hz during bends and should not
+    /// slow down note processing.
+    public var expressionSubscriber: (@Sendable (ExpressionResult) -> Void)? {
+        get { expressionSubscriberLock.withLock { $0 } }
+        set { expressionSubscriberLock.withLock { $0 = newValue } }
+    }
+
+    /// Deliver an expression analysis result to the expression subscriber.
+    ///
+    /// Uses the same delivery mode as note events (synchronous or mainActor).
+    ///
+    /// - Parameter result: Expression classification from MIDIExpressionAnalyzer.
+    public func deliverExpression(_ result: ExpressionResult) {
+        switch deliveryMode {
+        case .synchronous:
+            expressionSubscriberLock.withLock { $0?(result) }
+        case .mainActor:
+            let handler = expressionSubscriberLock.withLock { $0 }
+            guard let handler else { return }
+            Task(priority: .userInteractive) { @MainActor in
+                handler(result)
+            }
+        }
     }
 
     // MARK: - Logger
@@ -65,19 +114,34 @@ public final class PerformanceEngine: Sendable {
     // MARK: - Initialization
 
     /// Create a new performance engine.
-    public init() {}
+    ///
+    /// - Parameter deliveryMode: How events reach the subscriber.
+    ///   `.synchronous` (default) for minimum latency; `.mainActor` for
+    ///   safe UI updates without manual dispatch.
+    public init(deliveryMode: DeliveryMode = .synchronous) {
+        self.deliveryMode = deliveryMode
+    }
 
     // MARK: - Event Delivery
 
     /// Deliver a unified performance event to the subscriber.
     ///
-    /// Called from MIDI callback (CoreMIDI thread) or DSP task. Synchronous
-    /// delivery with no actor hop for minimum latency. If no subscriber is
-    /// registered, the event is silently dropped.
+    /// In `.synchronous` mode, calls the subscriber directly on the caller's
+    /// thread (CoreMIDI or DSP) for minimum latency. In `.mainActor` mode,
+    /// wraps the call in `Task { @MainActor in }` for safe UI updates.
     ///
     /// - Parameter event: The performance event to deliver.
     public func deliver(_ event: PerformanceEvent) {
-        subscriberLock.withLock { $0?(event) }
+        switch deliveryMode {
+        case .synchronous:
+            subscriberLock.withLock { $0?(event) }
+        case .mainActor:
+            let handler = subscriberLock.withLock { $0 }
+            guard let handler else { return }
+            Task(priority: .userInteractive) { @MainActor in
+                handler(event)
+            }
+        }
     }
 
     /// Deliver a MIDI input event by converting to ``PerformanceEvent``.
@@ -98,9 +162,37 @@ public final class PerformanceEngine: Sendable {
         deliver(.from(pitchResult))
     }
 
+    /// Deliver a pitch bend event by wrapping in ``PerformanceEvent``.
+    ///
+    /// Convenience method for routing pitch bend through the unified pipeline.
+    ///
+    /// - Parameter event: The MIDI pitch bend event.
+    public func deliverPitchBend(_ event: MIDIPitchBendEvent) {
+        deliver(.pitchBend(event: event))
+    }
+
+    /// Deliver a pressure event by wrapping in ``PerformanceEvent``.
+    ///
+    /// Convenience method for routing aftertouch through the unified pipeline.
+    ///
+    /// - Parameter event: The MIDI pressure event.
+    public func deliverPressure(_ event: MIDIPressureEvent) {
+        deliver(.pressure(event: event))
+    }
+
+    /// Deliver a program change event by wrapping in ``PerformanceEvent``.
+    ///
+    /// Convenience method for routing instrument changes through the unified pipeline.
+    ///
+    /// - Parameter event: The MIDI program change event.
+    public func deliverProgramChange(_ event: MIDIProgramChangeEvent) {
+        deliver(.programChange(event: event))
+    }
+
     /// Clear the subscriber. Call when stopping the session.
     public func stop() {
         subscriber = nil
+        expressionSubscriber = nil
         Self.logger.debug("PerformanceEngine stopped")
     }
 }

@@ -283,9 +283,15 @@ public enum PitchExpressionAnalyzer {
         var bestFreq: Double = 0
         var bestMagnitude: Double = 0
 
-        // Search frequency range 0.5 Hz to nyquist
+        // Search frequency range 0.5 Hz to nyquist.
+        //
+        // When hop interval is long relative to window length (e.g. user paused
+        // between pitch-bend events), `minBin` can exceed `maxBin`, which would
+        // form an invalid `Range` and trap. Bail out with a zero result instead
+        // — the caller treats low magnitude as "no clear oscillation".
         let minBin = max(1, Int(ceil(0.5 / freqResolution)))
         let maxBin = count / 2
+        guard minBin < maxBin else { return (0, 0) }
 
         for bin in minBin..<maxBin {
             let frequency = Double(bin) * freqResolution

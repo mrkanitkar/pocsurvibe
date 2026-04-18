@@ -47,16 +47,16 @@ public struct PerformanceSnapshot: Sendable, Codable {
 
     /// Capture a live snapshot from the shared diagnostic singletons.
     ///
-    /// Reads from `LatencyProbe.shared` and `LatencyHistogram` (caller must
-    /// provide the histogram instance since it's not a singleton).
+    /// Reads from `LatencyProbe.shared` and `LatencyHistogram.shared` by default.
+    /// Pass a custom histogram for per-component snapshots.
     ///
     /// - Parameters:
-    ///   - histogram: The active latency histogram.
+    ///   - histogram: The latency histogram to read. Defaults to `.shared`.
     ///   - frameDropCounter: The active frame drop counter.
     ///   - bufferFillLevel: Current SPSC ring buffer fill level.
     /// - Returns: A populated snapshot.
     public static func capture(
-        histogram: LatencyHistogram,
+        histogram: LatencyHistogram = .shared,
         frameDropCounter: FrameDropCounter,
         bufferFillLevel: Double = 0
     ) -> PerformanceSnapshot {

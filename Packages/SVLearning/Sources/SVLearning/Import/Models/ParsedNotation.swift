@@ -19,17 +19,23 @@ public struct ParsedNotation: Sendable {
         public let modifier: String?
         /// Zero-based position index within the sequence.
         public let index: Int
+        /// Optional velocity (0–127). Nil means use default (100).
+        ///
+        /// Populated from notation markup (e.g. `p`, `f`, `mf` dynamic markings)
+        /// or MIDI import. When nil, consumers should fall back to velocity 100.
+        public var velocity: UInt8?
 
         /// Creates a parsed note.
         public init(
             name: String, octave: Int? = nil, durationBeats: Double? = nil,
-            modifier: String? = nil, index: Int
+            modifier: String? = nil, index: Int, velocity: UInt8? = nil
         ) {
             self.name = name
             self.octave = octave
             self.durationBeats = durationBeats
             self.modifier = modifier
             self.index = index
+            self.velocity = velocity
         }
     }
 
@@ -48,18 +54,27 @@ public struct ParsedNotation: Sendable {
     /// Time signature string (e.g. "4/4", "3/4"). Defaults to "4/4".
     public var timeSignature: String
 
+    /// Name of the raga, if detected from notation metadata.
+    ///
+    /// Populated by the Sargam parser when the notation header contains
+    /// a raga declaration (e.g., `raga: Yaman`). Used by `RagaScoringContext`
+    /// for context-aware scoring.
+    public var ragaName: String?
+
     /// Creates a parsed notation result.
     public init(
         format: NotationInput.Format,
         notes: [Note],
         tempo: Int = 120,
         keySignature: String = "",
-        timeSignature: String = "4/4"
+        timeSignature: String = "4/4",
+        ragaName: String? = nil
     ) {
         self.format = format
         self.notes = notes
         self.tempo = tempo
         self.keySignature = keySignature
         self.timeSignature = timeSignature
+        self.ragaName = ragaName
     }
 }

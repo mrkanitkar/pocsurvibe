@@ -17,7 +17,7 @@ import Foundation
 /// silence from detection failure.
 ///
 /// **Implementations:**
-/// - `AudioKitPitchDetector`: Autocorrelation via `vDSP_dotpr` (primary, lower latency)
+/// - `MicPitchDetector`: Autocorrelation via `vDSP_dotpr` (primary, lower latency)
 /// - `YINPitchDetector`: YIN algorithm via `Accelerate/vDSP` (fallback, better accuracy)
 public protocol PitchDetectorProtocol: AnyObject {
     /// Start pitch detection and return a stream of results.

@@ -1,6 +1,20 @@
 import AVFoundation
+import AudioToolbox
 import SVCore
 import os.log
+
+/// Nonisolated global holding the sampler's MIDI schedule block.
+///
+/// Written only on the main actor during `AudioEngineManager`'s engine
+/// lifecycle (start / stop / route change). Read from the CoreMIDI
+/// high-priority thread in the MIDI parse callback to inject events
+/// directly into the sampler's render cycle.
+///
+/// `nonisolated(unsafe)` is justified because:
+/// 1. Writes are serialized by @MainActor isolation.
+/// 2. Reads see a single pointer-sized value — no tearing possible.
+/// 3. The block itself is thread-safe per Apple's AUAudioUnit contract.
+nonisolated(unsafe) var samplerMIDIScheduleBlock: AUScheduleMIDIEventBlock?
 
 /// Central audio engine manager using a single AVAudioEngine instance.
 /// Uses @MainActor isolation for thread-safe state access.
@@ -73,6 +87,17 @@ public final class AudioEngineManager: AudioEngineProviding {
     /// Reduced from 2048 to halve end-to-end detection latency. Covers pitches
     /// down to ~86 Hz, which includes the full practical piano range (C3–C8).
     public let bufferSize: AVAudioFrameCount = 1024
+
+    /// RT-safe MIDI schedule block for the sampler, exposed via the
+    /// nonisolated global `samplerMIDIScheduleBlock` so CoreMIDI callbacks
+    /// (running on their own high-priority thread) can invoke it without
+    /// crossing MainActor isolation.
+    ///
+    /// Captured after `engine.prepare()`; cleared on `stop()`.
+    public var samplerMIDIBlock: AUScheduleMIDIEventBlock? {
+        get { samplerMIDIScheduleBlock }
+        set { samplerMIDIScheduleBlock = newValue }
+    }
 
     private var isConfigured = false
 
@@ -292,6 +317,12 @@ public final class AudioEngineManager: AudioEngineProviding {
         engine.prepare()
         try engine.start()
         currentMode = .playAndRecord
+
+        // Capture the sampler's MIDI schedule block after prepare(). It is
+        // nil before the AU is initialized; now that engine.prepare()
+        // has run and start() succeeded, the AU is ready.
+        samplerMIDIBlock = sampler.auAudioUnit.scheduleMIDIEventBlock
+
         Self.logger.info("Engine started in playAndRecord mode, isRunning=\(self.engine.isRunning)")
     }
 
@@ -331,6 +362,11 @@ public final class AudioEngineManager: AudioEngineProviding {
         engine.prepare()
         try engine.start()
         currentMode = .playbackOnly
+
+        // Capture the sampler's MIDI schedule block for direct-wire echo
+        // from CoreMIDI (see start() for details).
+        samplerMIDIBlock = sampler.auAudioUnit.scheduleMIDIEventBlock
+
         Self.logger.info("Engine started in playbackOnly mode, isRunning=\(self.engine.isRunning)")
     }
 
@@ -347,6 +383,10 @@ public final class AudioEngineManager: AudioEngineProviding {
             metronomeNode.stop()
             engine.stop()
         }
+        // Clear the MIDI schedule block — the AU is no longer initialized
+        // in a valid render state until start()/startForPlayback() is
+        // called again.
+        samplerMIDIBlock = nil
         isConfigured = false
         currentMode = .stopped
         AudioSessionManager.shared.deactivate()
@@ -392,6 +432,23 @@ public final class AudioEngineManager: AudioEngineProviding {
         Self.logger.info(
             "installMicTap: format=\(inputFormat.sampleRate)Hz ch=\(inputFormat.channelCount) buf=\(tapBufferSize)"
         )
+        MIDIDiagBridge.recordLine(
+            "[AUDIO] installMicTap format=\(inputFormat.sampleRate)Hz ch=\(inputFormat.channelCount) buf=\(tapBufferSize)"
+        )
+        #if canImport(AVFAudio)
+        let session = AVAudioSession.sharedInstance()
+        let route = session.currentRoute
+        let inputs = route.inputs.map { "\($0.portType.rawValue):\($0.portName)" }.joined(separator: ",")
+        let outputs = route.outputs.map { "\($0.portType.rawValue):\($0.portName)" }.joined(separator: ",")
+        MIDIDiagBridge.recordLine(
+            """
+            [AUDIO] session category=\(session.category.rawValue) mode=\(session.mode.rawValue) \
+            inputGain=\(String(format: "%.2f", session.inputGain)) \
+            isInputAvailable=\(session.isInputAvailable) \
+            inputs=[\(inputs)] outputs=[\(outputs)]
+            """
+        )
+        #endif
 
         // Remove existing tap if any — warn about replacement
         if hasMicTap {

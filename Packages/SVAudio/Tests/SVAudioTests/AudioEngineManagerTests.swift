@@ -11,10 +11,11 @@ struct AudioEngineManagerTests {
         #expect(AudioEngineManager.shared.isRunning == false)
     }
 
-    @Test("Buffer size is 2048 frames")
+    @Test("Buffer size is 1024 frames")
     @MainActor
     func bufferSize() {
-        #expect(AudioEngineManager.shared.bufferSize == 2048)
+        // Buffer was reduced from 2048 to 1024 to halve detection latency (~23ms).
+        #expect(AudioEngineManager.shared.bufferSize == 1024)
     }
 
     @Test("All three playback nodes are attached")

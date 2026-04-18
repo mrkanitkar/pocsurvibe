@@ -119,6 +119,39 @@ public final class AnalyticsManager: AnalyticsProviding {
         }
     }
 
+    /// Track a latency performance snapshot from the audio pipeline.
+    ///
+    /// Accepts decomposed values instead of `PerformanceSnapshot` directly to
+    /// avoid a circular dependency (SVCore cannot import SVAudio). The caller
+    /// in the app target decomposes the snapshot before calling this method.
+    ///
+    /// Fires the `.latencySnapshot` event with six diagnostic properties.
+    ///
+    /// - Parameters:
+    ///   - p50: Median latency in microseconds.
+    ///   - p95: 95th percentile latency in microseconds.
+    ///   - p99: 99th percentile latency in microseconds.
+    ///   - droppedFrames: Number of dropped display frames.
+    ///   - bufferFillLevel: SPSC ring buffer fill level (0.0--1.0).
+    ///   - probeCount: Number of completed latency probe measurements.
+    public func trackLatencySnapshot(
+        p50: UInt64,
+        p95: UInt64,
+        p99: UInt64,
+        droppedFrames: Int,
+        bufferFillLevel: Double,
+        probeCount: Int
+    ) {
+        track(.latencySnapshot, properties: [
+            "p50_micros": p50,
+            "p95_micros": p95,
+            "p99_micros": p99,
+            "dropped_frames": droppedFrames,
+            "buffer_fill_level": bufferFillLevel,
+            "probe_count": probeCount,
+        ])
+    }
+
     /// Reset analytics identity and clear all cached state.
     ///
     /// Call on user logout to ensure the next user gets a fresh analytics session.

@@ -1,4 +1,5 @@
 import Foundation
+import SVAudio
 
 /// Calculates individual note scores during practice mode.
 ///
@@ -26,6 +27,10 @@ public enum NoteScoreCalculator {
     ///   - ragaContext: Optional raga scoring context for raga-aware scoring.
     ///   - playedVelocity: MIDI velocity (0–127) of the played note. `nil` for mic input.
     ///   - expectedVelocity: Expected velocity from notation. `nil` if not specified.
+    ///   - played16Bit: MIDI 2.0 16-bit velocity of the played note. `nil` if not available.
+    ///   - expected16Bit: Expected MIDI 2.0 16-bit velocity from notation. `nil` if not specified.
+    ///   - detectedExpression: Expression technique detected from input. `nil` if not analyzed.
+    ///   - expectedExpression: Expression technique marked in notation. `nil` if not annotated.
     /// - Returns: A `NoteScore` with computed accuracy and grade.
     public static func score(
         expectedNote: String,
@@ -36,7 +41,11 @@ public enum NoteScoreCalculator {
         ragaPitchDeviationCents: Double? = nil,
         ragaContext: RagaScoringContext? = nil,
         playedVelocity: UInt8? = nil,
-        expectedVelocity: UInt8? = nil
+        expectedVelocity: UInt8? = nil,
+        played16Bit: UInt16? = nil,
+        expected16Bit: UInt16? = nil,
+        detectedExpression: ExpressionType? = nil,
+        expectedExpression: ExpressionType? = nil
     ) -> NoteScore {
         // Use JI cents when raga context is available, otherwise 12ET cents
         let effectivePitchCents = ragaPitchDeviationCents ?? pitchDeviationCents
@@ -58,7 +67,7 @@ public enum NoteScoreCalculator {
         // When both played and expected velocity are available, add dynamics scoring.
         // Weights shift to: 45% pitch + 25% timing + 15% duration + 15% dynamics.
         // Otherwise, use standard weights: 50% pitch + 30% timing + 20% duration.
-        let composite: Double
+        var composite: Double
         if let played = playedVelocity, let expected = expectedVelocity, expected > 0 {
             let dynamicsAccuracy = dynamicsAccuracyScore(played: played, expected: expected)
             composite = pitchAccuracy * 0.45
@@ -69,6 +78,27 @@ public enum NoteScoreCalculator {
             composite = pitchAccuracy * PracticeConstants.pitchWeight
                 + timingAccuracy * PracticeConstants.timingWeight
                 + durationAccuracy * PracticeConstants.durationWeight
+        }
+
+        // When both detected and expected expression are available, add expression scoring.
+        // Weights shift to: 40% pitch + 25% timing + 15% duration + 10% dynamics + 10% expression.
+        if let detected = detectedExpression, let expected = expectedExpression {
+            let expressionAccuracy = expressionAccuracyScore(detected: detected, expected: expected)
+
+            if let played = playedVelocity, let expectedVel = expectedVelocity, expectedVel > 0 {
+                let dynamicsAccuracy = dynamicsAccuracyScore(played: played, expected: expectedVel)
+                composite = pitchAccuracy * PracticeConstants.pitchWeightWithExpression
+                    + timingAccuracy * PracticeConstants.timingWeightWithExpression
+                    + durationAccuracy * PracticeConstants.durationWeightWithExpression
+                    + dynamicsAccuracy * PracticeConstants.dynamicsWeightWithExpression
+                    + expressionAccuracy * PracticeConstants.expressionWeight
+            } else {
+                // No dynamics, redistribute: 45% pitch + 25% timing + 15% duration + 15% expression
+                composite = pitchAccuracy * 0.45
+                    + timingAccuracy * 0.25
+                    + durationAccuracy * 0.15
+                    + expressionAccuracy * 0.15
+            }
         }
 
         let grade = NoteGrade.from(accuracy: composite)
@@ -161,6 +191,32 @@ public enum NoteScoreCalculator {
         return max(0.0, 0.5 - (seconds - PracticeConstants.fairTimingSeconds) / 1.0)
     }
 
+    /// Convert timing deviation in beats to a 0.0–1.0 timing accuracy score.
+    ///
+    /// Beat-based scoring is tempo-independent: at any tempo, a deviation of
+    /// 0.1 beats is "perfect", 0.25 beats is "good", 0.5 beats is "fair".
+    /// This produces more musically meaningful scoring than seconds-based
+    /// thresholds at extreme tempos.
+    ///
+    /// - Parameter beats: Absolute timing deviation in beats.
+    /// - Returns: Timing accuracy score (0.0–1.0).
+    static func timingAccuracyScore(beats: Double) -> Double {
+        if beats <= 0.1 { return 1.0 }
+        if beats <= 0.25 {
+            return linearInterpolate(
+                value: beats, low: 0.1, high: 0.25,
+                outputLow: 0.9, outputHigh: 0.7
+            )
+        }
+        if beats <= 0.5 {
+            return linearInterpolate(
+                value: beats, low: 0.25, high: 0.5,
+                outputLow: 0.7, outputHigh: 0.5
+            )
+        }
+        return max(0.0, 0.5 - (beats - 0.5) / 2.0)
+    }
+
     /// Convert duration deviation fraction to a 0.0–1.0 duration accuracy score.
     private static func durationAccuracyScore(fraction: Double) -> Double {
         if fraction <= PracticeConstants.perfectDurationFraction {
@@ -212,5 +268,35 @@ public enum NoteScoreCalculator {
         if delta <= 40 { return linearInterpolate(value: delta, low: 20, high: 40, outputLow: 1.0, outputHigh: 0.7) }
         if delta <= 60 { return linearInterpolate(value: delta, low: 40, high: 60, outputLow: 0.7, outputHigh: 0.5) }
         return max(0.0, 0.5 - (delta - 60) / 67.0)
+    }
+
+    /// Score how well the detected expression matches the expected technique.
+    ///
+    /// Exact match scores 1.0. Related expressions (vibrato ↔ gamaka, both
+    /// oscillatory) score 0.5. Missing expression (stable when gamaka expected)
+    /// scores 0.2. Completely wrong scores 0.0.
+    ///
+    /// - Parameters:
+    ///   - detected: Expression type detected from input.
+    ///   - expected: Expression type marked in notation.
+    /// - Returns: Expression accuracy between 0.0 and 1.0.
+    private static func expressionAccuracyScore(
+        detected: ExpressionType,
+        expected: ExpressionType
+    ) -> Double {
+        if detected == expected { return 1.0 }
+
+        switch (detected, expected) {
+        case (.vibrato, .gamaka), (.gamaka, .vibrato):
+            return 0.5 // Related oscillatory expressions
+        case (.stable, .gamaka), (.stable, .vibrato), (.stable, .meend):
+            return 0.2 // No expression when expected
+        case (.meend, .gamaka), (.gamaka, .meend):
+            return 0.3 // Wrong expression type but still expressive
+        case (.indeterminate, _):
+            return 0.1 // Could not classify
+        default:
+            return 0.0
+        }
     }
 }
