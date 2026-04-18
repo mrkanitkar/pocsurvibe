@@ -50,7 +50,11 @@ extension LessonStepView {
             },
             onManualAdvance: {
                 viewModel.singManualAdvance()
-            }
+            },
+            singStepColor: StepTypeColorSystem.color(for: .sing),
+            warningColor: themeManager.resolved.warningColor,
+            nestedSurfaceColor: themeManager.resolved.nestedSurfaceColor,
+            successColor: themeManager.resolved.successColor
         )
     }
 
