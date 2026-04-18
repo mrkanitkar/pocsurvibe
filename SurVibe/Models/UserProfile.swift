@@ -29,6 +29,14 @@ final class UserProfile {
     /// Profile image data (stored as Transformable blob in CloudKit).
     @Attribute(.externalStorage) var profileImageData: Data?
 
+    /// Current available streak-freeze tokens. 2 granted per ISO week of
+    /// practice; cap at 4 (2 weeks). Auto-burned on 1-day streak gap.
+    var streakFreezeTokens: Int = 0
+
+    /// ISO 8601 week identifier (e.g., "2026-W16") of the last freeze-token
+    /// grant. Used to make weekly grants idempotent. Empty string = never.
+    var lastFreezeGrantWeekISO: String = ""
+
     init(
         displayName: String = "",
         preferredLanguage: String = "en"
