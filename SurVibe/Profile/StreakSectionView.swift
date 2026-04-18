@@ -1,10 +1,11 @@
 import SwiftUI
 
-/// Displays the user's current practice streak and today's practice status.
+/// Displays the user's current practice streak, freeze token count, and today's practice status.
 ///
-/// Shows a flame icon with the streak count and a badge indicating whether
-/// the user has practiced today. The flame icon uses a warm color gradient
-/// to reinforce the streak visual metaphor.
+/// Shows a flame icon with the streak count, an optional snowflake badge with the
+/// available freeze-token count, and a badge indicating whether the user has practiced
+/// today. The flame icon uses a warm color gradient to reinforce the streak visual
+/// metaphor. The freeze badge appears in cyan only when tokens are available.
 struct StreakSectionView: View {
     // MARK: - Properties
 
@@ -14,24 +15,52 @@ struct StreakSectionView: View {
     /// Whether the user has recorded a practice entry today.
     let practicedToday: Bool
 
+    /// Available streak-freeze tokens. 0 hides the badge.
+    let freezeTokensAvailable: Int
+
+    // MARK: - Initialization
+
+    /// Creates a streak section view.
+    ///
+    /// - Parameters:
+    ///   - currentStreak: Current consecutive-day practice streak.
+    ///   - practicedToday: Whether the user has recorded a practice entry today.
+    ///   - freezeTokensAvailable: Number of available freeze tokens. Defaults to 0 (hides badge).
+    init(currentStreak: Int, practicedToday: Bool, freezeTokensAvailable: Int = 0) {
+        self.currentStreak = currentStreak
+        self.practicedToday = practicedToday
+        self.freezeTokensAvailable = freezeTokensAvailable
+    }
+
     // MARK: - Body
 
     var body: some View {
         HStack(spacing: 12) {
             flameIcon
             streakInfo
+            if freezeTokensAvailable > 0 {
+                freezeBadge
+            }
             Spacer()
             practicedBadge
         }
         .padding(.vertical, 4)
         .accessibilityElement(children: .ignore)
         .accessibilityLabel(
-            Text(
-                practicedToday
-                    ? "\(currentStreak) day streak. Practiced today."
-                    : "\(currentStreak) day streak. Not practiced today."
-            )
+            Text(accessibilityText)
         )
+    }
+
+    // MARK: - Private Helpers
+
+    private var accessibilityText: String {
+        let streakPart = practicedToday
+            ? "\(currentStreak) day streak. Practiced today."
+            : "\(currentStreak) day streak. Not practiced today."
+        if freezeTokensAvailable > 0 {
+            return "\(streakPart) \(freezeTokensAvailable) streak freeze tokens available."
+        }
+        return streakPart
     }
 
     // MARK: - Subviews
@@ -70,6 +99,21 @@ struct StreakSectionView: View {
         }
     }
 
+    /// Snowflake badge showing available streak-freeze token count.
+    private var freezeBadge: some View {
+        HStack(spacing: 4) {
+            Image(systemName: "snowflake")
+                .font(.caption.weight(.semibold))
+            Text(verbatim: "\(freezeTokensAvailable)")
+                .font(.caption.weight(.bold))
+        }
+        .foregroundStyle(.cyan)
+        .padding(.horizontal, 8)
+        .padding(.vertical, 4)
+        .background(Capsule().fill(.cyan.opacity(0.15)))
+        .accessibilityHidden(true)
+    }
+
     /// Badge showing whether the user has practiced today.
     private var practicedBadge: some View {
         Group {
@@ -92,7 +136,10 @@ struct StreakSectionView: View {
 #Preview {
     List {
         Section {
-            StreakSectionView(currentStreak: 5, practicedToday: true)
+            StreakSectionView(currentStreak: 5, practicedToday: true, freezeTokensAvailable: 2)
+        }
+        Section {
+            StreakSectionView(currentStreak: 3, practicedToday: false, freezeTokensAvailable: 1)
         }
         Section {
             StreakSectionView(currentStreak: 0, practicedToday: false)

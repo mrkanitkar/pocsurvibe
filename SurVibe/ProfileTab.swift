@@ -24,6 +24,12 @@ struct ProfileTab: View {
     /// Controls the sign-in prompt sheet.
     @State private var signInTrigger: SignInTrigger?
 
+    /// All UserProfile records — expected to be exactly one singleton.
+    @Query private var userProfiles: [UserProfile]
+
+    /// The singleton user profile, or nil if not yet created.
+    private var userProfile: UserProfile? { userProfiles.first }
+
     // MARK: - Body
 
     var body: some View {
@@ -101,12 +107,13 @@ struct ProfileTab: View {
         }
     }
 
-    /// Current streak with practiced-today indicator.
+    /// Current streak with practiced-today indicator and freeze token badge.
     private var streakSection: some View {
         Section {
             StreakSectionView(
                 currentStreak: gamificationService?.streakTracker.currentStreak ?? 0,
-                practicedToday: gamificationService?.streakTracker.practicedToday ?? false
+                practicedToday: gamificationService?.streakTracker.practicedToday ?? false,
+                freezeTokensAvailable: userProfile?.streakFreezeTokens ?? 0
             )
         }
     }
