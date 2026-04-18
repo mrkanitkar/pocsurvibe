@@ -16,8 +16,12 @@ extension SongPlayAlongView {
             detectedNoteSection(pitch: pitch)
             centsDeviationSection(displayCents: displayCents)
 
-            PitchProximityMeter(centsOffset: displayCents)
-                .frame(width: 24, height: 48)
+            PitchProximityMeter(
+                centsOffset: displayCents,
+                trackColor: themeManager.resolved.dividerColor,
+                centerLineColor: themeManager.resolved.successColor
+            )
+            .frame(width: 24, height: 48)
 
             Spacer()
 

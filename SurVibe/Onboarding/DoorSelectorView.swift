@@ -17,6 +17,7 @@ struct DoorSelectorView: View {
 
     // MARK: - Properties
 
+    @Environment(AppThemeManager.self) private var themeManager
     @Environment(OnboardingManager.self) private var onboardingManager
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -76,7 +77,9 @@ struct DoorSelectorView: View {
             .font(.footnote)
             .fontWeight(.medium)
             .foregroundStyle(
-                onboardingManager.preferredDoors.isEmpty ? .red : .secondary
+                onboardingManager.preferredDoors.isEmpty
+                    ? themeManager.resolved.warningColor
+                    : Color.secondary
             )
             .accessibilityLabel(
                 Text("\(onboardingManager.preferredDoors.count) of \(maxSelections) interests selected")
@@ -95,12 +98,14 @@ struct DoorSelectorView: View {
         let isSelected = onboardingManager.preferredDoors.contains(door)
         let isAtLimit = onboardingManager.preferredDoors.count >= maxSelections
         let isDisabled = !isSelected && isAtLimit
-        let fillColor: Color = isSelected ? Color.accentColor.opacity(0.08) : Color(.secondarySystemBackground)
-        let strokeColor: Color = isSelected ? Color.accentColor : .clear
-        let iconForeground: Color = isSelected ? .white : isDisabled ? Color.gray : Color.accentColor
+        let fillColor: Color = isSelected
+            ? themeManager.resolved.accentColor.opacity(0.08)
+            : themeManager.resolved.cardBackgroundColor
+        let strokeColor: Color = isSelected ? themeManager.resolved.accentColor : .clear
+        let iconForeground: Color = isSelected ? .white : isDisabled ? Color.secondary : themeManager.resolved.accentColor
         let iconBackground: Color = isSelected
-            ? Color.accentColor
-            : isDisabled ? Color(.tertiarySystemFill) : Color.accentColor.opacity(0.12)
+            ? themeManager.resolved.accentColor
+            : isDisabled ? themeManager.resolved.nestedSurfaceColor : themeManager.resolved.accentColor.opacity(0.12)
 
         return Button {
             toggleDoor(door)
@@ -206,4 +211,5 @@ struct DoorSelectorView: View {
 #Preview {
     DoorSelectorView()
         .environment(OnboardingManager())
+        .environment(AppThemeManager())
 }

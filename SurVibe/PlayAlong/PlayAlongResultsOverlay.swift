@@ -1,3 +1,4 @@
+import SVCore
 import SwiftUI
 
 /// Full-screen overlay displaying results after completing a play-along session.
@@ -49,6 +50,9 @@ struct PlayAlongResultsOverlay: View {
 
     /// Called when the user taps "Done".
     var onDone: () -> Void
+
+    @Environment(AppThemeManager.self)
+    private var themeManager
 
     @Environment(\.accessibilityReduceMotion)
     private var reduceMotion
@@ -243,7 +247,8 @@ struct PlayAlongResultsOverlay: View {
 
     /// Returns a color for a celebration particle at the given index.
     private func celebrationColor(for index: Int) -> Color {
-        let colors: [Color] = [.yellow, .orange, .pink, .purple, .blue, .green]
+        let colors = themeManager.resolved.celebrationColors
+        guard !colors.isEmpty else { return .yellow }
         return colors[index % colors.count]
     }
 
@@ -274,6 +279,7 @@ struct PlayAlongResultsOverlay: View {
         onReplay: {},
         onDone: {}
     )
+    .environment(AppThemeManager())
 }
 
 #Preview("Results — 1 Star") {
@@ -288,4 +294,5 @@ struct PlayAlongResultsOverlay: View {
         onReplay: {},
         onDone: {}
     )
+    .environment(AppThemeManager())
 }
