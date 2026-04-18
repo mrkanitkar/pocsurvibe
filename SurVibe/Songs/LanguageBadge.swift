@@ -1,3 +1,4 @@
+import SVCore
 import SwiftUI
 
 /// A small badge displaying a song's language with a flag indicator.
@@ -14,6 +15,8 @@ struct LanguageBadge: View {
     /// The ISO 639-1 language code (e.g., "hi", "mr", "en").
     let languageCode: String
 
+    @Environment(AppThemeManager.self) private var themeManager
+
     // MARK: - Body
 
     var body: some View {
@@ -28,9 +31,10 @@ struct LanguageBadge: View {
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 3)
+        .foregroundStyle(themeManager.resolved.badgeTextColor)
         .background(
             Capsule()
-                .fill(Color(.tertiarySystemBackground))
+                .fill(themeManager.resolved.nestedSurfaceColor)
         )
         .accessibilityLabel(Text("Language: \(displayName)"))
     }
@@ -66,4 +70,5 @@ struct LanguageBadge: View {
         LanguageBadge(languageCode: "en")
     }
     .padding()
+    .environment(AppThemeManager())
 }
