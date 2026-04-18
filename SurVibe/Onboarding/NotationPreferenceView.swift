@@ -18,6 +18,7 @@ struct NotationPreferenceView: View {
 
     // MARK: - Properties
 
+    @Environment(AppThemeManager.self) private var themeManager
     @Environment(OnboardingManager.self) private var onboardingManager
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -64,8 +65,10 @@ struct NotationPreferenceView: View {
     /// - Returns: A styled card with title, preview, and selection indicator.
     private func notationCard(for mode: NotationDisplayMode) -> some View {
         let isSelected = onboardingManager.notationPreference == mode
-        let fillColor: Color = isSelected ? Color.accentColor.opacity(0.08) : Color(.secondarySystemBackground)
-        let strokeColor: Color = isSelected ? Color.accentColor : .clear
+        let fillColor: Color = isSelected
+            ? themeManager.resolved.accentColor.opacity(0.08)
+            : themeManager.resolved.cardBackgroundColor
+        let strokeColor: Color = isSelected ? themeManager.resolved.accentColor : .clear
 
         return Button {
             if reduceMotion {
@@ -87,7 +90,7 @@ struct NotationPreferenceView: View {
                     if isSelected {
                         Image(systemName: "checkmark.circle.fill")
                             .font(.title3)
-                            .foregroundStyle(Color.accentColor)
+                            .foregroundStyle(themeManager.resolved.accentColor)
                             .accessibilityHidden(true)
                     }
                 }
@@ -133,7 +136,7 @@ struct NotationPreferenceView: View {
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(
             RoundedRectangle(cornerRadius: 8)
-                .fill(Color(.tertiarySystemBackground))
+                .fill(themeManager.resolved.nestedSurfaceColor)
         )
     }
 
@@ -190,5 +193,6 @@ struct NotationPreferenceView: View {
 
 #Preview {
     NotationPreferenceView()
+        .environment(AppThemeManager())
         .environment(OnboardingManager())
 }

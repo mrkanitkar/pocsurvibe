@@ -18,6 +18,7 @@ struct OnboardingContainerView: View {
     // MARK: - Properties
 
     @Environment(OnboardingManager.self) private var onboardingManager
+    @Environment(AppThemeManager.self) private var themeManager
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     /// Total number of onboarding screens.
@@ -52,7 +53,14 @@ struct OnboardingContainerView: View {
             // Bottom navigation
             bottomBar
         }
-        .background(Color(.systemBackground))
+        .background(
+            LinearGradient(
+                colors: themeManager.resolved.backgroundGradient,
+                startPoint: .topLeading,
+                endPoint: .bottomTrailing
+            )
+            .ignoresSafeArea()
+        )
         .onAppear { Self.logger.info("Onboarding screen appeared: Container") }
         .onChange(of: onboardingManager.currentScreen) { _, newValue in
             AnalyticsManager.shared.track(
@@ -76,7 +84,9 @@ struct OnboardingContainerView: View {
             HStack(spacing: 8) {
                 ForEach(0..<totalScreens, id: \.self) { index in
                     Circle()
-                        .fill(index == onboardingManager.currentScreen ? Color.accentColor : Color(.systemGray4))
+                        .fill(index == onboardingManager.currentScreen
+                              ? themeManager.resolved.accentColor
+                              : themeManager.resolved.dividerColor)
                         .frame(width: 8, height: 8)
                         .scaleEffect(index == onboardingManager.currentScreen ? 1.2 : 1.0)
                         .animation(
@@ -145,7 +155,9 @@ struct OnboardingContainerView: View {
                     .padding(.vertical, 12)
                     .background(
                         Capsule()
-                            .fill(nextButtonDisabled ? Color.accentColor.opacity(0.4) : Color.accentColor)
+                            .fill(nextButtonDisabled
+                                  ? themeManager.resolved.accentColor.opacity(0.4)
+                                  : themeManager.resolved.accentColor)
                     )
             }
             .disabled(nextButtonDisabled)
@@ -160,7 +172,7 @@ struct OnboardingContainerView: View {
         }
         .padding(.horizontal, 24)
         .padding(.vertical, 16)
-        .background(Color(.systemBackground))
+        .background(themeManager.resolved.cardBackgroundColor)
     }
 
     // MARK: - Private Methods
@@ -182,4 +194,5 @@ struct OnboardingContainerView: View {
 #Preview {
     OnboardingContainerView()
         .environment(OnboardingManager())
+        .environment(AppThemeManager())
 }
