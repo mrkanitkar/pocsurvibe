@@ -63,7 +63,14 @@ struct CrossAppThemeContractTests {
 
     // MARK: - Helpers
 
-    private static let projectRoot = "/Users/maheshwar/Developer/SurVibe"
+    /// Project root derived from this file's path so the test works from any
+    /// worktree (`#filePath` resolves to the actual on-disk location of the
+    /// test source file at compile time).
+    private static let projectRoot: String = {
+        let testFile = URL(fileURLWithPath: #filePath)
+        // SurVibeTests/CrossAppThemeContractTests.swift → up 2 levels = project root
+        return testFile.deletingLastPathComponent().deletingLastPathComponent().path
+    }()
 
     /// Load a file and strip comment-only lines so `///` doc comments mentioning
     /// banned patterns don't false-positive.

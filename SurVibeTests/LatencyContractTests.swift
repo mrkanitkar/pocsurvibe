@@ -22,7 +22,11 @@ struct LatencyContractTests {
             "SurVibe/PlayAlong/ScrollingSheetView.swift",
             "SurVibe/Audio/InteractivePianoView.swift"
         ]
-        let projectRoot = "/Users/maheshwar/Developer/SurVibe"
+        // Derive project root from this file's path so the test works from any
+        // worktree (`#filePath` resolves to the actual on-disk location of the
+        // test source file at compile time).
+        let testFile = URL(fileURLWithPath: #filePath)
+        let projectRoot = testFile.deletingLastPathComponent().deletingLastPathComponent().path
         let forbiddenPattern = "@Environment(AppThemeManager.self)"
 
         for file in filesToCheck {

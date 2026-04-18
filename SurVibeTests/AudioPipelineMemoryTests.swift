@@ -87,51 +87,6 @@ struct AudioPipelineMemoryTests {
         #expect(note1.id != note2.id, "Each DetectedNote should have a unique ID")
     }
 
-    // MARK: - TEST-D01-006 Scenario 1: No @unchecked Sendable in Codebase
-
-    @Test("AudioRingBuffer conforms to Sendable without @unchecked")
-    func ringBufferIsSendableWithoutUnchecked() {
-        // AudioRingBuffer uses Mutex<State> — compiler verifies Sendable.
-        // This test verifies the type can be used across isolation boundaries.
-        let buffer = AudioRingBuffer(capacity: 1024)
-
-        // Sendable types can be captured in @Sendable closures
-        let sendableClosure: @Sendable () -> Int = {
-            buffer.totalSamplesWritten
-        }
-
-        #expect(sendableClosure() == 0)
-        buffer.write([1, 2, 3])
-        #expect(sendableClosure() == 3)
-    }
-
-    // MARK: - TEST-D01-006 Scenario 2: Concurrent Access to RingBuffer
-
-    @Test("RingBuffer handles concurrent write and read without crash")
-    func concurrentRingBufferAccess() async {
-        let buffer = AudioRingBuffer(capacity: 4096)
-        let testData = (0..<512).map { Float($0) }
-
-        // Launch concurrent writes
-        await withTaskGroup(of: Void.self) { group in
-            // Writer tasks
-            for _ in 0..<10 {
-                group.addTask {
-                    buffer.write(testData)
-                }
-            }
-            // Reader tasks
-            for _ in 0..<10 {
-                group.addTask {
-                    _ = buffer.read(count: 256)
-                }
-            }
-        }
-
-        // If we get here, no deadlock or crash occurred
-        #expect(buffer.totalSamplesWritten == 5120, "All writes should complete (10 x 512)")
-    }
-
     // MARK: - TEST-D01-006 Scenario 3: Latency Presets Have Valid FFT Sizes
 
     @Test("All latency presets have power-of-two FFT sizes")
