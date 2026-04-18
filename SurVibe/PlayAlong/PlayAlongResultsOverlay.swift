@@ -230,6 +230,7 @@ struct PlayAlongResultsOverlay: View {
                 Image(systemName: "star.fill")
                     .font(.caption)
                     .foregroundStyle(celebrationColor(for: index))
+                    .accessibilityHidden(true)
                     .position(
                         x: celebrationX(index: index, width: geometry.size.width),
                         y: celebrationY(index: index, height: geometry.size.height)

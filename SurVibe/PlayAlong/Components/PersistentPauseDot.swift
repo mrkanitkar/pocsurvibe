@@ -17,6 +17,7 @@ struct PersistentPauseDot: View {
     var body: some View {
         Button(action: onToggle) {
             Image(systemName: isPlaying ? "pause.fill" : "play.fill")
+                .accessibilityHidden(true)
                 .font(.system(size: 10, weight: .bold))
                 .foregroundStyle(foregroundColor)
                 .frame(width: 28, height: 28)

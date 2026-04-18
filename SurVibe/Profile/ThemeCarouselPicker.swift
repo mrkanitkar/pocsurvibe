@@ -133,6 +133,7 @@ struct ThemeCarouselPicker: View {
                     Image(systemName: era.iconName)
                         .font(.system(size: 18, weight: .semibold))
                         .foregroundStyle(.white)
+                        .accessibilityHidden(true)
                 }
                 .overlay(
                     Circle()

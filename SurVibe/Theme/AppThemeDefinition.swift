@@ -83,19 +83,37 @@ struct AppThemeDefinition: Sendable {
 
     // MARK: - Factory
 
-    /// Resolve a theme preset for a given color scheme, with Pop Era awareness.
+    /// Resolve a theme preset for a given color scheme, with Pop Era and Dim Mode awareness.
     ///
-    /// Called once by `AppThemeManager` when the preset, era, or color scheme
-    /// changes. The returned struct is stored and passed by value.
+    /// Called once by `AppThemeManager` when the preset, era, color scheme, or dim
+    /// mode changes. The returned struct is stored and passed by value.
+    ///
+    /// When `dimMode` is `true`, the background gradient colors are rendered at
+    /// 88% opacity, reducing perceived brightness for late-night practice without
+    /// mutating every color token in the theme.
+    ///
+    /// - Parameters:
+    ///   - preset: The selected theme preset.
+    ///   - popEra: The active Pop Era sub-theme. Defaults to `.olivia`.
+    ///   - colorScheme: The current system color scheme.
+    ///   - dimMode: Whether Dim Mode is active. Defaults to `false`.
+    /// - Returns: A fully resolved `AppThemeDefinition` ready for use in views.
     static func resolve(
         preset: AppThemePreset,
         popEra: PopEra = .olivia,
-        colorScheme: ColorScheme
+        colorScheme: ColorScheme,
+        dimMode: Bool = false
     ) -> AppThemeDefinition {
         let isDark = preset.isInherentlyDark || colorScheme == .dark
+        let dimMultiplier: Double = dimMode ? 0.88 : 1.0
+
+        let baseGradient = isDark ? preset.darkBackgroundGradient : preset.backgroundGradient
+        let resolvedGradient = dimMode
+            ? baseGradient.map { $0.opacity(dimMultiplier) }
+            : baseGradient
 
         return AppThemeDefinition(
-            backgroundGradient: isDark ? preset.darkBackgroundGradient : preset.backgroundGradient,
+            backgroundGradient: resolvedGradient,
             surfaceColor: isDark ? preset.darkSurfaceColor : preset.surfaceColor,
             accentColor: preset == .popEra
                 ? preset.eraAccentColor(for: popEra)
@@ -133,8 +151,8 @@ struct AppThemeDefinition: Sendable {
         )
     }
 
-    /// Backward-compatible overload (drops popEra, defaults to .olivia).
+    /// Backward-compatible overload — drops `popEra` and `dimMode`, both default to off.
     static func resolve(preset: AppThemePreset, colorScheme: ColorScheme) -> AppThemeDefinition {
-        resolve(preset: preset, popEra: .olivia, colorScheme: colorScheme)
+        resolve(preset: preset, popEra: .olivia, colorScheme: colorScheme, dimMode: false)
     }
 }

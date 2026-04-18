@@ -112,6 +112,7 @@ struct SkillLevelView: View {
     ) -> some View {
         HStack(spacing: 16) {
             Image(systemName: level.icon)
+                .accessibilityHidden(true)
                 .font(.title2)
                 .foregroundStyle(iconForeground)
                 .frame(width: 44, height: 44)

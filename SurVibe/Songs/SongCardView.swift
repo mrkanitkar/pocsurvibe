@@ -116,6 +116,7 @@ struct SongCardView: View {
                     viewModel.toggleFavorite(song)
                 } label: {
                     Image(systemName: song.isFavorite ? "heart.fill" : "heart")
+                        .accessibilityHidden(true)
                         .font(.caption)
                         .foregroundStyle(song.isFavorite ? themeManager.resolved.errorColor : .white)
                         .padding(6)
