@@ -56,9 +56,9 @@ struct ExerciseStepView: View {
 
     /// Creates an exercise step view.
     ///
-    /// Theme colors default to the canonical StepTypeColorSystem values so existing
-    /// call sites compile without change. The parent (`LessonStepView+StepContent`)
-    /// overrides them with resolved theme values for full theme-awareness.
+    /// All theme colors are required parameters — there are no defaults.
+    /// The parent (`LessonStepView+StepContent`) passes resolved theme values
+    /// so this view remains latency-conservative (no `@Environment` reads).
     ///
     /// - Parameters:
     ///   - step: The lesson step to display.
@@ -72,8 +72,8 @@ struct ExerciseStepView: View {
         song: Song?,
         onComplete: @escaping () -> Void,
         exerciseStepColor: Color = StepTypeColorSystem.color(for: .exercise),
-        nestedSurfaceColor: Color = Color(.tertiarySystemBackground),
-        errorColor: Color = .red
+        nestedSurfaceColor: Color,
+        errorColor: Color
     ) {
         self.step = step
         self.song = song
