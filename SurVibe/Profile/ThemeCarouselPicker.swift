@@ -31,6 +31,7 @@ struct ThemeCarouselPicker: View {
     var body: some View {
         VStack(spacing: 24) {
             themeCarousel
+            popEraSwatchRow
             activeThemeLabel
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -83,6 +84,75 @@ struct ThemeCarouselPicker: View {
         .accessibilityLabel("Current theme: \(themeManager.currentPreset.displayName)")
     }
 
+    // MARK: - Subviews (continued)
+
+    /// Pop Era sub-theme picker — shown only when the active preset is Pop Era.
+    ///
+    /// Five circular swatch buttons, one per `PopEra` case. Tapping a swatch
+    /// applies the era via `themeManager.setEra(_:)` and persists it.
+    @ViewBuilder
+    private var popEraSwatchRow: some View {
+        if themeManager.currentPreset == .popEra {
+            VStack(spacing: 8) {
+                Text("Era")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .accessibilityHidden(true)
+
+                HStack(spacing: 16) {
+                    ForEach(PopEra.allCases, id: \.self) { era in
+                        eraSwatch(era)
+                    }
+                }
+            }
+            .transition(.scale.combined(with: .opacity))
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel("Pop Era selector")
+        }
+    }
+
+    /// Single circular era swatch button.
+    ///
+    /// Shows the era's accent color as background with its SF Symbol icon.
+    /// A ring indicator marks the active era; a scale spring animates the
+    /// active state unless the user prefers reduced motion.
+    ///
+    /// - Parameter era: The era this swatch represents.
+    /// - Returns: A button view for the given era.
+    private func eraSwatch(_ era: PopEra) -> some View {
+        let isActive = themeManager.popEra == era
+        let color = AppThemePreset.popEra.eraAccentColor(for: era)
+        return Button {
+            applyEra(era)
+        } label: {
+            VStack(spacing: 4) {
+                ZStack {
+                    Circle()
+                        .fill(color)
+                        .frame(width: 44, height: 44)
+                    Image(systemName: era.iconName)
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundStyle(.white)
+                }
+                .overlay(
+                    Circle()
+                        .stroke(.primary, lineWidth: isActive ? 3 : 0)
+                        .padding(-2)
+                )
+                .scaleEffect(isActive ? 1.08 : 1.0)
+                .animation(reduceMotion ? .none : .spring(response: 0.3), value: isActive)
+
+                Text(verbatim: era.displayName)
+                    .font(.caption2)
+                    .foregroundStyle(isActive ? .primary : .secondary)
+            }
+        }
+        .buttonStyle(.plain)
+        .accessibilityLabel("\(era.displayName) era")
+        .accessibilityAddTraits(isActive ? [.isButton, .isSelected] : [.isButton])
+        .accessibilityHint("Activates the \(era.displayName) era accent palette.")
+    }
+
     // MARK: - Private Methods
 
     /// Apply the selected theme preset via the theme manager.
@@ -93,6 +163,19 @@ struct ThemeCarouselPicker: View {
     private func applyTheme(_ preset: AppThemePreset) {
         withAnimation(reduceMotion ? .none : .spring()) {
             themeManager.apply(preset)
+            feedbackTrigger.toggle()
+        }
+    }
+
+    /// Apply the selected Pop Era sub-theme with animation and haptic feedback.
+    ///
+    /// Wraps `themeManager.setEra(_:)` in a spring animation and toggles
+    /// the sensory feedback trigger.
+    ///
+    /// - Parameter era: The era to apply.
+    private func applyEra(_ era: PopEra) {
+        withAnimation(reduceMotion ? .none : .spring()) {
+            themeManager.setEra(era)
             feedbackTrigger.toggle()
         }
     }
