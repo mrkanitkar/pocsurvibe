@@ -155,5 +155,4 @@ struct LessonRowView: View {
         if let dur = estimatedDuration { parts.append(dur) }
         return Text(parts.joined(separator: ", "))
     }
-
 }
