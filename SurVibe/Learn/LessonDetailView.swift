@@ -287,6 +287,4 @@ struct LessonDetailView: View {
         default: type.capitalized
         }
     }
-
-
 }

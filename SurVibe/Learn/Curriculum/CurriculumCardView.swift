@@ -146,5 +146,4 @@ struct CurriculumCardView: View {
         default: "Level \(difficulty)"
         }
     }
-
 }
