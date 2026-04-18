@@ -120,7 +120,8 @@ final class PitchDetectionViewModel {
     private let centsHistoryMaxSize = 22
 
     /// Migrated melody detector — replaces the bespoke autocorrelation pipeline
-    /// + `AudioRingBuffer` previously inlined into this view model.
+    /// previously inlined into this view model. Backed by ``MicPitchDetector``
+    /// in `SVAudio`, which uses ``SPSCRingBuffer`` for the lock-free hop loop.
     private let pitchDetector = MicPitchDetector()
 
     /// Secondary lock-free ring buffer that captures raw mic samples for the

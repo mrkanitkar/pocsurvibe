@@ -59,7 +59,14 @@ struct LearnTabThemeContractTests {
 
     // MARK: - Helpers
 
-    private static let projectRoot = "/Users/maheshwar/Developer/SurVibe"
+    /// Project root derived from this file's path so the test works from any
+    /// worktree (`#filePath` resolves to the actual on-disk location of the
+    /// test source file at compile time).
+    private static let projectRoot: String = {
+        let testFile = URL(fileURLWithPath: #filePath)
+        // SurVibeTests/LearnTabThemeContractTests.swift → up 2 levels = project root
+        return testFile.deletingLastPathComponent().deletingLastPathComponent().path
+    }()
 
     /// Load a file and strip comment-only lines so /// doc comments mentioning
     /// a banned pattern don't false-positive.

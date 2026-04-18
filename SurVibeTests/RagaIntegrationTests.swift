@@ -165,44 +165,6 @@ struct RagaIntegrationTests {
         #expect(pitch.ragaCentsOffset == nil)
     }
 
-    // MARK: - Spectral Confidence in PitchDSP
-
-    @Test("PitchDSP detectPitchWithConfidence returns spectral confidence")
-    func pitchDSPSpectralConfidence() {
-        // Generate a pure 440Hz sine wave with enough samples for autocorrelation
-        let sampleRate = 44100.0
-        let frequency = 440.0
-        let sampleCount = 4096
-        var samples = [Float](repeating: 0, count: sampleCount)
-        for i in 0..<sampleCount {
-            samples[i] = Float(sin(2.0 * Double.pi * frequency * Double(i) / sampleRate))
-        }
-
-        let result = PitchDSP.detectPitchWithConfidence(
-            samples: samples, sampleRate: sampleRate
-        )
-
-        // Autocorrelation may lock onto 440Hz or its subharmonic 220Hz depending on
-        // buffer size and algorithm internals. Both are valid detections of a 440Hz tone.
-        let isNear440 = result.frequency > 400 && result.frequency < 500
-        let isNear220 = result.frequency > 200 && result.frequency < 260
-        #expect(isNear440 || isNear220,
-                "Should detect 440Hz or its octave 220Hz from pure sine, got \(result.frequency)")
-        #expect(result.confidence > 0.1,
-                "Pure sine should have non-zero confidence, got \(result.confidence)")
-    }
-
-    @Test("PitchDSP silence returns zero frequency and confidence")
-    func pitchDSPSilenceReturnsZero() {
-        let samples = [Float](repeating: 0, count: 2048)
-        let result = PitchDSP.detectPitchWithConfidence(
-            samples: samples, sampleRate: 44100.0
-        )
-
-        #expect(result.frequency == 0)
-        #expect(result.confidence == 0)
-    }
-
     // MARK: - Full Pipeline: Raga Name → Scoring Context
 
     @Test("All supported ragas create valid scoring contexts")

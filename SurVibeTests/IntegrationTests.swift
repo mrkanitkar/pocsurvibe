@@ -22,15 +22,6 @@ struct IntegrationTests {
 
     // MARK: - D3: Pitch detection pipeline (protocol verification)
 
-    @Test("PitchDetectorProtocol has two implementations")
-    @MainActor func testPitchDetectorImplementations() {
-        // Verifies both implementations conform to the protocol
-        let audioKit: any PitchDetectorProtocol = AudioKitPitchDetector()
-        let yin: any PitchDetectorProtocol = YINPitchDetector()
-        #expect(type(of: audioKit) == AudioKitPitchDetector.self)
-        #expect(type(of: yin) == YINPitchDetector.self)
-    }
-
     @Test("PitchResult can be constructed with all fields")
     @MainActor func testPitchResultConstruction() {
         let result = PitchResult(
