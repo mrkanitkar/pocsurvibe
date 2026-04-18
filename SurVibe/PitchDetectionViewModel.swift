@@ -23,7 +23,7 @@ enum DetectionMode: String, CaseIterable, Sendable {
     }
 }
 
-/// ViewModel for real-time pitch detection in PracticeTab.
+/// ViewModel for real-time pitch detection used by the Sing and Exercise lesson steps.
 ///
 /// Pipeline (post-MIDI-2.0 migration):
 /// - Melody: `MicPitchDetector` runs autocorrelation on a lock-free `SPSCRingBuffer`

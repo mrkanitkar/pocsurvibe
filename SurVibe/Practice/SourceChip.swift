@@ -18,6 +18,7 @@ struct SourceChip: View {
         HStack(spacing: 4) {
             Image(systemName: sourceIcon)
                 .font(.caption)
+                .accessibilityHidden(true)
             Text(sourceLabel)
                 .font(.caption)
                 .lineLimit(1)
