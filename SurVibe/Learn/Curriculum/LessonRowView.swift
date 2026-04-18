@@ -1,3 +1,4 @@
+import SVCore
 import SwiftUI
 
 /// A row displaying a lesson within a curriculum list.
@@ -10,6 +11,8 @@ import SwiftUI
 /// - Premium indicator for non-free lessons
 struct LessonRowView: View {
     // MARK: - Properties
+
+    @Environment(AppThemeManager.self) private var themeManager
 
     /// The lesson to display.
     let lesson: Lesson
@@ -65,7 +68,7 @@ struct LessonRowView: View {
                     if !lesson.isFree {
                         Image(systemName: "crown.fill")
                             .font(.caption2)
-                            .foregroundStyle(.orange)
+                            .foregroundStyle(themeManager.resolved.warningColor)
                             .accessibilityLabel(Text("Premium lesson"))
                     }
                 }
@@ -102,7 +105,7 @@ struct LessonRowView: View {
         if isCompleted {
             Image(systemName: "checkmark.circle.fill")
                 .font(.title2)
-                .foregroundStyle(.green)
+                .foregroundStyle(themeManager.resolved.successColor)
                 .accessibilityHidden(true)
         } else if isLocked {
             Image(systemName: "lock.fill")
@@ -113,7 +116,7 @@ struct LessonRowView: View {
             Text("\(index)")
                 .font(.subheadline)
                 .fontWeight(.bold)
-                .foregroundStyle(.white)
+                .foregroundStyle(themeManager.resolved.badgeTextColor)
                 .frame(width: 36, height: 36)
                 .background(Circle().fill(Color.accentColor))
                 .accessibilityHidden(true)
@@ -130,8 +133,8 @@ struct LessonRowView: View {
                 Circle()
                     .fill(
                         level <= difficulty
-                            ? difficultyColor(difficulty)
-                            : Color(.systemGray4)
+                            ? (RangLevel(rawValue: difficulty)?.bodyTextColor ?? .gray)
+                            : themeManager.resolved.dividerColor
                     )
                     .frame(width: 6, height: 6)
             }
@@ -151,20 +154,5 @@ struct LessonRowView: View {
         if let count = stepCount { parts.append("\(count) steps") }
         if let dur = estimatedDuration { parts.append(dur) }
         return Text(parts.joined(separator: ", "))
-    }
-
-    /// Rang color for a difficulty level.
-    ///
-    /// - Parameter difficulty: Integer difficulty (1-5).
-    /// - Returns: The corresponding Rang system color.
-    private func difficultyColor(_ difficulty: Int) -> Color {
-        switch difficulty {
-        case 1: .blue
-        case 2: .green
-        case 3: Color(red: 0.757, green: 0.475, blue: 0.0)
-        case 4: .red
-        case 5: Color(red: 0.722, green: 0.467, blue: 0.0)
-        default: .gray
-        }
     }
 }

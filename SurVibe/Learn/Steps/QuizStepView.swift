@@ -1,3 +1,4 @@
+import SVCore
 import SwiftUI
 
 /// Displays a quiz step with multi-choice questions and feedback.
@@ -17,6 +18,8 @@ struct QuizStepView: View {
 
     /// Callback when the quiz is complete, with score (0.0-1.0).
     let onComplete: (Double) -> Void
+
+    @Environment(AppThemeManager.self) private var themeManager
 
     @State private var engine: QuizEngine?
     @State private var decodingError = false
@@ -85,7 +88,7 @@ struct QuizStepView: View {
                 Spacer()
                 Text("\(engine.correctCount) correct")
                     .font(.subheadline)
-                    .foregroundStyle(.green)
+                    .foregroundStyle(themeManager.resolved.successColor)
             }
             .accessibilityElement(children: .combine)
             .accessibilityLabel(
@@ -124,7 +127,7 @@ struct QuizStepView: View {
                             .padding(12)
                             .background(
                                 RoundedRectangle(cornerRadius: 10)
-                                    .fill(Color(.secondarySystemBackground))
+                                    .fill(themeManager.resolved.cardBackgroundColor)
                             )
                         }
                         .buttonStyle(.plain)
@@ -155,12 +158,12 @@ struct QuizStepView: View {
         return VStack(spacing: 20) {
             Image(systemName: isCorrect ? "checkmark.circle.fill" : "xmark.circle.fill")
                 .font(.system(size: 56))
-                .foregroundStyle(isCorrect ? .green : .red)
+                .foregroundStyle(isCorrect ? themeManager.resolved.successColor : themeManager.resolved.errorColor)
                 .accessibilityHidden(true)
 
             Text(isCorrect ? "Correct!" : "Not quite")
                 .font(.title2).fontWeight(.bold)
-                .foregroundStyle(isCorrect ? .green : .red)
+                .foregroundStyle(isCorrect ? themeManager.resolved.successColor : themeManager.resolved.errorColor)
 
             if !isCorrect {
                 incorrectAnswerDetails(
@@ -193,11 +196,11 @@ struct QuizStepView: View {
         VStack(spacing: 8) {
             HStack {
                 Text("Your answer:").foregroundStyle(.secondary)
-                Text(verbatim: userAnswer).fontWeight(.medium).foregroundStyle(.red)
+                Text(verbatim: userAnswer).fontWeight(.medium).foregroundStyle(themeManager.resolved.errorColor)
             }.font(.subheadline)
             HStack {
                 Text("Correct answer:").foregroundStyle(.secondary)
-                Text(verbatim: correctAnswer).fontWeight(.medium).foregroundStyle(.green)
+                Text(verbatim: correctAnswer).fontWeight(.medium).foregroundStyle(themeManager.resolved.successColor)
             }.font(.subheadline)
         }
     }
@@ -216,7 +219,7 @@ struct QuizStepView: View {
             // Score circle
             ZStack {
                 Circle()
-                    .stroke(Color(.systemGray4), lineWidth: 8)
+                    .stroke(themeManager.resolved.dividerColor, lineWidth: 8)
                     .frame(width: 100, height: 100)
 
                 Circle()
@@ -256,10 +259,10 @@ struct QuizStepView: View {
                 .fontWeight(.semibold)
         }
         .font(.subheadline)
-        .foregroundStyle(.orange)
+        .foregroundStyle(themeManager.resolved.warningColor)
         .padding(.horizontal, 12)
         .padding(.vertical, 6)
-        .background(Capsule().fill(.orange.opacity(0.15)))
+        .background(Capsule().fill(themeManager.resolved.warningColor.opacity(0.15)))
         .accessibilityLabel(Text("Step type: Quiz"))
     }
 
@@ -282,7 +285,7 @@ struct QuizStepView: View {
             .foregroundStyle(.secondary)
             .padding(.horizontal, 8)
             .padding(.vertical, 4)
-            .background(Capsule().fill(Color(.tertiarySystemBackground)))
+            .background(Capsule().fill(themeManager.resolved.nestedSurfaceColor))
             .accessibilityLabel(Text("Question type: \(label)"))
     }
 
@@ -291,7 +294,7 @@ struct QuizStepView: View {
         VStack(spacing: 12) {
             Image(systemName: "exclamationmark.triangle")
                 .font(.largeTitle)
-                .foregroundStyle(.orange)
+                .foregroundStyle(themeManager.resolved.warningColor)
                 .accessibilityHidden(true)
             Text("Could not load quiz questions")
                 .font(.headline)
@@ -338,15 +341,15 @@ struct QuizStepView: View {
         }
     }
 
-    /// Determines the color for the score display based on percentage.
+    /// Score color routed through theme tokens — success / warning / error.
     ///
     /// - Parameter percentage: The quiz score percentage (0-100).
-    /// - Returns: Green for 80%+, orange for 60-79%, red for below 60%.
+    /// - Returns: Success color for 90%+, warning color for 70-89%, error color for below 70%.
     private func scoreColor(_ percentage: Int) -> Color {
         switch percentage {
-        case 80...100: .green
-        case 60..<80: .orange
-        default: .red
+        case 90...:   return themeManager.resolved.successColor
+        case 70..<90: return themeManager.resolved.warningColor
+        default:      return themeManager.resolved.errorColor
         }
     }
 }

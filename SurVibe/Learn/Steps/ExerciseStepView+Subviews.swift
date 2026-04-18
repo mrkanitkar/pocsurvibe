@@ -13,7 +13,7 @@ extension ExerciseStepView {
         VStack(spacing: 12) {
             Image(systemName: "mic.slash.fill")
                 .font(.system(size: 36))
-                .foregroundStyle(.red.opacity(0.6))
+                .foregroundStyle(errorColor.opacity(0.6))
                 .accessibilityHidden(true)
 
             Text("Microphone access is required for the exercise drill.")
@@ -40,7 +40,7 @@ extension ExerciseStepView {
         .padding(.vertical, 20)
         .background(
             RoundedRectangle(cornerRadius: 12)
-                .fill(Color(.tertiarySystemBackground))
+                .fill(nestedSurfaceColor)
         )
         .accessibilityElement(children: .combine)
         .accessibilityLabel(Text("Microphone access denied. Open Settings to enable."))
@@ -51,7 +51,7 @@ extension ExerciseStepView {
         VStack(spacing: 12) {
             Image(systemName: "hand.tap.fill")
                 .font(.system(size: 48))
-                .foregroundStyle(.green.opacity(0.5))
+                .foregroundStyle(exerciseStepColor.opacity(0.5))
                 .accessibilityHidden(true)
 
             Text("Practice Exercise")
@@ -75,7 +75,7 @@ extension ExerciseStepView {
                         .padding(.vertical, 12)
                 }
                 .buttonStyle(.borderedProminent)
-                .tint(.green)
+                .tint(exerciseStepColor)
                 .accessibilityLabel(Text("Mark exercise as complete"))
                 .accessibilityHint(Text("Double tap to confirm you have completed the exercise"))
             }
@@ -84,7 +84,7 @@ extension ExerciseStepView {
         .padding(.vertical, 24)
         .background(
             RoundedRectangle(cornerRadius: 12)
-                .fill(Color(.tertiarySystemBackground))
+                .fill(nestedSurfaceColor)
         )
         .accessibilityElement(children: .contain)
     }
@@ -109,7 +109,7 @@ extension ExerciseStepView {
                         .padding(.vertical, 12)
                 }
                 .buttonStyle(.bordered)
-                .tint(.green)
+                .tint(exerciseStepColor)
                 .accessibilityLabel(Text("Mark exercise as complete manually"))
                 .accessibilityHint(Text("Double tap to skip the drill and mark as complete"))
             }
