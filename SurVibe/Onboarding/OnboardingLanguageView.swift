@@ -18,6 +18,7 @@ struct OnboardingLanguageView: View {
     // MARK: - Properties
 
     @Environment(OnboardingManager.self) private var onboardingManager
+    @Environment(AppThemeManager.self) private var themeManager
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     // MARK: - Body
@@ -63,8 +64,10 @@ struct OnboardingLanguageView: View {
     /// - Returns: A styled card with native script name, English name, and selection state.
     private func languageCard(for language: OnboardingLanguage) -> some View {
         let isSelected = onboardingManager.preferredLanguageCode == language.code
-        let fillColor: Color = isSelected ? Color.accentColor.opacity(0.08) : Color(.secondarySystemBackground)
-        let strokeColor: Color = isSelected ? Color.accentColor : .clear
+        let fillColor: Color = isSelected
+            ? themeManager.resolved.accentColor.opacity(0.08)
+            : themeManager.resolved.cardBackgroundColor
+        let strokeColor: Color = isSelected ? themeManager.resolved.accentColor : .clear
 
         return Button {
             if reduceMotion {
@@ -110,7 +113,7 @@ struct OnboardingLanguageView: View {
             if isSelected {
                 Image(systemName: "checkmark.circle.fill")
                     .font(.title3)
-                    .foregroundStyle(Color.accentColor)
+                    .foregroundStyle(themeManager.resolved.accentColor)
                     .accessibilityHidden(true)
             }
         }
@@ -164,4 +167,5 @@ private enum OnboardingLanguage: String, CaseIterable, Identifiable {
 #Preview {
     OnboardingLanguageView()
         .environment(OnboardingManager())
+        .environment(AppThemeManager())
 }
