@@ -13,6 +13,9 @@ struct LessonLibraryView: View {
     @Environment(LessonLibraryViewModel.self)
     private var viewModel
 
+    @Environment(AppThemeManager.self)
+    private var themeManager
+
     /// The locked lesson that triggered the prerequisite alert.
     @State
     private var lockedLessonAlert: Lesson?
@@ -100,7 +103,7 @@ struct LessonLibraryView: View {
             LazyVStack(spacing: 12) {
                 ForEach(0..<4, id: \.self) { _ in
                     RoundedRectangle(cornerRadius: 12)
-                        .fill(Color(.secondarySystemBackground))
+                        .fill(themeManager.resolved.cardBackgroundColor)
                         .frame(height: 80)
                 }
             }
@@ -136,7 +139,7 @@ struct LessonLibraryView: View {
             .padding(.vertical, 4)
             .background(
                 Capsule()
-                    .fill(Color(.tertiarySystemBackground))
+                    .fill(themeManager.resolved.nestedSurfaceColor)
             )
             .accessibilityLabel(Text("\(viewModel.filteredLessons.count) lessons"))
     }
