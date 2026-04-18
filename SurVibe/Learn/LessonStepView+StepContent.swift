@@ -1,3 +1,4 @@
+import SVCore
 import SwiftUI
 
 // MARK: - Step Type Views
@@ -119,7 +120,7 @@ extension LessonStepView {
         .padding(.vertical, 32)
         .background(
             RoundedRectangle(cornerRadius: 12)
-                .fill(Color(.tertiarySystemBackground))
+                .fill(themeManager.resolved.nestedSurfaceColor)
         )
         .accessibilityElement(children: .combine)
         .accessibilityLabel(Text("\(title): \(description)"))
@@ -156,23 +157,6 @@ extension LessonStepView {
         case "quiz": "questionmark.circle"
         case "sing": "waveform"
         default: "circle"
-        }
-    }
-
-    /// Color associated with a step type.
-    ///
-    /// - Parameter type: The step type string identifier.
-    /// - Returns: A color for the step badge and icon.
-    func stepTypeColor(_ type: String) -> Color {
-        switch type {
-        case "intro": .blue
-        case "listen": .purple
-        case "read": .orange
-        case "exercise": .green
-        case "practice": .red
-        case "quiz": .yellow
-        case "sing": .pink
-        default: .gray
         }
     }
 

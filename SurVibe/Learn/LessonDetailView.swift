@@ -1,3 +1,4 @@
+import SVCore
 import SwiftData
 import SwiftUI
 
@@ -11,6 +12,9 @@ struct LessonDetailView: View {
 
     /// The lesson to display.
     let lesson: Lesson
+
+    @Environment(AppThemeManager.self)
+    private var themeManager
 
     @Environment(\.modelContext)
     private var modelContext
@@ -106,9 +110,9 @@ struct LessonDetailView: View {
                 HStack(spacing: 6) {
                     if progress.isCompleted {
                         Image(systemName: "checkmark.circle.fill")
-                            .foregroundStyle(.green)
+                            .foregroundStyle(themeManager.resolved.successColor)
                         Text("Completed")
-                            .foregroundStyle(.green)
+                            .foregroundStyle(themeManager.resolved.successColor)
                     } else if progress.progressPercent > 0 {
                         Image(systemName: "chart.bar.fill")
                             .foregroundStyle(Color.accentColor)
@@ -125,12 +129,12 @@ struct LessonDetailView: View {
                 Label("Free", systemImage: "gift")
                     .font(.caption)
                     .fontWeight(.medium)
-                    .foregroundStyle(.white)
+                    .foregroundStyle(themeManager.resolved.badgeTextColor)
                     .padding(.horizontal, 10)
                     .padding(.vertical, 4)
                     .background(
                         Capsule()
-                            .fill(.green)
+                            .fill(themeManager.resolved.successColor)
                     )
             }
         }
@@ -160,9 +164,9 @@ struct LessonDetailView: View {
                     Text(verbatim: "\(index + 1)")
                         .font(.caption)
                         .fontWeight(.bold)
-                        .foregroundStyle(.white)
+                        .foregroundStyle(themeManager.resolved.badgeTextColor)
                         .frame(width: 24, height: 24)
-                        .background(Circle().fill(stepTypeColor(step.stepType)))
+                        .background(Circle().fill(StepTypeColorSystem.color(forStepType: step.stepType)))
                         .accessibilityHidden(true)
 
                     VStack(alignment: .leading, spacing: 2) {
@@ -208,7 +212,7 @@ struct LessonDetailView: View {
                 .font(.headline)
                 .frame(maxWidth: .infinity)
                 .padding(.vertical, 14)
-                .foregroundStyle(.white)
+                .foregroundStyle(themeManager.resolved.badgeTextColor)
                 .background(
                     RoundedRectangle(cornerRadius: 14)
                         .fill(Color.accentColor)
@@ -284,20 +288,5 @@ struct LessonDetailView: View {
         }
     }
 
-    /// Color for a step type icon.
-    ///
-    /// - Parameter type: The step type string.
-    /// - Returns: A color for the step number circle.
-    private func stepTypeColor(_ type: String) -> Color {
-        switch type {
-        case "intro": .blue
-        case "listen": .purple
-        case "read": .orange
-        case "exercise": .green
-        case "practice": .red
-        case "quiz": .yellow
-        case "sing": .pink
-        default: .gray
-        }
-    }
+
 }

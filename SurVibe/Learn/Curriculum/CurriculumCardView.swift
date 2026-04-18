@@ -1,3 +1,4 @@
+import SVCore
 import SwiftUI
 
 /// A card displaying a curriculum summary with progress tracking.
@@ -11,6 +12,8 @@ import SwiftUI
 /// Used inside `CurriculumBrowserView` as the primary list item.
 struct CurriculumCardView: View {
     // MARK: - Properties
+
+    @Environment(AppThemeManager.self) private var themeManager
 
     /// The curriculum to display.
     let curriculum: Curriculum
@@ -76,7 +79,7 @@ struct CurriculumCardView: View {
         .padding()
         .background(
             RoundedRectangle(cornerRadius: 12)
-                .fill(Color(.secondarySystemBackground))
+                .fill(themeManager.resolved.cardBackgroundColor)
         )
         .accessibilityElement(children: .combine)
         .accessibilityLabel(
@@ -99,13 +102,13 @@ struct CurriculumCardView: View {
         return Text(verbatim: text)
             .font(.caption)
             .fontWeight(.medium)
-            .foregroundStyle(difficultyColor(curriculum.minDifficulty))
+            .foregroundStyle(RangLevel(rawValue: curriculum.minDifficulty)?.bodyTextColor ?? .gray)
             .padding(.horizontal, 8)
             .padding(.vertical, 3)
             .background(
                 Capsule()
                     .fill(
-                        difficultyColor(curriculum.minDifficulty).opacity(0.15)
+                        (RangLevel(rawValue: curriculum.minDifficulty)?.bodyTextColor ?? .gray).opacity(0.15)
                     )
             )
     }
@@ -144,18 +147,4 @@ struct CurriculumCardView: View {
         }
     }
 
-    /// Rang color for a difficulty level.
-    ///
-    /// - Parameter difficulty: Integer difficulty (1-5).
-    /// - Returns: The corresponding Rang system color.
-    private func difficultyColor(_ difficulty: Int) -> Color {
-        switch difficulty {
-        case 1: .blue
-        case 2: .green
-        case 3: Color(red: 0.757, green: 0.475, blue: 0.0)
-        case 4: .red
-        case 5: Color(red: 0.722, green: 0.467, blue: 0.0)
-        default: .gray
-        }
-    }
 }
