@@ -79,16 +79,15 @@ public final class PracticeAudioProcessor {
     /// Reference pitch for frequency-to-note conversion (A4, in Hz).
     public var referencePitch: Double = 440.0
 
-    /// Optional ring buffer to receive a copy of all mic samples.
+    /// Optional lock-free ring buffer to receive a copy of all mic samples.
     ///
     /// When set, every audio frame delivered to the mic tap is also written
     /// into this buffer so callers can run FFT-based chord detection
     /// (e.g. `ChromagramDSP.analyzeChord`) on a larger, accumulated window.
-    /// Set to `nil` to disable. The ring buffer is `Sendable` and thread-safe.
-    ///
-    /// Note: `AudioRingBuffer.write([Float])` still requires an `Array` copy.
-    /// Callers should migrate to `SPSCRingBuffer` directly (AUD-003 migration).
-    public var ringBuffer: AudioRingBuffer?
+    /// Set to `nil` to disable. `SPSCRingBuffer` is `Sendable` and uses
+    /// lock-free atomic indices — safe to write from the audio render thread
+    /// with zero allocation (AUD-001/002/003).
+    public var ringBuffer: SPSCRingBuffer?
 
     /// Minimum RMS amplitude to consider a buffer worth analyzing.
     ///
@@ -170,10 +169,10 @@ public final class PracticeAudioProcessor {
             // replaces the 50ms polling sleep in startDSPLoop().
             signalCont.yield(())
 
-            // Also feed the legacy AudioRingBuffer for chord detection consumers.
-            // AudioRingBuffer.write([Float]) requires an Array — this remains an allocation.
-            // Callers should migrate to SPSCRingBuffer (tracked in AUD-003 migration).
-            capturedRingBuffer?.write(Array(ptr))
+            // Also feed the optional secondary SPSC ring buffer for chord-detection
+            // consumers (e.g. PlayAlongViewModel chord pipeline). Lock-free
+            // pointer write — zero heap allocation on the audio thread.
+            capturedRingBuffer?.write(ptr)
 
             // AUD-011: diagnostic logging — debug builds only.
             #if DEBUG

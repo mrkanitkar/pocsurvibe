@@ -52,6 +52,8 @@ struct ProfileTab: View {
                     ThemeCarouselPicker()
                 } else if destination == "display" {
                     AppearanceSettingsView()
+                } else if destination == "midiDevice" {
+                    MIDIDevicePickerView()
                 } else if destination == "achievements" {
                     if let am = gamificationService?.achievementManager {
                         AchievementGalleryView(achievementManager: am)
@@ -238,6 +240,14 @@ struct ProfileTab: View {
             Toggle("Auto-hide sargam labels", isOn: $autoHideSargamLabels)
                 .accessibilityLabel("Auto-hide sargam labels")
                 .accessibilityHint("When enabled, sargam labels fade as your accuracy improves")
+
+            NavigationLink(value: "midiDevice") {
+                Label("MIDI Device", systemImage: "pianokeys")
+            }
+            .accessibilityLabel(Text("MIDI Device"))
+            .accessibilityHint(
+                Text("Choose which connected MIDI keyboard feeds play-along sessions. Double tap to open.")
+            )
 
             // Redo Onboarding
             Button {
