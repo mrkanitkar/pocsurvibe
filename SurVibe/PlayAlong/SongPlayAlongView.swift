@@ -3,6 +3,10 @@ import SVCore
 import SVLearning
 import SwiftData
 import SwiftUI
+import os.log
+
+/// Logger for tanpura persistence wiring in SongPlayAlongView.
+private let tanpuraWiringLogger = Logger.survibe(category: "TanpuraWiring")
 
 /// Main container view for the song play-along experience.
 ///
@@ -40,6 +44,11 @@ struct SongPlayAlongView: View {
 
     /// Pending persistence write for `preferredSaHz`. Canceled on rapid changes.
     @State private var persistDebounceTask: Task<Void, Never>?
+
+    /// Set to true after the initial `tanpura.seed(...)` call in `.task`.
+    /// Gates the `effectiveSaHz` persistence observer so the initial seed
+    /// doesn't spuriously write a SongProgress row on every song open.
+    @State private var didInitialSeed = false
 
     /// Piano key positions collected via preference key for note alignment.
     @State private var keyPositions: [KeyPosition] = []
@@ -298,6 +307,7 @@ struct SongPlayAlongView: View {
                 songDefaultHz: song.defaultSaFrequencyHz
             )
             tanpura.setSoundEnabled(viewModel.isSoundEnabled)
+            didInitialSeed = true
             await viewModel.loadSong(song)
         }
         .onChange(of: themeManager.currentPreset) { _, newPreset in
@@ -386,6 +396,7 @@ struct SongPlayAlongView: View {
             )
         }
         .onChange(of: tanpura.effectiveSaHz) { _, newHz in
+            guard didInitialSeed else { return }
             persistDebounceTask?.cancel()
             persistDebounceTask = Task { @MainActor in
                 try? await Task.sleep(for: .seconds(1))
@@ -610,7 +621,7 @@ struct SongPlayAlongView: View {
             try modelContext.save()
         } catch {
             // Non-fatal: log and continue.
-            print("TanpuraWiring: save failed \(error.localizedDescription)")
+            tanpuraWiringLogger.error("Save failed: \(error.localizedDescription, privacy: .public)")
         }
     }
 
