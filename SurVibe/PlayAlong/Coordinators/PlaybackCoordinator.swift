@@ -114,20 +114,20 @@ final class PlaybackCoordinator {
 
     // MARK: - Dependencies (injected)
 
-    let soundFont: any SoundFontPlaying
-    let audioEngine: any AudioEngineProviding
-    let metronome: any MetronomePlaying
-    let clock: any ClockProviding
-    let scoring: ScoringCoordinator
-    let analytics: (any AnalyticsProviding)?
+    private let soundFont: any SoundFontPlaying
+    private let audioEngine: any AudioEngineProviding
+    private let metronome: any MetronomePlaying
+    private let clock: any ClockProviding
+    private let scoring: ScoringCoordinator
+    private let analytics: (any AnalyticsProviding)?
 
     // MARK: - Internal scheduling state
 
-    var waitController: PlayAlongWaitController?
-    var playbackTask: Task<Void, Never>?
-    var displayLinkTask: Task<Void, Never>?
-    var playbackStartTime: ContinuousClock.Instant?
-    var pauseElapsed: TimeInterval = 0
+    private var waitController: PlayAlongWaitController?
+    private var playbackTask: Task<Void, Never>?
+    private var displayLinkTask: Task<Void, Never>?
+    private var playbackStartTime: ContinuousClock.Instant?
+    private var pauseElapsed: TimeInterval = 0
 
     private static let logger = Logger.survibe(category: "PlaybackCoordinator")
 
