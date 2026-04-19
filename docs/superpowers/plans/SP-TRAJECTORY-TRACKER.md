@@ -167,15 +167,40 @@
 
 ## Upcoming sub-projects
 
-### SP-2 — Per-surface deep layout (next)
+### SP-2 — Per-surface deep layout + pending infra (next)
 
-From the Refactor Plan P0 + P1 pool:
-- P0-2 **`NavigationSplitView` on Songs + Learn** — primary column 320–375pt, detail column fills remainder (iPad regular-width only).
-- P0-5 **Piano `pitchRange` adapts to width** — compact 61 keys / regular 73 or 88 keys via `GeometryReader`.
-- P0-6 **Migrate PlayAlongToolbar + PracticeControlsToolbar to system `.toolbar {}`** — gets Liquid Glass for free.
-- P1-3 **Landscape play-along layout** — side-by-side keyboard + notation on iPhone landscape / iPad.
-- Transport shortcuts in `AppCommands` (Space, ←, →, ⌘. for stop) using `@FocusedValue` for per-surface dispatch.
-- `hoverEffect` sweep across Songs/Learn cards + rows.
+**Expanded scope (2026-04-19):** the original 6-item "narrow" SP-2 absorbs 4 zombie/shared-convention items so SP-3 (VM split) and SP-4 (polish) don't have to unblock themselves.
+
+From the Refactor Plan P0 + P1 + P2 pools and SP-0/SP-1 deferrals:
+
+**Navigation & structure (4 items)**
+- **P0-2 `NavigationSplitView` on Songs + Learn** — primary column 320–375pt, detail fills remainder. Regular-width only; compact preserves `NavigationStack`.
+- **`AppDestination` v2** (ZOMBIE from SP-0, re-deferred by SP-1) — extend enum for column routing + deep links from menu commands. Blocks P0-2.
+- **VM scene-hoisting convention** (from SP-0) — hoist play-along VM into parent scene so rotation / size-class swaps don't tear it down. Blocks P1-3 + enables SP-3 cleanly.
+- **P0-6 Toolbar → system `.toolbar{}`** — migrate `PlayAlongToolbar` + `PracticeControlsToolbar`. Gets Liquid Glass for free, HIG-correct.
+
+**Adaptive layout (3 items)**
+- **P0-5 Piano `pitchRange` adapts to width** — compact 61 keys / regular 73 or 88 keys via `GeometryReader`. Guardrail: no sampler reconfiguration.
+- **P1-3 Landscape play-along layout** — side-by-side keyboard + notation on iPhone landscape / iPad. Depends on VM hoist.
+- **`testRotationDoesNotRestartAudioEngine`** (deferred from SP-0 F1) — lands here because VM hoist + landscape both enable it to pass.
+
+**Input parity (3 items)**
+- **Transport shortcuts** in `AppCommands` (Space = play/pause, ←/→ = seek, ⌘. = stop) using `@FocusedValue` for per-surface dispatch. Depends on `@FocusedValue` infra.
+- **`@FocusedValue` / `@FocusState` infrastructure** (deferred from SP-1) — first pattern usage lands with transport shortcuts; card focus (P2-6) layers on top.
+- **P0-4 remainder: `.hoverEffect` sweep** on `SongCardView`, `SongListRow`, `FilterChip`, `LessonCardView`, `CurriculumCardView`, `ThemePreviewCard` (deferred from SP-1).
+
+**Total: 10 items.** Target effort: 2–3 weeks. Latency guardrails: `featureFlagToggleDoesNotRestartEngine` (SP-0) stays green, new `testRotationDoesNotRestartAudioEngine` must pass.
+
+**Audio latency risk:** 7 of 10 items are ✅ None. 2 (pitchRange, transport shortcuts) are ⚠️ Low. 1 (landscape / VM hoist) is ⚠️ Medium — mitigated by the rotation test + VM scene-hoisting discipline.
+
+**Explicitly NOT in SP-2** (confirmed deferral to later):
+- P1-1 PlayAlongViewModel split → SP-3 (HIGH risk, own sub-project, feature-flagged A/B).
+- P1-4 Pencil annotation → SP-4 or dedicated.
+- P1-5/6/7/8/9/10 Accessibility polish + onboarding + mic pre-prompt → SP-4.
+- P1-11 GenAI harness → SP-5.
+- P2-7/8 Mac destination → SP-6.
+- P2-4 Multi-window for play-along → after SP-3.
+- P2-12/13 Sheet detents + tab-switch haptics → SP-4 if room.
 
 ### SP-3 — PlayAlongViewModel split
 
