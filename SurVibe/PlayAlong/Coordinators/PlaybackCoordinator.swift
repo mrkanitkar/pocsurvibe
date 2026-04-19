@@ -256,11 +256,14 @@ final class PlaybackCoordinator {
             waitController = nil
         }
 
-        track(.songPlaybackStarted, properties: [
-            "song_title": song?.title ?? "",
-            "tempo_scale": tempoScale,
-            "wait_mode": isWaitModeEnabled,
-        ])
+        track(
+            .songPlaybackStarted,
+            properties: [
+                "song_title": song?.title ?? "",
+                "tempo_scale": tempoScale,
+                "wait_mode": isWaitModeEnabled,
+            ]
+        )
 
         Self.logger.info("Playback scheduling started")
     }
@@ -449,7 +452,10 @@ final class PlaybackCoordinator {
 
     /// Install a synthetic song with persistence-relevant fields for completion tests.
     func installSongInfoForTesting(
-        slugId: String, title: String, ragaName: String, difficulty: Int
+        slugId: String,
+        title: String,
+        ragaName: String,
+        difficulty: Int
     ) {
         song = Song(slugId: slugId, title: title, difficulty: difficulty, ragaName: ragaName)
     }
@@ -574,13 +580,16 @@ final class PlaybackCoordinator {
     }
 
     private func trackSessionCompletion() {
-        track(.songPlaybackCompleted, properties: [
-            "song_title": song?.title ?? "",
-            "accuracy": scoring.accuracy,
-            "star_rating": scoring.starRating,
-            "xp_earned": scoring.xpEarned,
-            "tempo_scale": tempoScale,
-        ])
+        track(
+            .songPlaybackCompleted,
+            properties: [
+                "song_title": song?.title ?? "",
+                "accuracy": scoring.accuracy,
+                "star_rating": scoring.starRating,
+                "xp_earned": scoring.xpEarned,
+                "tempo_scale": tempoScale,
+            ]
+        )
         Self.logger.info(
             "Session completed: accuracy=\(String(format: "%.0f", self.scoring.accuracy * 100))%"
         )
