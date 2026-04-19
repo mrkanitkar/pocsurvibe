@@ -1,4 +1,5 @@
 import Foundation
+import SVCore
 import Testing
 
 /// Static-source latency-contract guard.
@@ -49,5 +50,27 @@ struct LatencyContractTests {
                 "VIOLATION: \(file) reads theme via @Environment — must use let parameters per latency contract"
             )
         }
+    }
+
+    @Test @MainActor func featureFlagToggleDoesNotRestartEngine() async throws {
+        let engine = MockAudioEngineProvider()
+        let store = FeatureFlagStore(
+            defaults: UserDefaults(suiteName: "LatencyContract.FlagToggle")!
+        )
+        UserDefaults(suiteName: "LatencyContract.FlagToggle")?
+            .removePersistentDomain(forName: "LatencyContract.FlagToggle")
+
+        // Start the engine once, record the baseline start count.
+        try engine.start()
+        let baseline = engine.startCallCount
+
+        // Toggle every flag on and off. None should cause a re-start.
+        for flag in FeatureFlag.allCases {
+            store.setEnabled(flag, true)
+            store.setEnabled(flag, false)
+        }
+
+        #expect(engine.startCallCount == baseline,
+                "Toggling feature flags must not restart AudioEngineManager. \(engine.startCallCount - baseline) extra starts observed.")
     }
 }
