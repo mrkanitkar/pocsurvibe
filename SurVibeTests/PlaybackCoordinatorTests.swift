@@ -3,6 +3,7 @@ import Foundation
 import SVAudio
 import SwiftData
 import Testing
+
 @testable import SurVibe
 
 /// Unit tests for `PlaybackCoordinator` (SP-3b).
@@ -84,7 +85,8 @@ struct PlaybackCoordinatorTests {
 
     // MARK: - Tests
 
-    @Test func loadSongPopulatesNoteEventsAndDuration() async {
+    @Test
+    func loadSongPopulatesNoteEventsAndDuration() async {
         let coord = makeCoordinator()
         let events = makeTestNoteEvents()
 
@@ -96,7 +98,8 @@ struct PlaybackCoordinatorTests {
         #expect(coord.playbackState == .idle)
     }
 
-    @Test func startSchedulingTransitionsToPlaying() async throws {
+    @Test
+    func startSchedulingTransitionsToPlaying() async throws {
         let engine = MockAudioEngineProvider()
         let metronome = MockMetronomePlayer()
         let coord = makeCoordinator(
@@ -116,7 +119,8 @@ struct PlaybackCoordinatorTests {
         #expect(coord.playbackStartDate != nil, "Self-driving timeline date set")
     }
 
-    @Test func pauseSchedulingPreservesPauseElapsedAndStopsMetronome() async throws {
+    @Test
+    func pauseSchedulingPreservesPauseElapsedAndStopsMetronome() async throws {
         let metronome = MockMetronomePlayer()
         let coord = makeCoordinator(
             engine: MockAudioEngineProvider(),
@@ -137,7 +141,8 @@ struct PlaybackCoordinatorTests {
         #expect(coord.playbackStartDate == nil, "Date frozen on pause")
     }
 
-    @Test func resumeSchedulingTransitionsBackToPlaying() async throws {
+    @Test
+    func resumeSchedulingTransitionsBackToPlaying() async throws {
         let metronome = MockMetronomePlayer()
         let coord = makeCoordinator(
             engine: MockAudioEngineProvider(),
@@ -158,7 +163,8 @@ struct PlaybackCoordinatorTests {
         #expect(coord.playbackStartDate != nil, "Date re-set on resume")
     }
 
-    @Test func tempoScaleSetterUpdatesMetronomeBPM() async {
+    @Test
+    func tempoScaleSetterUpdatesMetronomeBPM() async {
         let metronome = MockMetronomePlayer()
         let coord = makeCoordinator(
             engine: MockAudioEngineProvider(),
@@ -175,11 +181,14 @@ struct PlaybackCoordinatorTests {
         coord.tempoScale = 0.5
 
         // tempoScale 0.5 on a 120-BPM song → setBPM(60).
-        #expect(metronome.bpm == 60.0,
-                "tempoScale 0.5 on 120 BPM song → metronome BPM == 60")
+        #expect(
+            metronome.bpm == 60.0,
+            "tempoScale 0.5 on 120 BPM song → metronome BPM == 60"
+        )
     }
 
-    @Test func stopAndCompleteFinalizesScoringAndPersistsViaRecorder() async throws {
+    @Test
+    func stopAndCompleteFinalizesScoringAndPersistsViaRecorder() async throws {
         let scoring = ScoringCoordinator()
         let metronome = MockMetronomePlayer()
         let soundFont = MockSoundFontPlayer()
@@ -195,7 +204,10 @@ struct PlaybackCoordinatorTests {
         coord.modelContext = context
         coord.installNoteEventsForTesting(makeTestNoteEvents())
         coord.installSongInfoForTesting(
-            slugId: "test_song", title: "Test", ragaName: "", difficulty: 2
+            slugId: "test_song",
+            title: "Test",
+            ragaName: "",
+            difficulty: 2
         )
 
         await coord.startScheduling()
@@ -214,7 +226,8 @@ struct PlaybackCoordinatorTests {
         #expect(progress.count == 1, "SongProgress recorded via PracticeSessionRecorder")
     }
 
-    @Test func cleanupCancelsTasksStopsAudioAndResetsState() async throws {
+    @Test
+    func cleanupCancelsTasksStopsAudioAndResetsState() async throws {
         let engine = MockAudioEngineProvider()
         let metronome = MockMetronomePlayer()
         let soundFont = MockSoundFontPlayer()
