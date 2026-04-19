@@ -52,6 +52,7 @@ struct ContentView: View {
                 ProfileTab()
             }
         }
+        .tabViewStyle(.sidebarAdaptable)
         .tint(themeManager.resolved.accentColor)
         .onChange(of: colorScheme) { _, newScheme in
             themeManager.updateColorScheme(newScheme)
