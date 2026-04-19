@@ -19,7 +19,7 @@ struct SettingsView: View {
                     .foregroundStyle(.secondary)
             }
             #if DEBUG
-            FeatureFlagsSection()
+                FeatureFlagsSection()
             #endif
         }
         .navigationTitle("Settings")
