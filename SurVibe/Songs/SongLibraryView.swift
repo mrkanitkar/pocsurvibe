@@ -14,7 +14,11 @@ struct SongLibraryView: View {
 
     @Environment(AppThemeManager.self) private var themeManager
     @Environment(SongLibraryViewModel.self) private var viewModel
+    @Environment(AppRouter.self) private var router
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
+
+    /// Tracks keyboard focus for hardware-keyboard navigation.
+    @FocusState private var focusedSongID: Song.ID?
 
     /// Controls the sign-in prompt sheet for premium songs.
     @State private var signInTrigger: SignInTrigger?
@@ -124,11 +128,21 @@ struct SongLibraryView: View {
                             .onTapGesture {
                                 signInTrigger = .premiumSong
                             }
+                            .focused($focusedSongID, equals: song.id)
+                            .onKeyPress(.return) {
+                                signInTrigger = .premiumSong
+                                return .handled
+                            }
                     } else {
                         NavigationLink(value: song) {
                             SongCardView(song: song)
                         }
                         .buttonStyle(.plain)
+                        .focused($focusedSongID, equals: song.id)
+                        .onKeyPress(.return) {
+                            router.openSong(song.id)
+                            return .handled
+                        }
                         .contextMenu {
                             Button {
                                 detailSong = song

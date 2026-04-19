@@ -53,6 +53,7 @@ struct FilterChip: View {
             )
         }
         .buttonStyle(.plain)
+        .hoverEffect(.automatic)
         .accessibilityLabel(Text(label))
         .accessibilityHint(
             isActive
