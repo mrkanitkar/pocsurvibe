@@ -1,7 +1,7 @@
 import Foundation
 
 /// Analytics events for SurVibe pipeline and feature tracking.
-public enum AnalyticsEvent: String, Sendable {
+public enum AnalyticsEvent: String, Sendable, CaseIterable {
     // Sprint 0 verification events
     case appScaffoldingLoaded = "app_scaffolding_loaded"
     case audioPocPitchDetected = "audio_poc_pitch_detected"
@@ -91,4 +91,55 @@ public enum AnalyticsEvent: String, Sendable {
 
     // Diagnostics events
     case latencySnapshot = "latency_snapshot"
+
+    // MARK: - SP-0 additions
+
+    /// Consumer: SP-1 (iPad shell) — user activated a sidebar destination.
+    case sidebarUsed = "sidebar_used"
+    /// Consumer: SP-1 (iPad shell) — user invoked a keyboard shortcut.
+    case shortcutInvoked = "shortcut_invoked"
+    /// Consumer: SP-0 (foundation) — developer toggled a feature flag.
+    case featureFlagToggled = "feature_flag_toggled"
+    /// Consumer: SP-0 (foundation) / SP-4 (polish) — Settings view opened.
+    case settingsOpened = "settings_opened"
+    /// Consumer: SP-5 (AI harness) — on-device AI consent prompt presented.
+    case aiConsentShown = "ai_consent_shown"
+    /// Consumer: SP-5 (AI harness) — user granted on-device AI consent.
+    case aiConsentGranted = "ai_consent_granted"
+    /// Consumer: SP-5 (AI harness) — user revoked on-device AI consent.
+    case aiConsentRevoked = "ai_consent_revoked"
+    /// Consumer: SP-6 (Mac) — a Mac window was opened.
+    case macWindowOpened = "mac_window_opened"
+
+    // MARK: - CaseIterable (manual — required because deprecated cases have @available attributes)
+
+    /// All analytics event cases, including deprecated ones retained for PostHog dashboard compatibility.
+    ///
+    /// Swift cannot synthesize `allCases` when any case carries an `@available` attribute (SE-0192).
+    /// This manual implementation ensures test coverage for uniqueness and snake_case across the full vocabulary.
+    public static var allCases: [AnalyticsEvent] {
+        [
+            .appScaffoldingLoaded, .audioPocPitchDetected, .cloudKitSyncCompleted,
+            .tabSelected, .sessionStarted, .sessionEnded,
+            .languageChanged,
+            .doorTapped, .songPlaybackStarted, .songPlaybackPaused, .songPlaybackCompleted,
+            .onboardingScreenViewed, .onboardingSkipped, .onboardingCompleted,
+            .signInStarted, .signInCompleted, .signInFailed, .signInCancelled,
+            .signOutCompleted, .credentialRevoked,
+            .songFavoriteToggled, .songFilterApplied, .songSearchPerformed, .songLibraryViewed,
+            .practiceSessionStarted, .practiceSessionCompleted, .practiceSessionRestarted,
+            .waitModeToggled, .waitModeNoteAttempted, .waitModeCompleted,
+            .playAlongStarted, .playAlongCompleted, .playAlongAbandoned,
+            .playAlongTempoChanged, .playAlongViewModeChanged, .playAlongNotationToggled,
+            .playAlongSoundToggled, .playAlongRestarted, .themeChanged,
+            .tanpuraToggled, .tanpuraSaChanged, .tanpuraResetToDefault, .tanpuraSheetOpened,
+            .songImportStarted, .songImportCompleted, .songImportFailed,
+            .importMidiPlaybackStarted, .songImportSynced, .songImportWarningDisplayed,
+            .songEdited, .songDeleted,
+            .latencySnapshot,
+            .sidebarUsed, .shortcutInvoked, .featureFlagToggled, .settingsOpened,
+            .aiConsentShown, .aiConsentGranted, .aiConsentRevoked,
+            .macWindowOpened,
+        ]
+    }
 }
