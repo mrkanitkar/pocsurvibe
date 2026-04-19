@@ -51,16 +51,11 @@ final class PlayAlongViewModel {
     /// Scoring state per note, keyed by NoteEvent.id.
     private(set) var noteStates: [UUID: FallingNotesLayoutEngine.NoteState] = [:]
 
-    /// Accumulated individual note scores for the session.
-    private(set) var noteScores: [NoteScore] = []
+    /// Accumulated individual note scores for the session. Delegates to `scoring.noteScores`.
+    var noteScores: [NoteScore] { scoring.noteScores }
 
-    /// Count of non-miss note scores. Maintained incrementally to avoid
-    /// O(n) `.filter` scans in `SongPlayAlongView.body` on every render pass.
-    private(set) var notesHit: Int = 0
-
-    /// Running sum of accuracy values for incremental average computation.
-    /// Avoids O(n) `reduce` in `PracticeScoring.averageAccuracy` on every note.
-    private var accuracySum: Double = 0
+    /// Count of non-miss note scores. Delegates to `scoring.notesHit`.
+    var notesHit: Int { scoring.notesHit }
 
     /// Current playback position in seconds from song start.
     private(set) var currentTime: TimeInterval = 0
@@ -89,20 +84,20 @@ final class PlayAlongViewModel {
         currentTime = targetTime
     }
 
-    /// Overall session accuracy (0.0-1.0), updated in real time.
-    private(set) var accuracy: Double = 0
+    /// Overall session accuracy (0.0-1.0). Delegates to `scoring.accuracy`.
+    var accuracy: Double { scoring.accuracy }
 
-    /// Current streak of consecutive non-miss notes.
-    private(set) var streak: Int = 0
+    /// Current streak of consecutive non-miss notes. Delegates to `scoring.streak`.
+    var streak: Int { scoring.streak }
 
-    /// Longest streak achieved during this session.
-    private(set) var longestStreak: Int = 0
+    /// Longest streak achieved during this session. Delegates to `scoring.longestStreak`.
+    var longestStreak: Int { scoring.longestStreak }
 
-    /// Star rating (1-5) computed at session completion.
-    private(set) var starRating: Int = 0
+    /// Star rating (1-5) computed at session completion. Delegates to `scoring.starRating`.
+    var starRating: Int { scoring.starRating }
 
-    /// XP earned, computed at session completion.
-    private(set) var xpEarned: Int = 0
+    /// XP earned, computed at session completion. Delegates to `scoring.xpEarned`.
+    var xpEarned: Int { scoring.xpEarned }
 
     /// Human-readable error message when playbackState is .error.
     private(set) var errorMessage: String?
@@ -134,14 +129,21 @@ final class PlayAlongViewModel {
     ///
     /// `@ObservationIgnored` prevents assignments from triggering SwiftUI
     /// re-renders. Views receive these as `let` parameters at construction time.
-    @ObservationIgnored var rhColor: Color = .blue
+    @ObservationIgnored
+    var rhColor: Color = .blue
 
-    @ObservationIgnored var lhColor: Color = .red
-    @ObservationIgnored var chordColor: Color = .purple
-    @ObservationIgnored var notationLineColor: Color = .black
-    @ObservationIgnored var notationSecondaryColor: Color = .gray
-    @ObservationIgnored var cardBackgroundColor: Color = .white.opacity(0.9)
-    @ObservationIgnored var karaokeBackgroundColor: Color = .black.opacity(0.55)
+    @ObservationIgnored
+    var lhColor: Color = .red
+    @ObservationIgnored
+    var chordColor: Color = .purple
+    @ObservationIgnored
+    var notationLineColor: Color = .black
+    @ObservationIgnored
+    var notationSecondaryColor: Color = .gray
+    @ObservationIgnored
+    var cardBackgroundColor: Color = .white.opacity(0.9)
+    @ObservationIgnored
+    var karaokeBackgroundColor: Color = .black.opacity(0.55)
 
     /// Latency preset for mic pitch detection (controls FFT buffer size for chord detection).
     ///
@@ -244,7 +246,8 @@ final class PlayAlongViewModel {
     var chromeAutoHideSeconds: Double = 6.0
 
     /// Outstanding auto-hide timer. Cancel when user interacts.
-    @ObservationIgnored private var chromeAutoHideTask: Task<Void, Never>?
+    @ObservationIgnored
+    private var chromeAutoHideTask: Task<Void, Never>?
 
     // MARK: - Chrome Actions (v2)
 
@@ -417,6 +420,12 @@ final class PlayAlongViewModel {
     private static let chordGroupingWindow: TimeInterval = 0.010
 
     private static let logger = Logger.survibe(category: "PlayAlong")
+
+    // MARK: - Coordinators (SP-3 extraction)
+
+    /// Scoring coordinator — owns note scores, accuracy, streaks,
+    /// star rating, and XP. SP-3a extraction.
+    let scoring = ScoringCoordinator()
 
     // MARK: - Initialization
 
@@ -812,8 +821,8 @@ final class PlayAlongViewModel {
     func skipGuidedNote() {
         guard let index = currentNoteIndex, index < noteEvents.count else { return }
         noteStates[noteEvents[index].id] = .missed
-        appendScore(NoteScoreCalculator.missedNote(expectedNote: noteEvents[index].swarName))
-        updateStreakForMiss()
+        scoring.record(NoteScoreCalculator.missedNote(expectedNote: noteEvents[index].swarName))
+        scoring.updateStreak(grade: .miss)
         let nextIndex = index + 1
         if nextIndex < noteEvents.count {
             currentNoteIndex = nextIndex
@@ -825,22 +834,14 @@ final class PlayAlongViewModel {
             currentNoteIndex = nil
             expectedMidiNote = nil
         }
-        accuracy = noteScores.isEmpty ? 0 : accuracySum / Double(noteScores.count)
     }
 
     /// Reset all scoring, streak, and guided-play state for a fresh session.
     private func resetScoringState() {
+        scoring.reset()
         currentNoteIndex = nil
         currentTime = 0
         pauseElapsed = 0
-        noteScores.removeAll()
-        notesHit = 0
-        accuracySum = 0
-        accuracy = 0
-        streak = 0
-        longestStreak = 0
-        starRating = 0
-        xpEarned = 0
         errorMessage = nil
         expectedMidiNote = nil
         guidedPlayState = .waitingForNote
@@ -1238,9 +1239,8 @@ final class PlayAlongViewModel {
             ragaPitchDeviationCents: currentPitch?.ragaCentsOffset.map { abs($0) },
             ragaContext: ragaScoringContext
         )
-        appendScore(score)
-        updateStreakForHit(grade: score.grade)
-        accuracy = noteScores.isEmpty ? 0 : accuracySum / Double(noteScores.count)
+        scoring.record(score)
+        scoring.updateStreak(grade: score.grade)
         guidedPlayState = .correct
         lastGuidedMidiNote = nil
 
@@ -1466,8 +1466,8 @@ final class PlayAlongViewModel {
             let prevEvent = noteEvents[prevIndex]
             if noteStates[prevEvent.id] == .active {
                 noteStates[prevEvent.id] = .missed
-                appendScore(NoteScoreCalculator.missedNote(expectedNote: prevEvent.swarName))
-                updateStreakForMiss()
+                scoring.record(NoteScoreCalculator.missedNote(expectedNote: prevEvent.swarName))
+                scoring.updateStreak(grade: .miss)
             }
         }
     }
@@ -1577,7 +1577,8 @@ final class PlayAlongViewModel {
         // score and blend it into the per-note accuracy. Single-note events
         // skip this path entirely (chordCompleteness stays nil).
         if let chordGroup = findChordGroup(for: expectedEvent),
-           let chord = latestChordResult {
+            let chord = latestChordResult
+        {
             let expectedSet = Set(chordGroup.map { Int($0.midiNote) })
             let detectedSet = chord.activeMidiNotes
             let completeness = await noteMatchingActor.evaluateChord(
@@ -1587,7 +1588,9 @@ final class PlayAlongViewModel {
             diff.chordCompleteness = completeness
             if let baseScore = diff.score {
                 diff = applyChordCompleteness(
-                    completeness, to: diff, baseScore: baseScore
+                    completeness,
+                    to: diff,
+                    baseScore: baseScore
                 )
             }
         }
@@ -1596,17 +1599,16 @@ final class PlayAlongViewModel {
         // of the full note list.
         noteStates[diff.noteEventID] = diff.newState
         if let score = diff.score {
-            appendScore(score)
+            scoring.record(score)
         }
         switch diff.streakOutcome {
         case .hit(let grade):
-            updateStreakForHit(grade: grade)
+            scoring.updateStreak(grade: grade)
         case .miss:
-            updateStreakForMiss()
+            scoring.updateStreak(grade: .miss)
         case .noChange:
             break
         }
-        accuracy = noteScores.isEmpty ? 0 : accuracySum / Double(noteScores.count)
     }
 
     /// Derive the full swar name from a MIDI note number.
@@ -1676,38 +1678,6 @@ final class PlayAlongViewModel {
         )
     }
 
-    // MARK: - Private Methods — Score Bookkeeping
-
-    /// Append a note score and maintain `notesHit` and `accuracySum` incrementally.
-    ///
-    /// All `noteScores.append` calls MUST go through this helper so counters
-    /// stay in sync. After calling this, set
-    /// `accuracy = noteScores.isEmpty ? 0 : accuracySum / Double(noteScores.count)`.
-    private func appendScore(_ score: NoteScore) {
-        noteScores.append(score)
-        accuracySum += score.accuracy
-        if score.grade != .miss {
-            notesHit += 1
-        }
-    }
-
-    // MARK: - Private Methods — Streak Tracking
-
-    /// Update streak counters after a non-miss note.
-    private func updateStreakForHit(grade: NoteGrade) {
-        if grade != .miss {
-            streak += 1
-            longestStreak = max(longestStreak, streak)
-        } else {
-            streak = 0
-        }
-    }
-
-    /// Reset the current streak after a missed note.
-    private func updateStreakForMiss() {
-        streak = 0
-    }
-
     // MARK: - Private Methods — Session Completion
 
     /// Complete the session and calculate final scores.
@@ -1735,19 +1705,9 @@ final class PlayAlongViewModel {
 
         // AUD-034: Single @Observable write triggers one Canvas redraw.
         noteStates = updatedStates
-        missedScores.forEach { appendScore($0) }
+        missedScores.forEach { scoring.record($0) }
 
-        // Calculate final metrics
-        accuracy = noteScores.isEmpty ? 0 : accuracySum / Double(noteScores.count)
-        starRating = PracticeScoring.starRating(accuracy: accuracy)
-        xpEarned = PracticeScoring.xpEarned(
-            accuracy: accuracy,
-            difficulty: song?.difficulty ?? 1
-        )
-        longestStreak = max(
-            longestStreak,
-            PracticeScoring.longestStreak(grades: noteScores.map(\.grade))
-        )
+        scoring.finalize(songDifficulty: song?.difficulty ?? 1)
 
         cancelPlaybackTasks()
         soundFont.stopAllNotes()
