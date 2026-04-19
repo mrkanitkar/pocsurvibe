@@ -4,21 +4,78 @@
 > Source of truth for "what shipped, what was deferred, what's next".
 > Created 2026-04-19 after SP-0 + SP-1 landed on `main`.
 
-## Status (2026-04-19)
+## Status (2026-04-19, post-SP-2 merge)
 
 | Sub-project | Status | Tag | Merge SHA | Commits |
 |---|---|---|---|:---:|
 | **SP-0** Foundation | ✅ shipped | `sp-0-foundation` @ `84b523c` | `51c6e76` | 11 |
 | **SP-1** Adaptive Root Shell | ✅ shipped | `sp-1-adaptive-shell` @ `3b3677c` | `685d1c7` | 9 |
-| **SP-2** Per-surface layout (piano, split view, landscape) | ⬜ pending | — | — | — |
-| **SP-3** PlayAlongViewModel split | ⬜ pending | — | — | — |
+| **SP-2** Per-surface layout (NavSplitView + landscape + transport + adaptive piano) | ✅ shipped | `sp-2-per-surface-layout` | `f50dd0f` | 10+ |
+| **SP-3** PlayAlongViewModel split | ⬜ ready — preflight green (see §SP-3 readiness) | — | — | — |
 | **SP-4** Accessibility polish + iOS Settings nav | ⬜ pending | — | — | — |
 | **SP-5** Gen-AI harness | ⬜ pending | — | — | — |
 | **SP-6** Mac destination | ⬜ pending | — | — | — |
 
-**Test-suite snapshot (post-SP-1 on `main`):**
-- SVCore: 93/93 passing (swift test, 0.46 s).
-- SurVibeTests: full-suite run gated by a pre-existing simulator crash (tracked separately); individual SP-0/SP-1 tests (FeatureFlagStoreTests, AnalyticsEventTests, AppCommandsTests, AppTabTests, LatencyContractTests.featureFlagToggleDoesNotRestartEngine) run individually and pass.
+**Test-suite snapshot (verified 2026-04-19 on `main` @ `f50dd0f`):**
+- SVCore: **93/93 passing** (`swift test --package-path Packages/SVCore`, ≈0.44 s).
+- `LatencyContractTests`: **3/3 passing** — `featureFlagToggleDoesNotRestartEngine`, `rotationDoesNotRestartAudioEngine`, `performanceCriticalViewsDoNotReadThemeEnvironment`.
+- `AppRouterTests` + `AppCommandsTests` + `AppTabTests`: **6/6 passing** (combined run).
+- `TransportCommandsTests` + `PianoPitchRangeTests` + `SongLibraryViewFocusTests`: **12/12 passing** (combined run).
+- Narrow SP-0 → SP-2 test coverage: **21 green tests across 7 suites**, all runnable via `-only-testing` against `iPad Air 13-inch (M3)` simulator. Full-suite run still gated by a pre-existing simulator crash tracked separately; no SP-0/1/2 test regression observed.
+
+---
+
+## Post-SP-2 verification (2026-04-19)
+
+All deliverables re-verified on `main` @ `f50dd0f`. Every F/item below was confirmed by direct code inspection + narrow test run.
+
+### SP-0 deliverables — **6/6 F-items PRESENT** (no regressions)
+
+| F-item | Status | Evidence on `main` @ `f50dd0f` |
+|---|:---:|---|
+| F1 flag-toggle latency regression test | ✅ PRESENT | `SurVibeTests/LatencyContractTests.swift:80` — passes in isolation |
+| F1 macOS Mac-CI stub | ✅ PRESENT | `SurVibeTests/LatencyContractTests+macOS.swift` (compiles, no-op body) |
+| F2 Platform hygiene doc + folders | ✅ PRESENT | `docs/Architecture_Platform_Hygiene.md` · `SurVibe/Platform/.gitkeep` · `Packages/SVCore/Sources/SVCore/Platform/.gitkeep` |
+| F3 8 new `AnalyticsEvent` cases | ✅ PRESENT | `Packages/SVCore/Sources/SVCore/Analytics/AnalyticsEvent.swift` — `AnalyticsEventTests` green in SVCore suite |
+| F4 `FeatureFlag` / `FeatureFlagStoring` / `FeatureFlagStore` | ✅ PRESENT | `Packages/SVCore/Sources/SVCore/FeatureFlags/` — 3 files, `FeatureFlagStoreTests` 5/5 green (including spec +1 `togglingOneFlagDoesNotAffectOthers`) |
+| F4 Debug UI | ✅ PRESENT | `SurVibe/Settings/FeatureFlagsSection.swift` (shipped in `Settings → Debug` section — per deviation D-SP0-3) |
+| F5 `SettingsView` + `Settings{}` scene wrapper | ✅ PRESENT | `SurVibe/Settings/SettingsView.swift` · `SurVibeApp.swift` scene is `#if os(macOS)` per D-SP0-2 |
+| F5 `PreferenceStoring` protocol | ✅ PRESENT | `Packages/SVCore/Sources/SVCore/Preferences/PreferenceStoring.swift` (protocol only; first implementer is still SP-4/SP-5) |
+| F6 Foundation primitives audit doc | ✅ PRESENT | `docs/Foundation_Primitives.md` |
+
+**Special audio-safety check:** `LatencyContractTests.featureFlagToggleDoesNotRestartEngine` runs green on `main`. SP-0's audio-restart guarantee survived SP-1 + SP-2.
+
+### SP-1 deliverables — **5/5 F-items PRESENT** (no regressions)
+
+| F-item | Status | Evidence |
+|---|:---:|---|
+| F1 `.tabViewStyle(.sidebarAdaptable)` | ✅ PRESENT | `SurVibe/ContentView.swift:64` — single modifier, no size-class wrapping |
+| F2 Router hoist + `.commands{ AppCommands(router:) }` | ✅ PRESENT | `SurVibe/SurVibeApp.swift` — `@State private var router = AppRouter()` + commands chain |
+| F3 `AppCommands` with ⌘1–⌘4 + ⌘, | ✅ PRESENT | `SurVibe/Commands/AppCommands.swift` — `performTabSwitch` + `performPreferences` static entry points for DI |
+| F4 `AppTab: CaseIterable` + `keyEquivalent` | ✅ PRESENT | `SurVibe/Navigation/AppTab.swift` — `AppTabTests` covers uniqueness + mapping |
+| F5 `.hoverEffect` on DoorCard + 5 ProfileTab rows | ✅ PRESENT | `SurVibe/Components/DoorCard.swift:96` + `SurVibe/ProfileTab.swift:{243,257,269,288,304}` |
+
+### SP-2 deliverables — **10/10 items PRESENT (with one scoped deviation accepted)**
+
+| Item | Status | Evidence |
+|---|:---:|---|
+| 1 `AppRouter` v2 (`selectedSongID`, `selectedLessonID`, `openSong`, `openLesson`) | ✅ PRESENT | `SurVibe/Navigation/AppRouter.swift:93+` — `AppRouterTests` covers all 3 new paths |
+| 2 `PlayAlongSceneHost` owns `@State vm`; `SongPlayAlongView` receives `@Bindable` | ✅ PRESENT | `SurVibe/PlayAlong/PlayAlongSceneHost.swift:27` `@State private var vm: PlayAlongViewModel` · `SurVibe/PlayAlong/SongPlayAlongView.swift:38` `@Bindable var viewModel` |
+| 3 `rotationDoesNotRestartAudioEngine` test | ✅ PRESENT | `SurVibeTests/LatencyContractTests.swift:58` — verified green this audit |
+| 4 SongsTab → `NavigationSplitView` with `SongLibrarySidebar` | ✅ PRESENT | `SurVibe/SongsTab.swift:33` + `SurVibe/Songs/SongLibrarySidebar.swift` |
+| 5 LearnTab → `NavigationSplitView` with `LessonLibrarySidebar` | ✅ PRESENT | `SurVibe/LearnTab.swift:40` + `SurVibe/Learn/LessonLibrarySidebar.swift` |
+| 6 Piano `adaptivePitchRange` / `adaptiveMidiRange` static fn | ✅ PRESENT | `SurVibe/Audio/InteractivePianoView.swift:181-198` — `nonisolated static` per spec; `PianoPitchRangeTests` 4/4 green |
+| 7 `PlayAlongToolbar` glass treatment (`PracticeControlsToolbar` migration still evaluated per AD-5 plan-time call) | ✅ PRESENT | `SurVibe/PlayAlong/PlayAlongToolbar.swift` — floating chrome panel retained per AD-5 |
+| 8 `TransportCommands` + `FocusedValues` with `@FocusedValue` | ✅ PRESENT | `SurVibe/Commands/TransportCommands.swift` + `SurVibe/Commands/FocusedValues.swift` — wired at `SurVibeApp.swift:233`; `TransportCommandsTests` 5/5 green |
+| 9 `@FocusState` + `.onKeyPress(.return)` on library rows | ✅ PRESENT | `SurVibe/Songs/SongLibraryView.swift` + `SurVibe/Learn/LessonLibraryView.swift`; `SongLibraryViewFocusTests` 2/2 green |
+| 10 `.hoverEffect` sweep on 6 cards | ⚠️ PARTIAL (accepted deviation D-SP2-1) | Shipped on `FilterChip`, `ThemePreviewCard`. Skipped on `SongCardView`, `SongListRow`, `LessonCardView`, `CurriculumCardView` — those are passive display views wrapped by `NavigationLink`/`onTapGesture` at call sites; hover on passive subviews would be a dead modifier. Rationale in commit `13c495e`. |
+
+**Special audio-safety checks:** both `featureFlagToggleDoesNotRestartEngine` (SP-0) and `rotationDoesNotRestartAudioEngine` (SP-2) are green. The VM-hoist invariant holds.
+
+**Architectural deviations (SP-2):**
+
+- **D-SP2-1 — hoverEffect on passive display views skipped.** Spec Item #10 listed 6 card types; only the 2 that own their own tappable `Button` got the modifier. The other 4 are passive views composed by a `NavigationLink` at their call site, so attaching `.hoverEffect` at the card root would bind to a non-interactive shape (dead modifier). The `NavigationLink` ancestor supplies the correct hover/cursor affordance through the system. Tracked; rationale recorded in commit `13c495e`.
+- **D-SP2-2 — `PracticeControlsToolbar` migration conditional (per AD-5).** Spec allowed a plan-time call; the floating-chrome panel pattern was retained (matches `PlayAlongToolbar` AD-5). Not a regression; simply exercised the conditional.
 
 ---
 
@@ -165,48 +222,118 @@
 
 ---
 
+## SP-2 — Per-surface layout + pending infra
+
+- **Spec:** [docs/superpowers/specs/2026-04-19-sp2-per-surface-layout-design.md](../specs/2026-04-19-sp2-per-surface-layout-design.md)
+- **Plan:** [docs/superpowers/plans/2026-04-19-sp2-per-surface-layout.md](2026-04-19-sp2-per-surface-layout.md)
+- **Tag:** `sp-2-per-surface-layout`
+- **Merge commit:** `f50dd0f` (2026-04-19)
+
+See "Post-SP-2 verification" above for the 10/10 deliverable audit + D-SP2-1/2 deviation notes. Consumer-contract items published for downstream sub-projects:
+
+- `AppRouter.selectedSongID / selectedLessonID / openSong / openLesson` — consumed by SP-3 deep-link commands + SP-5/6 intents.
+- `PlayAlongSceneHost` pattern — template for any future rotation-sensitive surface (SP-3 must hoist any new coordinators at this level or above).
+- `TransportActions` + `@FocusedValue(\.transportActions)` — SP-3 wires its decomposed coordinators through this existing `@FocusedValue` entry (no new focused value needed).
+- Nonisolated static `adaptivePitchRange` / `adaptiveMidiRange` — any future piano surface reuses the same breakpoint math.
+
+---
+
 ## Upcoming sub-projects
 
-### SP-2 — Per-surface deep layout + pending infra (next)
+### Deferred-items catalogue (from SP-TRAJECTORY-TRACKER + Audit P0/P1/P2 pools)
 
-**Expanded scope (2026-04-19):** the original 6-item "narrow" SP-2 absorbs 4 zombie/shared-convention items so SP-3 (VM split) and SP-4 (polish) don't have to unblock themselves.
+All items below were explicitly deferred by SP-0, SP-1, or SP-2 specs — re-verified **not-landed** on `main` @ `f50dd0f` by grep + file inspection this audit. Zombie flag indicates a deferral that moved more than once.
 
-From the Refactor Plan P0 + P1 + P2 pools and SP-0/SP-1 deferrals:
+| Item | Source | Routed to | Verified NOT-landed | Zombie? |
+|---|---|:---:|:---:|:---:|
+| P1-1 `PlayAlongViewModel` decomposition | Audit + SP-0 (deferred) | **SP-3** | ✅ VM still 1,828 lines, untouched since pre-SP-0 | ⚠ yes (SP-0 → SP-2 → SP-3) — but intentional, and the sub-project is actually next |
+| `NoteRouter` new single site for `noteOn/off` on engine | SP-3 split contract | **SP-3** | ✅ no `NoteRouter` type anywhere | — |
+| `PlaybackCoordinator` / `ScoringCoordinator` | SP-3 split contract | **SP-3** | ✅ types don't exist | — |
+| P1-5 Hand colors → Rang theme tokens | Audit | **SP-4** | ✅ `InteractivePianoView` still uses hardcoded `.blue/.red/.purple` defaults | — |
+| P1-6 Differentiate-without-color on key highlights | Audit | **SP-4** | ✅ no `accessibilityDifferentiateWithoutColor` guard on piano | — |
+| P1-7 Devanagari `accessibilityLabel` on SargamNoteView | Audit | **SP-4** | ✅ no accessibilityLabel override spotted on SargamNoteView | — |
+| P1-8 Pinch-zoom inheritance on `ScrollingSheetView` + double-tap reset | Audit | **SP-4** | ✅ NotationContainerView has pinch; ScrollingSheetView doesn't inherit | — |
+| P1-9 Skip-onboarding button | Audit | **SP-4** | ✅ no skip button in OnboardingContainerView | — |
+| P1-10 Mic permission pre-prompt | Audit | **SP-4** | ✅ no `MicPermissionPrePrompt.swift` present | — |
+| P1-4 Apple Pencil annotation | Audit | **SP-4** (or dedicated) | ✅ no `PKCanvasView` overlay on ScrollingSheetView | — |
+| iOS in-app Settings nav entry | SP-0 (AD-5) | **SP-4** | ✅ `SettingsView` exists but no iOS navigation destination references it | — |
+| Populate Appearance / Display sections of `SettingsView` | SP-0 (F5) | **SP-4** | ✅ `SettingsView` still has "Populated in SP-4" placeholder text | — |
+| P2-2 Wire `HapticEngine` / `.sensoryFeedback` on success paths | Audit | **SP-4** (if room) | ✅ grep shows haptics only wired to existing ThemeCarouselPicker | — |
+| P2-6 `@FocusState` on lesson/song card arrow-nav | Audit | partially SP-2 (Return-key dispatch landed); **SP-4** for arrow-key card nav | ✅ Enter works; arrow-key between cards not yet wired | — |
+| P2-12 Presentation detents audit | Audit | **SP-4** | ✅ not audited | — |
+| P2-13 Haptics on tab switch | Audit | **SP-4** | ✅ no `.sensoryFeedback(.impact…, trigger: selectedTab)` on `ContentView` | — |
+| P1-11 GenAI harness (badge / sheet / sanitiser / consent) | Audit | **SP-5** | ✅ `SurVibe/AI/` + `SVAI/Sanitisation/` types not present | — |
+| `PreferenceStoring` concrete impl (app-side) | SP-0 | **SP-5** (first real consumer) | ✅ protocol only; no `@AppStorage`/`ModelContext`-backed class lands until first AI toggle needs it | — |
+| P1-2 Live Activity / Dynamic Island | Audit | **PENDING** (not yet assigned; candidate for SP-5 or dedicated) | ✅ no `SurVibeWidgets/` target | — |
+| P2-3 `AppIntent` "Start riyaz" | Audit | **PENDING** | ✅ no intents target | — |
+| P2-4 Multi-window for play-along | Audit | **PENDING** (after SP-3) | ✅ single WindowGroup | — |
+| P2-5 External display scene | Audit | **PENDING** | ✅ no mirror scene | — |
+| P2-9 TipKit migration | Audit | **PENDING** | ✅ no TipKit adoption | — |
+| P2-10 Test coverage SVAdvanced + SVSocial | Audit | **PENDING** | ✅ minimal tests remain | — |
+| P2-14 Focus filters | Audit | **PENDING** | ✅ no Focus integration | — |
+| P2-7 SVAudio macOS port (`#if os(iOS)` around `AVAudioSession`) | Audit | **SP-6** | ✅ `AudioSessionManager` still iOS-only | — |
+| P2-8 `SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD` flip | Audit | **SP-6** | ✅ pbxproj unchanged | — |
+| Mac-specific `LatencyContractTests` body | SP-0 F1 | **SP-6** | ✅ `LatencyContractTests+macOS.swift` stub still TODO | — |
+| `macWindowOpened` analytics first call site | SP-0 F3 | **SP-6** | ✅ event case defined, no call site yet | — |
 
-**Navigation & structure (4 items)**
-- **P0-2 `NavigationSplitView` on Songs + Learn** — primary column 320–375pt, detail fills remainder. Regular-width only; compact preserves `NavigationStack`.
-- **`AppDestination` v2** (ZOMBIE from SP-0, re-deferred by SP-1) — extend enum for column routing + deep links from menu commands. Blocks P0-2.
-- **VM scene-hoisting convention** (from SP-0) — hoist play-along VM into parent scene so rotation / size-class swaps don't tear it down. Blocks P1-3 + enables SP-3 cleanly.
-- **P0-6 Toolbar → system `.toolbar{}`** — migrate `PlayAlongToolbar` + `PracticeControlsToolbar`. Gets Liquid Glass for free, HIG-correct.
+**Zombie summary:** The only repeat-deferred item is P1-1 (VM decomposition). It was parked at SP-0 (foundation, correctly — no consumer), slipped past SP-1's scope, and was explicitly roadmapped into SP-2 spec out-of-scope → SP-3. SP-3 is next, so the zombie clock stops here.
 
-**Adaptive layout (3 items)**
-- **P0-5 Piano `pitchRange` adapts to width** — compact 61 keys / regular 73 or 88 keys via `GeometryReader`. Guardrail: no sampler reconfiguration.
-- **P1-3 Landscape play-along layout** — side-by-side keyboard + notation on iPhone landscape / iPad. Depends on VM hoist.
-- **`testRotationDoesNotRestartAudioEngine`** (deferred from SP-0 F1) — lands here because VM hoist + landscape both enable it to pass.
+### SP-3 — PlayAlongViewModel split (immediate next; HIGH risk)
 
-**Input parity (3 items)**
-- **Transport shortcuts** in `AppCommands` (Space = play/pause, ←/→ = seek, ⌘. = stop) using `@FocusedValue` for per-surface dispatch. Depends on `@FocusedValue` infra.
-- **`@FocusedValue` / `@FocusState` infrastructure** (deferred from SP-1) — first pattern usage lands with transport shortcuts; card focus (P2-6) layers on top.
-- **P0-4 remainder: `.hoverEffect` sweep** on `SongCardView`, `SongListRow`, `FilterChip`, `LessonCardView`, `CurriculumCardView`, `ThemePreviewCard` (deferred from SP-1).
+**Verdict: 🟢 GREEN — all audio-safety preflight gates pass on `main` @ `f50dd0f`. One amber note on VM size/shape (addressed below), but no architectural blockers.**
 
-**Total: 10 items.** Target effort: 2–3 weeks. Latency guardrails: `featureFlagToggleDoesNotRestartEngine` (SP-0) stays green, new `testRotationDoesNotRestartAudioEngine` must pass.
+#### Preflight checklist (all ✅)
 
-**Audio latency risk:** 7 of 10 items are ✅ None. 2 (pitchRange, transport shortcuts) are ⚠️ Low. 1 (landscape / VM hoist) is ⚠️ Medium — mitigated by the rotation test + VM scene-hoisting discipline.
+| Prerequisite | Provider | Evidence on `main` |
+|---|---|---|
+| `FeatureFlag.playAlongViewModelV2` | SP-0 F4 | `Packages/SVCore/Sources/SVCore/FeatureFlags/FeatureFlag.swift` — case present, defaults false |
+| `PlayAlongSceneHost` hoists the VM | SP-2 Item 2 | `@State private var vm: PlayAlongViewModel` at `SurVibe/PlayAlong/PlayAlongSceneHost.swift:27` — survives rotation and size-class swap |
+| `TransportActions` / `@FocusedValue` infra | SP-2 Item 8 | `SurVibe/Commands/FocusedValues.swift` + `SurVibe/Commands/TransportCommands.swift` — ready for new coordinators to re-publish with identical entry |
+| `LatencyContractTests.featureFlagToggleDoesNotRestartEngine` green | SP-0 F1 | verified this audit |
+| `LatencyContractTests.rotationDoesNotRestartAudioEngine` green | SP-2 Item 3 | verified this audit |
+| `MockAudioEngineProvider.startCallCount` test seam | SP-0 | used by both latency contract tests; stable API |
+| `AnalyticsEvent.shortcutInvoked` for future transport-from-split dispatch | SP-0 F3 | case shipped; already consumed by `TransportCommands` and reusable by split coordinators |
 
-**Explicitly NOT in SP-2** (confirmed deferral to later):
-- P1-1 PlayAlongViewModel split → SP-3 (HIGH risk, own sub-project, feature-flagged A/B).
-- P1-4 Pencil annotation → SP-4 or dedicated.
-- P1-5/6/7/8/9/10 Accessibility polish + onboarding + mic pre-prompt → SP-4.
-- P1-11 GenAI harness → SP-5.
-- P2-7/8 Mac destination → SP-6.
-- P2-4 Multi-window for play-along → after SP-3.
-- P2-12/13 Sheet detents + tab-switch haptics → SP-4 if room.
+#### `PlayAlongViewModel` shape (read 2026-04-19 on `main`)
 
-### SP-3 — PlayAlongViewModel split
+- **Line count: 1,828** — identical to pre-SP-0 baseline. Confirmed via `git log -- SurVibe/PlayAlong/PlayAlongViewModel.swift`: no commits touched this file during SP-0, SP-1, or SP-2. SP-2 added a sibling `PlayAlongSceneHost.swift` to own the VM but did not change VM internals.
+- **Structure snapshot:**
+  - ≈ 57 methods across transport, MIDI, pitch, scoring, chord, display-link, persistence domains.
+  - Top-level `// MARK:` already buckets state into: Published State, Playback Control, Highlight State, Tasks, Services, Scoring, Chord, Session Lifecycle.
+  - `// swiftlint:disable file_length` + `type_body_length` on the file — a standing signal that a split is overdue.
+- **Method buckets that map cleanly to the proposed split:**
+
+  | Coordinator | Current VM methods (line refs) |
+  |---|---|
+  | **PlaybackCoordinator** (transport, wait-mode, seek) | `seek` (86), `startSession` (550), `pauseSession` (612), `resumeSession` (650), `toggleWaitMode` (744), `stopAndComplete` (760), `startPlayback` (1373), `startPlaybackFromCurrentPosition` (1385), `runPlaybackLoop` (1408), `markPreviousNotesAsMissed` (1464), `awaitWaitModeResolution` (1478), `awaitLastNoteCompletion` (1488) |
+  | **ScoringCoordinator** (pure scoring over ring-buffer snapshots) | `resetScoringState` (832), `applyChordCompleteness` (1651), `appendScore` (1686), `updateStreakForHit` (1697), `updateStreakForMiss` (1707), `routeNoteToScoring` (1089), `findChordGroup` (1634), `completeSession` (1720), `persistSessionResults` (1764), `trackSessionCompletion` (1783) |
+  | **WaitController** (already extracted) | `PlayAlongWaitController.swift` — stays |
+  | **NoteRouter** (new, single engine noteOn/off call site) | `handleNoteDetected` (679), `handleKeyboardNoteOn/Off` (693/709), `handleKeyboardTouch*` (723/738), `playNoteSound` (1448), `processNoteInput` (1536), `handleGuidedCorrectNote/WrongNote` (1225/1266), `skipGuidedNote` (812) |
+  | **View-chrome state** (moves to `SongPlayAlongView+Subviews.swift`) | `summonChrome` (252), `resetAutoHide` (258), `hideChrome` (270), plus `chromeAutoHideSeconds`/related `@Observable` properties at 244–300 |
+
+- **Boundary-risk scan:**
+  - **Single-hop note-on invariant holds naturally.** Current MIDI callback path (`installMIDINoteCallback` at 900, `processNoteInput` at 1536) is synchronous into `AudioEngineManager.shared.noteOn`. A `NoteRouter` type can adopt this exact synchronous call as-is; no new `await` is needed. The VM split contract rule #1 survives trivially if `NoteRouter` is a `struct`/`final class` on `@MainActor` with the same single-entry method.
+  - **`noteMatchingActor` already is an actor.** Already off the critical path — it receives copies via `SPSCRingBuffer` snapshots. Matches VM split contract rule #2.
+  - **`MIDIInputManager` stays `NSLock`-guarded.** Not moved by SP-3; rule #3 holds.
+  - **`MIDINoteHighlightCoordinator` is already standalone** (owned by VM via `highlightCoordinator` at 392). Can be moved wholesale to the new `NoteRouter` or kept in the facade — either preserves rule #4.
+  - **No deep async chains cross proposed boundaries.** The five `async` methods on the VM (`loadSong`, `startSession`, `handleKeyboardTouch`, `runChordDetectionLoop`, `runMelodyDetectionLoop`) live entirely within one bucket each — no coordinator-to-coordinator `await` required.
+  - **Actor-isolated state that crosses boundaries:** none identified. Every cross-bucket state share (playback state, noteScores, currentNoteIndex) is already `@Observable` on the main actor. `@Observable` re-synthesis of the new facade requires the coordinators either to be sub-`@Observable` holdings or to expose `didSet`-propagating published mirrors — a known trade-off the spec should pick early.
+
+#### SP-3-specific risks flagged for the design session
+
+1. **`@Observable` synthesis across coordinators.** The class is currently `@Observable @MainActor` with all state in the primary declaration (cited in its own header comment). A split that puts state into coordinator children requires either (a) nested `@Observable` holdings the view reads transitively (SwiftUI supports this, but DiagnosticsOverlayView and other consumers must be audited) or (b) a facade that mirrors coordinator state via `didSet`. Pick one at spec time; don't leave it for plan.
+2. **Chord detection lives across two method families.** `runChordDetectionLoop` (1049) vs `findChordGroup` (1634) vs `applyChordCompleteness` (1651) vs `latestChordResult` state — one runs a detection loop, one evaluates expected-note chord groups. The split should keep detection in `NoteRouter` (detection = input) and grouping/completeness in `ScoringCoordinator` (scoring = consumer). Document this explicitly; it's the non-obvious boundary.
+3. **`configureRagaContext` (1339) + `enrichPitchWithRagaContext` (1314) + `ragaScoringContext` / `ragaMapper` state.** Belongs in `ScoringCoordinator` but has an input-side tendril (pitch enrichment). Proposal: keep the enrichment inlined at the pitch-detection loop in `NoteRouter`, keep the scoring context in `ScoringCoordinator`, pass the context by reference.
+4. **Session-results persistence (`persistSessionResults`, `trackSessionCompletion`) currently touches `modelContext`.** The facade must retain `var modelContext: ModelContext?` (VM line 308) or pass it into `ScoringCoordinator.completeSession(context:)` — SwiftData context handoff needs a deliberate choice so scoring can be unit-tested without a live container.
+
+**None of these risks are blockers.** All are addressable at spec-time for SP-3; flag them in the brainstorm so they don't surface as plan-time ambiguities.
+
+#### Scope
 
 - P1-1 Decompose the 1,828-line `PlayAlongViewModel` into `PlaybackCoordinator`, `ScoringCoordinator`, `NoteRouter`, `WaitController` (existing), view-chrome extraction.
 - Guarded by SP-0 `FeatureFlag.playAlongViewModelV2` for A/B rollout.
 - Non-negotiable latency contract: `LatencyProbe` p95 delta ≤ 0.5 ms vs baseline.
+- New tests: `PlaybackCoordinatorTests`, `ScoringCoordinatorTests`, `NoteRouterTests`. Existing `PlayAlongIntegrationTests` must stay green against both flag states (v1 and v2) for one sprint before v1 deletion.
 
 ### SP-4 — Accessibility polish + iOS in-app Settings
 
