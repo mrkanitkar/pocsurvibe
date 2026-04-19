@@ -94,11 +94,13 @@ struct LanguageMappingTests {
 
 // MARK: - SongLibraryViewModel Tests
 
+/// Serialized + shared container — see `SwiftDataTestContainer.swift`.
+@Suite(.serialized)
 @MainActor
 struct SongLibraryViewModelTests {
     @Test @MainActor func initialState() throws {
-        let container = try makeTestContainer()
-        let viewModel = SongLibraryViewModel(modelContext: container.mainContext)
+        let context = try SwiftDataTestContainer.freshContext()
+        let viewModel = SongLibraryViewModel(modelContext: context)
 
         #expect(viewModel.allSongs.isEmpty)
         #expect(viewModel.filteredSongs.isEmpty)
@@ -113,8 +115,8 @@ struct SongLibraryViewModelTests {
     }
 
     @Test @MainActor func languageFilterToggle() throws {
-        let container = try makeTestContainer()
-        let viewModel = SongLibraryViewModel(modelContext: container.mainContext)
+        let context = try SwiftDataTestContainer.freshContext()
+        let viewModel = SongLibraryViewModel(modelContext: context)
 
         viewModel.toggleLanguageFilter("hi")
         #expect(viewModel.activeLanguageFilter == "hi")
@@ -126,8 +128,8 @@ struct SongLibraryViewModelTests {
     }
 
     @Test @MainActor func difficultyFilterToggle() throws {
-        let container = try makeTestContainer()
-        let viewModel = SongLibraryViewModel(modelContext: container.mainContext)
+        let context = try SwiftDataTestContainer.freshContext()
+        let viewModel = SongLibraryViewModel(modelContext: context)
 
         viewModel.toggleDifficultyFilter(2)
         #expect(viewModel.activeDifficultyFilter == 2)
@@ -137,8 +139,8 @@ struct SongLibraryViewModelTests {
     }
 
     @Test @MainActor func raagFilterToggle() throws {
-        let container = try makeTestContainer()
-        let viewModel = SongLibraryViewModel(modelContext: container.mainContext)
+        let context = try SwiftDataTestContainer.freshContext()
+        let viewModel = SongLibraryViewModel(modelContext: context)
 
         viewModel.toggleRaagFilter("Yaman")
         #expect(viewModel.activeRaagFilters.contains("Yaman"))
@@ -152,8 +154,8 @@ struct SongLibraryViewModelTests {
     }
 
     @Test @MainActor func favoritesToggle() throws {
-        let container = try makeTestContainer()
-        let viewModel = SongLibraryViewModel(modelContext: container.mainContext)
+        let context = try SwiftDataTestContainer.freshContext()
+        let viewModel = SongLibraryViewModel(modelContext: context)
 
         viewModel.toggleFavorites()
         #expect(viewModel.showFavoritesOnly)
@@ -163,8 +165,8 @@ struct SongLibraryViewModelTests {
     }
 
     @Test @MainActor func clearAllFilters() throws {
-        let container = try makeTestContainer()
-        let viewModel = SongLibraryViewModel(modelContext: container.mainContext)
+        let context = try SwiftDataTestContainer.freshContext()
+        let viewModel = SongLibraryViewModel(modelContext: context)
 
         viewModel.toggleLanguageFilter("hi")
         viewModel.toggleDifficultyFilter(1)
@@ -182,8 +184,8 @@ struct SongLibraryViewModelTests {
     }
 
     @Test @MainActor func updateSort() throws {
-        let container = try makeTestContainer()
-        let viewModel = SongLibraryViewModel(modelContext: container.mainContext)
+        let context = try SwiftDataTestContainer.freshContext()
+        let viewModel = SongLibraryViewModel(modelContext: context)
 
         viewModel.updateSort(.titleAscending)
         #expect(viewModel.sortOption == .titleAscending)
@@ -194,10 +196,10 @@ struct SongLibraryViewModelTests {
 
     // MARK: - Helpers
 
-    /// Creates an in-memory ModelContainer for testing.
+    /// Returns the shared test container. The Day 08 suite previously used
+    /// a Song-only schema; the shared full-schema container is a superset.
+    /// See `SwiftDataTestContainer.swift` for the crash this avoids.
     private func makeTestContainer() throws -> ModelContainer {
-        let schema = Schema([Song.self])
-        let config = ModelConfiguration(isStoredInMemoryOnly: true)
-        return try ModelContainer(for: schema, configurations: [config])
+        SwiftDataTestContainer.shared
     }
 }

@@ -10,34 +10,18 @@ import Testing
 /// Verifies that achievements unlock correctly based on context, that
 /// duplicate triggers don't create duplicate records, and that XP bonuses
 /// are awarded on unlock. Uses in-memory `ModelContainer`.
-@Suite("AchievementManager Tests")
+/// Serialized + shared container — see `SwiftDataTestContainer.swift`
+/// for why per-test `isStoredInMemoryOnly` containers crash the host.
+@Suite("AchievementManager Tests", .serialized)
 @MainActor
 struct AchievementManagerTests {
 
     // MARK: - Helpers
 
-    /// Creates an in-memory ModelContainer with all required models.
-    private func makeContainer() throws -> ModelContainer {
-        let schema = Schema([
-            UserProfile.self,
-            RiyazEntry.self,
-            Achievement.self,
-            SongProgress.self,
-            LessonProgress.self,
-            SubscriptionState.self,
-            Song.self,
-            Lesson.self,
-            Curriculum.self,
-            XPEntry.self,
-        ])
-        let config = ModelConfiguration(isStoredInMemoryOnly: true)
-        return try ModelContainer(for: schema, configurations: [config])
-    }
-
-    /// Creates a fully wired AchievementManager with a pre-created UserProfile.
+    /// Creates a fully wired AchievementManager with a pre-created UserProfile
+    /// on a fresh context from the shared test container.
     private func makeManager() throws -> (AchievementManager, XPManager, ModelContext) {
-        let container = try makeContainer()
-        let context = container.mainContext
+        let context = try SwiftDataTestContainer.freshContext()
         let profile = UserProfile()
         context.insert(profile)
         try context.save()
