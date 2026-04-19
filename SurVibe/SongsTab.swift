@@ -14,16 +14,21 @@ import SwiftUI
 struct SongsTab: View {
     // MARK: - Properties
 
-    @Environment(\.modelContext) private var modelContext
-    @Environment(AppThemeManager.self) private var themeManager
-    @Environment(AppRouter.self) private var router
+    @Environment(\.modelContext)
+    private var modelContext
+    @Environment(AppThemeManager.self)
+    private var themeManager
+    @Environment(AppRouter.self)
+    private var router
 
-    @State private var viewModel: SongLibraryViewModel?
+    @State
+    private var viewModel: SongLibraryViewModel?
 
     // MARK: - Body
 
     var body: some View {
-        @Bindable var router = router
+        @Bindable
+        var router = router
 
         NavigationSplitView {
             Group {
@@ -94,7 +99,8 @@ private struct SongDetailViewResolver: View {
 
     let songID: Song.ID
 
-    @Query private var songs: [Song]
+    @Query
+    private var songs: [Song]
 
     // MARK: - Initialization
 

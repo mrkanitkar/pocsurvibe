@@ -230,7 +230,7 @@ struct SurVibeApp: App {
         .modelContainer(modelContainer)
         .commands {
             AppCommands(router: router)
-            TransportCommands()                    // NEW
+            TransportCommands()  // NEW
         }
 
         #if os(macOS)

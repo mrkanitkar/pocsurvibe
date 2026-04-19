@@ -15,7 +15,8 @@ import SwiftUI
 struct FilterChip: View {
     // MARK: - Properties
 
-    @Environment(AppThemeManager.self) private var themeManager
+    @Environment(AppThemeManager.self)
+    private var themeManager
 
     /// The text label displayed on the chip.
     let label: String

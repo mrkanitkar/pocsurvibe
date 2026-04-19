@@ -93,29 +93,33 @@ struct InteractivePianoView: View {
     // MARK: - Internal State
 
     /// MIDI notes currently held by touch (internal tracking for dual highlighting).
-    @State private var touchedMidiNotes: Set<Int> = []
+    @State
+    private var touchedMidiNotes: Set<Int> = []
 
     /// Whether the SoundFont has been loaded yet.
-    @State private var isSoundFontLoaded = false
+    @State
+    private var isSoundFontLoaded = false
 
     /// White-key stride used to compute adaptive breakpoints.
     ///
     /// Scales with Dynamic Type so that users who increase text size still
     /// see a layout that fits the available width.
-    @ScaledMetric(relativeTo: .body) private var whiteKeyStride: CGFloat = 22
+    @ScaledMetric(relativeTo: .body)
+    private var whiteKeyStride: CGFloat = 22
 
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityReduceMotion)
+    private var reduceMotion
 
     // MARK: - Constants
 
     /// Devanagari labels indexed by chromatic position (0 = Sa/C, 1 = Komal Re/Db, ...).
     private static let devanagariLabels = [
-        "सा", "रे♭", "रे", "ग♭", "ग", "म", "म♯", "प", "ध♭", "ध", "नि♭", "नि"
+        "सा", "रे♭", "रे", "ग♭", "ग", "म", "म♯", "प", "ध♭", "ध", "नि♭", "नि",
     ]
 
     /// Western note names indexed by chromatic position.
     private static let westernNames = [
-        "C", "Db", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B"
+        "C", "Db", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B",
     ]
 
     /// Natural (white key) chromatic offsets.
@@ -198,9 +202,9 @@ struct InteractivePianoView: View {
         let width61 = stride * 36
         let width73 = stride * 45
         switch width {
-        case ..<width61:        return (36, 96)    // 61 keys — C2..C7
-        case width61..<width73: return (36, 108)   // 73 keys — C2..C8
-        default:                return (21, 108)   // 88 keys — A0..C8
+        case ..<width61: return (36, 96)  // 61 keys — C2..C7
+        case width61..<width73: return (36, 108)  // 73 keys — C2..C8
+        default: return (21, 108)  // 88 keys — A0..C8
         }
     }
 

@@ -15,5 +15,6 @@ struct TransportActions {
 }
 
 extension FocusedValues {
-    @Entry var transportActions: TransportActions? = nil
+    @Entry
+    var transportActions: TransportActions? = nil
 }

@@ -35,15 +35,18 @@ struct SongPlayAlongView: View {
     /// `@Bindable` gives SwiftUI two-way access to published properties without
     /// taking ownership. Ownership lives in `PlayAlongSceneHost` so the VM
     /// survives rotation and size-class changes without restarting the audio engine.
-    @Bindable var viewModel: PlayAlongViewModel
+    @Bindable
+    var viewModel: PlayAlongViewModel
 
     /// Owns tanpura drone state and debounces retune against the engine.
     /// `internal` so helpers in `SongPlayAlongView+Tanpura.swift` can read it.
-    @State var tanpura = TanpuraController()
+    @State
+    var tanpura = TanpuraController()
 
     /// Whether the tanpura settings sheet is presented.
     /// `internal` so helpers in `SongPlayAlongView+Tanpura.swift` can set it.
-    @State var showTanpuraSheet = false
+    @State
+    var showTanpuraSheet = false
 
     /// Pending persistence write for `preferredSaHz`. Canceled on rapid changes.
     @State private var persistDebounceTask: Task<Void, Never>?
@@ -58,13 +61,15 @@ struct SongPlayAlongView: View {
     /// not from the user) is ignored by the persistence observer. Cleared
     /// automatically by the observer itself.
     /// `internal` so `resetPreferredSaHz()` in the +Tanpura extension can set it.
-    @State var suppressNextPersistenceTick = false
+    @State
+    var suppressNextPersistenceTick = false
 
     /// Cached "SongProgress.preferredSaHz is non-nil" flag, updated at
     /// task-time and on every persist/reset. Replaces a per-render
     /// SwiftData fetch that previously fired on every sheet open.
     /// `internal` so the +Tanpura extension can read and flip it.
-    @State var hasStoredOverride: Bool = false
+    @State
+    var hasStoredOverride: Bool = false
 
     /// Piano key positions collected via preference key for note alignment.
     @State private var keyPositions: [KeyPosition] = []
@@ -76,24 +81,33 @@ struct SongPlayAlongView: View {
     @State private var showAppearanceSheet = false
 
     /// Whether the correctness flash overlay is visible (brief green/red flash).
-    @State var showCorrectnessBanner = false
+    @State
+    var showCorrectnessBanner = false
 
     /// Color of the current correctness flash (green for correct, red for wrong).
-    @State var correctnessBannerColor: Color = .green
+    @State
+    var correctnessBannerColor: Color = .green
 
     // MARK: - AppStorage (persisted preferences)
 
-    @AppStorage("playAlongWaitMode") private var storedWaitMode: Bool = false
+    @AppStorage("playAlongWaitMode")
+    private var storedWaitMode: Bool = false
 
     // MARK: - Environment
 
-    @Environment(AppThemeManager.self) var themeManager  // internal so the +Subviews extension (separate file) can read it
+    @Environment(AppThemeManager.self)
+    var themeManager  // internal so the +Subviews extension (separate file) can read it
     // internal so the +Tanpura extension (separate file) can fetch/save SongProgress
-    @Environment(\.modelContext) var modelContext
-    @Environment(\.dismiss) private var dismiss
-    @Environment(\.accessibilityReduceMotion) var reduceMotion
-    @Environment(\.verticalSizeClass) private var verticalSizeClass
-    @Environment(\.horizontalSizeClass) private var horizontalSizeClass
+    @Environment(\.modelContext)
+    var modelContext
+    @Environment(\.dismiss)
+    private var dismiss
+    @Environment(\.accessibilityReduceMotion)
+    var reduceMotion
+    @Environment(\.verticalSizeClass)
+    private var verticalSizeClass
+    @Environment(\.horizontalSizeClass)
+    private var horizontalSizeClass
 
     // MARK: - Layout helpers
 
@@ -249,7 +263,7 @@ struct SongPlayAlongView: View {
                 properties: [
                     "preset": newPreset.rawValue,
                     "song_title": song.title,
-                    "source": "play_along_mode_button"
+                    "source": "play_along_mode_button",
                 ]
             )
         }
@@ -268,8 +282,9 @@ struct SongPlayAlongView: View {
             // AUD-VO: Announce current note to VoiceOver users.
             // Only announces when VoiceOver is running to avoid unnecessary overhead.
             guard UIAccessibility.isVoiceOverRunning,
-                  let index = newIndex,
-                  index < viewModel.noteEvents.count else { return }
+                let index = newIndex,
+                index < viewModel.noteEvents.count
+            else { return }
             let event = viewModel.noteEvents[index]
             // Post queued announcement so it doesn't cut off prior speech.
             UIAccessibility.post(
@@ -332,7 +347,7 @@ struct SongPlayAlongView: View {
                         "grid_hz": tanpura.saGridHz,
                         "cents_offset": tanpura.saCentsOffset,
                         "effective_hz": newHz,
-                        "song_title": song.title
+                        "song_title": song.title,
                     ]
                 )
             }
@@ -392,7 +407,7 @@ struct SongPlayAlongView: View {
                             properties: [
                                 "enabled": tanpura.isTanpuraEnabled,
                                 "song_title": song.title,
-                                "source": "toolbar"
+                                "source": "toolbar",
                             ]
                         )
                     },
@@ -427,7 +442,8 @@ struct SongPlayAlongView: View {
                     DragGesture(minimumDistance: 30)
                         .onEnded { value in
                             if value.translation.height > 30
-                                && abs(value.translation.width) < 50 {
+                                && abs(value.translation.width) < 50
+                            {
                                 viewModel.summonChrome()
                             }
                         }
@@ -438,9 +454,9 @@ struct SongPlayAlongView: View {
                     // on notation as an intent to see controls.
                     viewModel.summonChrome()
                 }
-                // TODO(Task 2.11+): implement native two-finger tap for
-                // wait-mode toggle via UIKit bridging (SwiftUI's TapGesture
-                // doesn't distinguish finger count on iOS).
+            // TODO(Task 2.11+): implement native two-finger tap for
+            // wait-mode toggle via UIKit bridging (SwiftUI's TapGesture
+            // doesn't distinguish finger count on iOS).
 
             if shouldShowLyricStrip && !viewModel.noteEvents.isEmpty {
                 LyricsStrip(
@@ -634,7 +650,8 @@ struct SongPlayAlongView: View {
     /// Top-right pill showing the active input source (mic vs MIDI).
     @ViewBuilder
     private var micSourcePill: some View {
-        let source: MicSourcePill.Source = viewModel.isMIDIConnected
+        let source: MicSourcePill.Source =
+            viewModel.isMIDIConnected
             ? .midi(deviceName: viewModel.midiDeviceName)
             : .mic
         MicSourcePill(

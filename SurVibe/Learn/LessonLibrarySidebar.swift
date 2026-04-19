@@ -13,11 +13,14 @@ struct LessonLibrarySidebar: View {
     // MARK: - Properties
 
     /// The currently selected lesson ID, driving the split-view detail column.
-    @Binding var selection: Lesson.ID?
+    @Binding
+    var selection: Lesson.ID?
 
-    @Query(sort: \Lesson.orderIndex) private var lessons: [Lesson]
+    @Query(sort: \Lesson.orderIndex)
+    private var lessons: [Lesson]
 
-    @Environment(AppThemeManager.self) private var themeManager
+    @Environment(AppThemeManager.self)
+    private var themeManager
 
     // MARK: - Body
 
@@ -42,7 +45,8 @@ private struct LessonSidebarRow: View {
 
     let lesson: Lesson
 
-    @Environment(AppThemeManager.self) private var themeManager
+    @Environment(AppThemeManager.self)
+    private var themeManager
 
     // MARK: - Body
 

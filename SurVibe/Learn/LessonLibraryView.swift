@@ -21,7 +21,8 @@ struct LessonLibraryView: View {
     private var router
 
     /// Tracks keyboard focus for hardware-keyboard navigation.
-    @FocusState private var focusedLessonID: Lesson.ID?
+    @FocusState
+    private var focusedLessonID: Lesson.ID?
 
     /// The locked lesson that triggered the prerequisite alert.
     @State
