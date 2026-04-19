@@ -351,10 +351,8 @@ final class PlayAlongViewModel {
     /// Task observing MIDI connection state changes (connect/disconnect).
     private var midiConnectionTask: Task<Void, Never>?
 
-    /// Task running the 30 Hz display link for position updates.
-    private var displayLinkTask: Task<Void, Never>?
-
     /// ContinuousClock instant when playback started (or resumed).
+    /// Retained here for `startPlaybackFromCurrentPosition` until SP-3d removes the VM scheduler.
     private var playbackStartTime: ContinuousClock.Instant?
 
     /// Wall-clock Date for FallingNotesView animation — delegates to `playback.playbackStartDate`.
@@ -476,224 +474,75 @@ final class PlayAlongViewModel {
 
     /// Load a song and prepare note events for play-along.
     ///
-    /// Implements a dual-path loading strategy:
-    /// 1. **MIDI path** — If the song has binary MIDI data, parses it via
-    ///    `MIDIParser` and converts to `NoteEvent` via `NoteEvent.fromMIDI(events:)`.
-    /// 2. **Notation path** — If the song has Sargam + Western notation arrays,
-    ///    converts them to `NoteEvent` via `NoteEvent.fromNotation(...)`.
+    /// Delegates song parsing and note-state initialization to `PlaybackCoordinator`.
+    /// Also wires up guided free-play hooks (NoteRouter territory until SP-3d)
+    /// and starts the mic/MIDI detection pipelines.
     ///
-    /// Sets `playbackState` to `.error` if neither path produces events.
+    /// Sets `playbackState` to `.error` if neither MIDI nor notation data is found.
     ///
     /// - Parameter song: The Song model to load.
     func loadSong(_ song: Song) async {
-        playbackState = .loading
-        self.song = song
+        guard playback.loadSong(song) else { return }
 
-        // Path 1: MIDI binary data (2/19 songs)
-        if let midiData = song.midiData, !midiData.isEmpty,
-            case .success(let midiEvents) = MIDIParser.parse(data: midiData)
-        {
-            noteEvents = NoteEvent.fromMIDI(events: midiEvents)
-        }
-        // Path 2: Notation arrays (17/19 songs)
-        else if let sargam = song.decodedSargamNotes,
-            let western = song.decodedWesternNotes
-        {
-            noteEvents = NoteEvent.fromNotation(
-                sargamNotes: sargam,
-                westernNotes: western,
-                tempo: song.tempo
-            )
-        } else {
-            errorMessage = "No playable notation found"
-            playbackState = .error("No playable notation")
-            Self.logger.error("loadSong failed: no MIDI or notation data")
-            return
-        }
-
-        // Calculate duration from the last note event
-        if let last = noteEvents.last {
-            duration = last.timestamp + last.duration
-        }
-
-        // Initialize all note states as upcoming
-        for event in noteEvents {
-            noteStates[event.id] = .upcoming
-        }
-
-        // Configure raga-aware scoring if the song has a raga
         configureRagaContext(ragaName: song.ragaName)
 
-        playbackState = .idle
-        Self.logger.info(
-            "Song loaded: \(self.noteEvents.count) events, duration=\(String(format: "%.1f", self.duration))s"
-        )
-
-        // Initialize guided free-play: start at note 0 and compute the expected MIDI note.
-        currentNoteIndex = noteEvents.isEmpty ? nil : 0
+        // Initialize guided free-play hooks (NoteRouter territory until SP-3d).
         updateExpectedMidiNote()
         guidedPlayState = .waitingForNote
         isStuck = false
 
-        // Request microphone permission in context before starting the audio engine.
-        // Must happen BEFORE startPitchDetection() so the audio session is configured
-        // for .playAndRecord with a valid input channel count when installMicTap is called.
         let micGranted = await PermissionManager.shared.requestMicrophoneAccess()
         if !micGranted {
             Self.logger.warning("Microphone permission denied — pitch detection unavailable")
         }
 
-        // Start MIDI detection — checks for connected USB keyboards immediately.
-        // Runs in parallel with mic detection; both pipelines are active at the same time.
         startMIDIDetection()
-
-        // Start pitch detection first — this starts the engine in .playAndRecord mode.
-        // SoundFont is loaded AFTER so startForPlayback() does not downgrade the session
-        // to .playbackOnly and trigger an engine restart that would drop the mic tap.
         startPitchDetection()
 
-        // Load the SoundFont for playback after the engine is already running in
-        // .playAndRecord mode. loadBundledPiano() calls startForPlayback() internally,
-        // but AudioEngineManager treats playAndRecord as a superset and skips the restart.
         do {
             try await SoundFontManager.shared.loadBundledPiano()
         } catch {
-            Self.logger.error(
-                "SoundFont load failed: \(error.localizedDescription)"
-            )
+            Self.logger.error("SoundFont load failed: \(error.localizedDescription)")
         }
 
-        // Start patience timer so the user gets a hint if they don't play.
         startPatienceTimer()
     }
 
     /// Start the play-along session from the beginning.
     ///
-    /// Starts the audio engine in playAndRecord mode (to avoid a mode-transition
-    /// dropout if the mic is activated later), resets all scoring state, and
-    /// begins note playback scheduling.
+    /// Delegates engine start, metronome, scheduling, and analytics to
+    /// `PlaybackCoordinator`. Restarts pitch detection to handle the case
+    /// where it was stopped after a previous cleanup.
     ///
     /// Guards: only starts from `.idle` or `.stopped` with non-empty events.
     func startSession() async {
-        guard playbackState == .idle || playbackState == .stopped else { return }
-        guard !noteEvents.isEmpty else { return }
-
-        // Start engine in playAndRecord mode from the start
-        do {
-            try audioEngine.start()
-        } catch {
-            Self.logger.error(
-                "Engine start failed: \(error.localizedDescription)"
-            )
-            playbackState = .error("Audio engine failed to start")
-            return
-        }
-
-        // Start metronome at scaled BPM (provides rhythm reference during play-along)
-        let scaledBPM = Double(song?.tempo ?? 120) * tempoScale
-        metronome.setBPM(scaledBPM)
-        metronome.start()
-
-        resetScoringState()
-
-        playbackStartTime = clock.now
-        // Date reference for FallingNotesView self-timing (no pauseElapsed offset on fresh start)
-        playbackStartDate = Date()
-        playbackState = .playing
-
-        // Start 30 Hz display link for position updates
-        startDisplayLink()
-
-        // Start note playback scheduling
-        startPlayback()
-
-        // Pitch detection was started at loadSong — it runs continuously.
-        // Re-start it here to handle the case where it was stopped (e.g. after cleanup).
+        await playback.startScheduling()
+        // SP-3d will collapse the next line into `await noteRouter.startPitchDetection()`.
         startPitchDetection()
-
-        // Set up wait controller if wait mode is enabled
-        if isWaitModeEnabled {
-            waitController = PlayAlongWaitController(noteEvents: noteEvents)
-        } else {
-            waitController = nil
-        }
-
-        AnalyticsManager.shared.track(
-            .songPlaybackStarted,
-            properties: [
-                "song_title": song?.title ?? "",
-                "tempo_scale": tempoScale,
-                "view_mode": viewMode.rawValue,
-                "notation_mode": notationMode.rawValue,
-                "wait_mode": isWaitModeEnabled,
-            ]
-        )
-
-        Self.logger.info("Play-along session started")
     }
 
     /// Pause the current play-along session.
     ///
-    /// Records elapsed time for seamless resume, cancels active playback tasks,
-    /// and stops all sounding notes.
+    /// Delegates transport pause to `PlaybackCoordinator`. Keeps pitch detection
+    /// running for keyboard highlight. Resumes guided free-play patience timer.
     func pauseSession() {
-        guard playbackState == .playing else { return }
-
-        if let startTime = playbackStartTime {
-            let elapsed = clock.now - startTime
-            pauseElapsed = elapsedSeconds(from: elapsed)
-        }
-
-        playbackState = .paused
-        playbackStartDate = nil  // freeze FallingNotesView animation
-
-        cancelPlaybackTasks()
-        soundFont.stopAllNotes()
-        metronome.stop()
-        // Keep pitch detection running during pause so keyboard highlight stays active.
-        // The detection loop checks playbackState == .playing before scoring notes.
-        // Re-start pitch detection which was cancelled by cancelPlaybackTasks()
+        playback.pauseScheduling()
+        // Pitch detection keeps running through pause for keyboard highlight.
         startPitchDetection()
-        // Resume guided free-play patience timer during pause
+        // Resume guided free-play hooks for the paused state.
         updateExpectedMidiNote()
         guidedPlayState = .waitingForNote
         isStuck = false
         startPatienceTimer()
-
-        AnalyticsManager.shared.track(
-            .songPlaybackPaused,
-            properties: ["song_title": song?.title ?? ""]
-        )
-
-        Self.logger.info(
-            "Session paused at \(String(format: "%.1f", self.pauseElapsed))s"
-        )
     }
 
     /// Resume the play-along session from the paused position.
     ///
-    /// Adjusts the clock reference to account for time spent paused,
-    /// then restarts playback from where it left off.
+    /// Delegates clock adjustment, display link, and scheduling restart to
+    /// `PlaybackCoordinator`. Pitch detection keeps running continuously.
     func resumeSession() {
-        guard playbackState == .paused else { return }
-
-        // Adjust start time so elapsed computation continues from pause point
-        playbackStartTime = clock.now.advanced(
-            by: .seconds(-pauseElapsed)
-        )
-        // Date reference for FallingNotesView: wind back by pauseElapsed so
-        // the view's computed currentTime continues from where it paused.
-        playbackStartDate = Date(timeIntervalSinceNow: -pauseElapsed)
-        playbackState = .playing
-
-        startDisplayLink()
-        startPlaybackFromCurrentPosition()
-        metronome.start()
-        // Pitch detection keeps running continuously — no need to restart on resume.
-
-        Self.logger.info(
-            "Session resumed from \(String(format: "%.1f", self.pauseElapsed))s"
-        )
+        playback.resumeScheduling()
+        // Pitch detection keeps running continuously — no restart on resume.
     }
 
     /// Handle a note detected from pitch detection (microphone input).
@@ -769,40 +618,35 @@ final class PlayAlongViewModel {
 
     /// Called when the user toggles wait mode. Updates state and fires analytics.
     func toggleWaitMode() {
-        isWaitModeEnabled.toggle()
+        playback.isWaitModeEnabled.toggle()
         AnalyticsManager.shared.track(
             .waitModeToggled,
             properties: [
-                "enabled": isWaitModeEnabled,
-                "song_title": song?.title ?? "",
+                "enabled": playback.isWaitModeEnabled,
+                "song_title": playback.song?.title ?? "",
             ]
         )
     }
 
     /// Stop the session early and compute results from notes scored so far.
     ///
-    /// Called when the user taps the Stop button during an active session.
-    /// Calculates final metrics from whatever notes have been scored,
-    /// then transitions to `.stopped` to trigger the results overlay.
+    /// Delegates to `PlaybackCoordinator` which marks remaining notes as missed,
+    /// finalizes scoring, persists results, and transitions to `.stopped`.
     func stopAndComplete() {
-        guard playbackState == .playing || playbackState == .paused else { return }
-        completeSession()
+        playback.stopAndComplete()
     }
 
     /// Clean up all resources and cancel active tasks.
     ///
-    /// Call from the view's `onDisappear` to ensure no orphaned tasks
-    /// or audio resources remain.
+    /// Delegates playback-side teardown to `PlaybackCoordinator` (engine, metronome,
+    /// sound, waitController). Still-on-VM NoteRouter-territory tasks are cancelled here
+    /// until SP-3d extracts them into NoteRouter.
+    ///
+    /// Call from the view's `onDisappear` to ensure no orphaned tasks or audio resources remain.
     func cleanup() {
-        cancelPlaybackTasks()
-        soundFont.stopAllNotes()
-        // Reset SoundFont loaded state BEFORE stopping the engine so the sampler
-        // will be properly re-loaded into the new engine graph on the next loadSong().
-        SoundFontManager.shared.resetLoadedState()
-        audioEngine.stop()
-        metronome.stop()
-        waitController?.reset()
-        waitController = nil
+        playback.cleanup()
+
+        // Still-on-VM (NoteRouter territory until SP-3d):
         audioProcessor.ringBuffer = nil
         ringBuffer = nil
         audioProcessor.stop()
@@ -810,7 +654,6 @@ final class PlayAlongViewModel {
         pitchDetectionTask = nil
         chordDetectionTask?.cancel()
         chordDetectionTask = nil
-        // MAJ-2: cancel the chord listener so it does not outlive the session.
         chordListenerTask?.cancel()
         chordListenerTask = nil
         latestChordResult = nil
@@ -826,11 +669,9 @@ final class PlayAlongViewModel {
         midiDeviceName = nil
         patienceTimerTask?.cancel()
         patienceTimerTask = nil
-        playbackState = .idle
-        // Flush diagnostic log to file so it's available when the user
-        // closes the song and reconnects to Mac via USB.
+
         MIDIEventDiagnostics.shared.printSummary()
-        Self.logger.info("Play-along cleanup complete")
+        Self.logger.info("Play-along cleanup complete (facade)")
     }
 
     /// Skip the current expected note and advance to the next one.
@@ -854,21 +695,14 @@ final class PlayAlongViewModel {
         }
     }
 
-    /// Reset all scoring, streak, and guided-play state for a fresh session.
-    private func resetScoringState() {
-        scoring.reset()
-        currentNoteIndex = nil
-        currentTime = 0
-        pauseElapsed = 0
-        errorMessage = nil
+    /// Reset guided-free-play state (NoteRouter territory until SP-3d).
+    /// Playback-side reset happens inside `playback.startScheduling()`.
+    private func resetGuidedState() {
         expectedMidiNote = nil
         guidedPlayState = .waitingForNote
         isStuck = false
         patienceTimerTask?.cancel()
         patienceTimerTask = nil
-        for event in noteEvents {
-            noteStates[event.id] = .upcoming
-        }
     }
 
     // MARK: - Private Methods — Pitch Detection
@@ -1381,48 +1215,10 @@ final class PlayAlongViewModel {
         return Int((12.0 * log2(frequency / 440.0) + 69.0).rounded())
     }
 
-    // MARK: - Private Methods — Playback Scheduling
+    // MARK: - Private Methods — Playback Scheduling (dead after SP-3b; coordinator runs its own loop)
 
-    /// Schedule note-by-note playback from the beginning.
-    ///
-    /// Creates a single task that iterates through all note events,
-    /// sleeping until each note's scheduled time using the injected clock
-    /// for drift-corrected timing.
-    private func startPlayback() {
-        playbackTask?.cancel()
-        playbackTask = Task { [weak self] in
-            guard let self else { return }
-            await self.runPlaybackLoop(fromIndex: 0, timeOffset: 0)
-        }
-    }
-
-    /// Schedule note playback resuming from the current position.
-    ///
-    /// Finds the next unplayed note after `pauseElapsed` and starts
-    /// the playback loop from that point.
-    private func startPlaybackFromCurrentPosition() {
-        playbackTask?.cancel()
-        let offset = pauseElapsed
-        let startIndex =
-            noteEvents.firstIndex { event in
-                (event.timestamp / tempoScale) >= offset
-            } ?? noteEvents.count
-
-        playbackTask = Task { [weak self] in
-            guard let self else { return }
-            await self.runPlaybackLoop(fromIndex: startIndex, timeOffset: 0)
-        }
-    }
-
-    /// Core playback loop that schedules notes sequentially.
-    ///
-    /// For each note event starting at `fromIndex`, sleeps until the
-    /// note's tempo-scaled timestamp, plays the note sound, updates
-    /// the current note index, and handles wait mode if enabled.
-    ///
-    /// - Parameters:
-    ///   - fromIndex: Index of the first note to schedule.
-    ///   - timeOffset: Additional time offset in seconds (unused, reserved).
+    /// Core playback loop — kept temporarily so `playbackTask` / `pauseElapsed` refs compile.
+    /// SP-3d removes this entire section once NoteRouter is extracted.
     private func runPlaybackLoop(fromIndex: Int, timeOffset: TimeInterval) async {
         guard let startTime = playbackStartTime else { return }
 
@@ -1459,7 +1255,8 @@ final class PlayAlongViewModel {
 
         await awaitLastNoteCompletion()
         guard !Task.isCancelled else { return }
-        completeSession()
+        // Dead after SP-3b — coordinator's own runPlaybackLoop calls completeSession.
+        playback.completeSession()
     }
 
     /// Play SoundFont note-on and schedule note-off after scaled duration.
@@ -1511,30 +1308,6 @@ final class PlayAlongViewModel {
         let remaining = targetEnd - clock.now
         if remaining > .zero {
             try? await clock.sleep(for: remaining)
-        }
-    }
-
-    // MARK: - Private Methods — Display Link
-
-    /// Start a ~30 Hz task to update the current playback position.
-    ///
-    /// Reads elapsed time from the clock and updates `currentTime`
-    /// for smooth UI scrolling and note highlighting.
-    private func startDisplayLink() {
-        displayLinkTask?.cancel()
-        displayLinkTask = Task { [weak self] in
-            while !Task.isCancelled {
-                guard let self, self.playbackState == .playing else { return }
-                if let startTime = self.playbackStartTime {
-                    let elapsed = self.clock.now - startTime
-                    self.currentTime = self.elapsedSeconds(from: elapsed) * self.tempoScale
-                }
-                // 50 ms (20 Hz) instead of 33 ms (30 Hz).
-                // At 200 BPM with 16th notes each note arrives every ~150 ms,
-                // so 20 Hz position updates are still smooth while freeing the
-                // main actor ~17 ms per cycle for MIDI scoring tasks.
-                try? await Task.sleep(for: .milliseconds(50))
-            }
         }
     }
 
@@ -1696,93 +1469,15 @@ final class PlayAlongViewModel {
         )
     }
 
-    // MARK: - Private Methods — Session Completion
-
-    /// Complete the session and calculate final scores.
-    ///
-    /// Marks any remaining active notes as missed, computes session-level
-    /// metrics (accuracy, stars, XP, streak), and transitions to `.stopped`.
-    ///
-    /// AUD-028/034: All noteStates mutations are batched into a single dictionary
-    /// snapshot write — one Canvas redraw instead of N individual property sets.
-    private func completeSession() {
-        // AUD-028: Build scored-note set once — O(m) instead of O(n) per event.
-        let scoredNames = Set(noteScores.map(\.expectedNote))
-        var updatedStates = noteStates  // snapshot — one @Observable mutation at the end
-        var missedScores: [NoteScore] = []
-
-        for event in noteEvents {
-            let state = updatedStates[event.id]
-            if state == .active || state == .upcoming {
-                updatedStates[event.id] = .missed
-                if !scoredNames.contains(event.swarName) {
-                    missedScores.append(NoteScoreCalculator.missedNote(expectedNote: event.swarName))
-                }
-            }
-        }
-
-        // AUD-034: Single @Observable write triggers one Canvas redraw.
-        noteStates = updatedStates
-        missedScores.forEach { scoring.record($0) }
-
-        scoring.finalize(songDifficulty: song?.difficulty ?? 1)
-
-        cancelPlaybackTasks()
-        soundFont.stopAllNotes()
-        playbackState = .stopped
-
-        // Print MIDI diagnostics summary to Console.app
-        MIDIEventDiagnostics.shared.printSummary()
-
-        persistSessionResults()
-        trackSessionCompletion()
-    }
-
-    /// Persist session results to SwiftData via PracticeSessionRecorder.
-    private func persistSessionResults() {
-        guard let modelContext, let song else { return }
-        let recorder = PracticeSessionRecorder(modelContext: modelContext)
-        let songInfo = SessionSongInfo(
-            songId: song.slugId.isEmpty ? song.id.uuidString : song.slugId,
-            songTitle: song.title,
-            ragaName: song.ragaName,
-            difficulty: song.difficulty
-        )
-        let durationMinutes = max(1, Int(pauseElapsed / 60))
-        recorder.recordSession(
-            songInfo: songInfo,
-            durationMinutes: durationMinutes,
-            noteScores: noteScores
-        )
-        Self.logger.info("Session persisted to SwiftData")
-    }
-
-    /// Fire analytics and log for session completion.
-    private func trackSessionCompletion() {
-        AnalyticsManager.shared.track(
-            .songPlaybackCompleted,
-            properties: [
-                "song_title": song?.title ?? "",
-                "accuracy": accuracy,
-                "star_rating": starRating,
-                "xp_earned": xpEarned,
-                "tempo_scale": tempoScale,
-                "view_mode": viewMode.rawValue,
-            ]
-        )
-        Self.logger.info(
-            "Session completed: accuracy=\(String(format: "%.0f", self.accuracy * 100))%, stars=\(self.starRating)"
-        )
-    }
-
     // MARK: - Private Methods — Utilities
 
-    /// Cancel all active playback and display-link tasks.
+    /// Cancel all active playback and still-on-VM NoteRouter tasks.
+    ///
+    /// Note: `playbackTask` and display-link are coordinator-owned after SP-3b.
+    /// Task 8 will rename this and remove `playbackTask` from here.
     private func cancelPlaybackTasks() {
         playbackTask?.cancel()
         playbackTask = nil
-        displayLinkTask?.cancel()
-        displayLinkTask = nil
         pitchDetectionTask?.cancel()
         pitchDetectionTask = nil
         midiInput.onNoteEvent = nil
