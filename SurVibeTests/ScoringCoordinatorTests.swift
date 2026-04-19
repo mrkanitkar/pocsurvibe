@@ -1,6 +1,7 @@
 // SurVibeTests/ScoringCoordinatorTests.swift
 import SVLearning
 import Testing
+
 @testable import SurVibe
 
 /// Unit tests for `ScoringCoordinator` (SP-3a).
@@ -30,7 +31,8 @@ struct ScoringCoordinatorTests {
         )
     }
 
-    @Test func recordIncrementsHitCountForNonMiss() {
+    @Test
+    func recordIncrementsHitCountForNonMiss() {
         let s = ScoringCoordinator()
 
         s.record(score(grade: .perfect, accuracy: 1.0))
@@ -41,7 +43,8 @@ struct ScoringCoordinatorTests {
         #expect(s.noteScores.count == 3, "All scores are appended")
     }
 
-    @Test func accuracyAveragesCorrectly() {
+    @Test
+    func accuracyAveragesCorrectly() {
         let s = ScoringCoordinator()
 
         s.record(score(grade: .perfect, accuracy: 1.0))
@@ -50,7 +53,8 @@ struct ScoringCoordinatorTests {
         #expect(abs(s.accuracy - 0.8) < 0.0001, "accuracy = average of recorded accuracies")
     }
 
-    @Test func updateStreakIncrementsOnHitAndResetsOnMiss() {
+    @Test
+    func updateStreakIncrementsOnHitAndResetsOnMiss() {
         let s = ScoringCoordinator()
 
         s.updateStreak(grade: .perfect)
@@ -69,7 +73,8 @@ struct ScoringCoordinatorTests {
         #expect(s.longestStreak == 3, "Longest unchanged until beaten")
     }
 
-    @Test func finalizeComputesStarRatingAndXP() {
+    @Test
+    func finalizeComputesStarRatingAndXP() {
         let s = ScoringCoordinator()
 
         // Record 4 notes averaging ~0.8 accuracy.
@@ -84,7 +89,8 @@ struct ScoringCoordinatorTests {
         #expect(s.xpEarned > 0, "XP computed from accuracy and difficulty")
     }
 
-    @Test func resetClearsAllState() {
+    @Test
+    func resetClearsAllState() {
         let s = ScoringCoordinator()
 
         s.record(score(grade: .perfect, accuracy: 1.0))

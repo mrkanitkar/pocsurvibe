@@ -129,14 +129,21 @@ final class PlayAlongViewModel {
     ///
     /// `@ObservationIgnored` prevents assignments from triggering SwiftUI
     /// re-renders. Views receive these as `let` parameters at construction time.
-    @ObservationIgnored var rhColor: Color = .blue
+    @ObservationIgnored
+    var rhColor: Color = .blue
 
-    @ObservationIgnored var lhColor: Color = .red
-    @ObservationIgnored var chordColor: Color = .purple
-    @ObservationIgnored var notationLineColor: Color = .black
-    @ObservationIgnored var notationSecondaryColor: Color = .gray
-    @ObservationIgnored var cardBackgroundColor: Color = .white.opacity(0.9)
-    @ObservationIgnored var karaokeBackgroundColor: Color = .black.opacity(0.55)
+    @ObservationIgnored
+    var lhColor: Color = .red
+    @ObservationIgnored
+    var chordColor: Color = .purple
+    @ObservationIgnored
+    var notationLineColor: Color = .black
+    @ObservationIgnored
+    var notationSecondaryColor: Color = .gray
+    @ObservationIgnored
+    var cardBackgroundColor: Color = .white.opacity(0.9)
+    @ObservationIgnored
+    var karaokeBackgroundColor: Color = .black.opacity(0.55)
 
     /// Latency preset for mic pitch detection (controls FFT buffer size for chord detection).
     ///
@@ -239,7 +246,8 @@ final class PlayAlongViewModel {
     var chromeAutoHideSeconds: Double = 6.0
 
     /// Outstanding auto-hide timer. Cancel when user interacts.
-    @ObservationIgnored private var chromeAutoHideTask: Task<Void, Never>?
+    @ObservationIgnored
+    private var chromeAutoHideTask: Task<Void, Never>?
 
     // MARK: - Chrome Actions (v2)
 
@@ -1569,7 +1577,8 @@ final class PlayAlongViewModel {
         // score and blend it into the per-note accuracy. Single-note events
         // skip this path entirely (chordCompleteness stays nil).
         if let chordGroup = findChordGroup(for: expectedEvent),
-           let chord = latestChordResult {
+            let chord = latestChordResult
+        {
             let expectedSet = Set(chordGroup.map { Int($0.midiNote) })
             let detectedSet = chord.activeMidiNotes
             let completeness = await noteMatchingActor.evaluateChord(
@@ -1579,7 +1588,9 @@ final class PlayAlongViewModel {
             diff.chordCompleteness = completeness
             if let baseScore = diff.score {
                 diff = applyChordCompleteness(
-                    completeness, to: diff, baseScore: baseScore
+                    completeness,
+                    to: diff,
+                    baseScore: baseScore
                 )
             }
         }

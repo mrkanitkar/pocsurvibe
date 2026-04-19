@@ -64,7 +64,8 @@ final class ScoringCoordinator {
         if score.grade != .miss {
             notesHit += 1
         }
-        accuracy = noteScores.isEmpty
+        accuracy =
+            noteScores.isEmpty
             ? 0
             : accuracySum / Double(noteScores.count)
     }
@@ -92,7 +93,8 @@ final class ScoringCoordinator {
     ///
     /// - Parameter songDifficulty: The song's `difficulty` field (1–5).
     func finalize(songDifficulty: Int) {
-        accuracy = noteScores.isEmpty
+        accuracy =
+            noteScores.isEmpty
             ? 0
             : accuracySum / Double(noteScores.count)
         starRating = PracticeScoring.starRating(accuracy: accuracy)
