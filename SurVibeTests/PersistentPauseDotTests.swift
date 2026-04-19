@@ -6,7 +6,6 @@ struct PersistentPauseDotTests {
     @Test func rendersPauseIconWhenPlaying() {
         _ = PersistentPauseDot(
             isPlaying: true,
-            backgroundColor: .black,
             foregroundColor: .white,
             onToggle: {}
         )
@@ -15,7 +14,6 @@ struct PersistentPauseDotTests {
     @Test func rendersPlayIconWhenPaused() {
         _ = PersistentPauseDot(
             isPlaying: false,
-            backgroundColor: .black,
             foregroundColor: .white,
             onToggle: {}
         )

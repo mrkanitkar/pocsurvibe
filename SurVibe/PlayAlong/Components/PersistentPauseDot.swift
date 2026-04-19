@@ -4,13 +4,15 @@ import SwiftUI
 ///
 /// Never auto-hides — addresses the accessibility concern that users
 /// need to locate pause instantly during play. Receives the current
-/// playback state and a toggle callback as `let` parameters.
+/// playback state, foreground color, and a toggle callback as `let`
+/// parameters. The surface uses `.ultraThinMaterial` so the button
+/// remains legible when floating over light piano keys, highlighted
+/// keys, or dark theme backgrounds alike.
 ///
 /// Per latency contract: does NOT read @Environment(AppThemeManager.self);
 /// theme colors arrive as `let` parameters.
 struct PersistentPauseDot: View {
     let isPlaying: Bool
-    let backgroundColor: Color
     let foregroundColor: Color
     let onToggle: () -> Void
 
@@ -18,13 +20,14 @@ struct PersistentPauseDot: View {
         Button(action: onToggle) {
             Image(systemName: isPlaying ? "pause.fill" : "play.fill")
                 .accessibilityHidden(true)
-                .font(.system(size: 10, weight: .bold))
+                .font(.system(size: 14, weight: .bold))
                 .foregroundStyle(foregroundColor)
-                .frame(width: 28, height: 28)
-                .background(backgroundColor, in: Circle())
+                .frame(width: 44, height: 44)
+                .background(.ultraThinMaterial, in: Circle())
                 .overlay(
-                    Circle().strokeBorder(.white.opacity(0.2), lineWidth: 1)
+                    Circle().strokeBorder(foregroundColor.opacity(0.35), lineWidth: 1)
                 )
+                .shadow(color: .black.opacity(0.25), radius: 8, y: 2)
         }
         .accessibilityLabel(isPlaying ? "Pause" : "Play")
         .accessibilityHint("Toggle playback")
@@ -34,9 +37,9 @@ struct PersistentPauseDot: View {
 #Preview("Playing") {
     PersistentPauseDot(
         isPlaying: true,
-        backgroundColor: .black.opacity(0.55),
         foregroundColor: .white,
         onToggle: {}
     )
     .padding()
+    .background(Color.white)
 }
