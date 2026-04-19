@@ -15,7 +15,8 @@ import Tonic
 /// - Optional latching mode for chord building
 ///
 /// ## Layout
-/// Uses `Keyboard(.piano, pitchRange: Pitch(36)...Pitch(96))` for 61-key range (C2–C7).
+/// Uses `Keyboard(.piano, pitchRange:)` with a `GeometryReader`-driven adaptive range:
+/// 61 keys (C2–C7) on narrow views, 73 keys (C2–C8) on medium, 88 keys (A0–C8) on wide.
 /// Forces LTR layout direction for music notation correctness.
 struct InteractivePianoView: View {
     // MARK: - Input Properties
@@ -97,6 +98,12 @@ struct InteractivePianoView: View {
     /// Whether the SoundFont has been loaded yet.
     @State private var isSoundFontLoaded = false
 
+    /// White-key stride used to compute adaptive breakpoints.
+    ///
+    /// Scales with Dynamic Type so that users who increase text size still
+    /// see a layout that fits the available width.
+    @ScaledMetric(relativeTo: .body) private var whiteKeyStride: CGFloat = 22
+
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
     // MARK: - Constants
@@ -117,35 +124,83 @@ struct InteractivePianoView: View {
     // MARK: - Body
 
     var body: some View {
-        Keyboard(
-            layout: .piano(pitchRange: Pitch(36) ... Pitch(96)),
-            latching: isLatchingEnabled,
-            noteOn: handleNoteOn,
-            noteOff: handleNoteOff
-        ) { pitch, isActivated in
-            keyContent(pitch: pitch, isActivated: isActivated)
-        }
-        .environment(\.layoutDirection, .leftToRight)
-        .frame(height: 160)
-        .overlay {
-            GeometryReader { geo in
+        GeometryReader { proxy in
+            let (loMidi, hiMidi) = Self.adaptiveMidiRange(
+                forWidth: proxy.size.width,
+                whiteKeyStride: whiteKeyStride
+            )
+            let range = Pitch(Int8(loMidi))...Pitch(Int8(hiMidi))
+            let keyCount = hiMidi - loMidi + 1
+            Keyboard(
+                layout: .piano(pitchRange: range),
+                latching: isLatchingEnabled,
+                noteOn: handleNoteOn,
+                noteOff: handleNoteOff
+            ) { pitch, isActivated in
+                keyContent(pitch: pitch, isActivated: isActivated)
+            }
+            .environment(\.layoutDirection, .leftToRight)
+            .overlay {
                 Color.clear
                     .preference(
                         key: KeyPositionPreference.self,
                         value: Self.computeKeyPositions(
-                            width: geo.size.width,
-                            startMIDI: 36,
-                            endMIDI: 96
+                            width: proxy.size.width,
+                            startMIDI: loMidi,
+                            endMIDI: hiMidi
                         )
                     )
             }
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel("Interactive piano keyboard, \(keyCount) keys")
         }
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("Interactive piano keyboard, 61 keys")
+        .frame(height: 160)
         .task {
             if manageSoundFont {
                 await loadSoundFontIfNeeded()
             }
+        }
+    }
+
+    /// Maps available view width to a playable pitch range.
+    ///
+    /// Breakpoints target ≥ `whiteKeyStride` per white key. 36/45 white keys
+    /// are the natural breakpoints for 61/73/88-key pianos:
+    /// - 61 keys = 36 white → ~792pt @ 22pt stride (default)
+    /// - 73 keys = 45 white → ~990pt @ 22pt stride (iPad landscape portrait)
+    /// - 88 keys = 52 white → ~1144pt @ 22pt stride (iPad landscape / Mac)
+    ///
+    /// - Parameters:
+    ///   - width: Available view width in points.
+    ///   - stride: Width per white key in points (scales with Dynamic Type).
+    /// - Returns: A closed MIDI pitch range appropriate for the available width.
+    nonisolated static func adaptivePitchRange(
+        forWidth width: CGFloat,
+        whiteKeyStride stride: CGFloat
+    ) -> ClosedRange<Pitch> {
+        let (lo, hi) = adaptiveMidiRange(forWidth: width, whiteKeyStride: stride)
+        return Pitch(Int8(lo))...Pitch(Int8(hi))
+    }
+
+    /// Returns the raw MIDI note number bounds for the adaptive pitch range.
+    ///
+    /// Separated from `adaptivePitchRange` so the pure numeric logic can be
+    /// unit-tested without requiring a Tonic import in the test target.
+    ///
+    /// - Parameters:
+    ///   - width: Available view width in points.
+    ///   - stride: Width per white key in points (scales with Dynamic Type).
+    /// - Returns: A tuple `(lowerMidi, upperMidi)` of MIDI note numbers.
+    nonisolated static func adaptiveMidiRange(
+        forWidth width: CGFloat,
+        whiteKeyStride stride: CGFloat
+    ) -> (lowerMidi: Int, upperMidi: Int) {
+        let width61 = stride * 36
+        let width73 = stride * 45
+        switch width {
+        case ..<width61:        return (36, 96)    // 61 keys — C2..C7
+        case width61..<width73: return (36, 108)   // 73 keys — C2..C8
+        default:                return (21, 108)   // 88 keys — A0..C8
         }
     }
 
