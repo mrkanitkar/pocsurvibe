@@ -12,11 +12,14 @@ struct SongLibrarySidebar: View {
     // MARK: - Properties
 
     /// The currently selected song ID, driving the split-view detail column.
-    @Binding var selection: Song.ID?
+    @Binding
+    var selection: Song.ID?
 
-    @Query(sort: \Song.title) private var songs: [Song]
+    @Query(sort: \Song.title)
+    private var songs: [Song]
 
-    @Environment(AppThemeManager.self) private var themeManager
+    @Environment(AppThemeManager.self)
+    private var themeManager
 
     // MARK: - Body
 

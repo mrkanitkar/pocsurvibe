@@ -1,6 +1,6 @@
+import SVCore
 import SwiftUI
 import os.log
-import SVCore
 
 /// Centralized navigation router managing tab selection and per-tab navigation paths.
 ///

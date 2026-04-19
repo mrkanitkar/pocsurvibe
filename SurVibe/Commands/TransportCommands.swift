@@ -10,7 +10,8 @@ import SwiftUI
 /// — even when the action closure is nil (useful for tracking menu-bar
 /// engagement independent of the focus state).
 struct TransportCommands: Commands {
-    @FocusedValue(\.transportActions) private var transport
+    @FocusedValue(\.transportActions)
+    private var transport
 
     var body: some Commands {
         CommandMenu("Playback") {

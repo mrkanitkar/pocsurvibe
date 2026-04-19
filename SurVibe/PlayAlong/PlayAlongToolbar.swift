@@ -62,7 +62,8 @@ struct PlayAlongToolbar: View {
     // MARK: - Environment
 
     /// Whether the user has requested reduced motion in system accessibility settings.
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityReduceMotion)
+    private var reduceMotion
 
     // MARK: - Callbacks
 

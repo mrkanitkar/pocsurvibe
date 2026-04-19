@@ -24,7 +24,8 @@ struct PlayAlongSceneHost: View {
     /// View model owned here so that SwiftUI re-renders triggered by
     /// rotation or size-class changes do NOT re-initialize the VM and
     /// therefore do NOT trigger a second `AudioEngineManager.start()` call.
-    @State private var vm: PlayAlongViewModel
+    @State
+    private var vm: PlayAlongViewModel
 
     // MARK: - Initialization
 
@@ -46,15 +47,15 @@ struct PlayAlongSceneHost: View {
 // MARK: - Test Support
 
 #if DEBUG
-extension PlayAlongSceneHost {
-    /// Test-only init allowing injection of a stub audio engine provider.
-    ///
-    /// - Parameters:
-    ///   - song: The song to play along with.
-    ///   - engineOverride: A stub `AudioEngineProviding` used in place of `AudioEngineManager.shared`.
-    init(song: Song, engineOverride: any AudioEngineProviding) {
-        self.song = song
-        _vm = State(initialValue: PlayAlongViewModel(audioEngine: engineOverride))
+    extension PlayAlongSceneHost {
+        /// Test-only init allowing injection of a stub audio engine provider.
+        ///
+        /// - Parameters:
+        ///   - song: The song to play along with.
+        ///   - engineOverride: A stub `AudioEngineProviding` used in place of `AudioEngineManager.shared`.
+        init(song: Song, engineOverride: any AudioEngineProviding) {
+            self.song = song
+            _vm = State(initialValue: PlayAlongViewModel(audioEngine: engineOverride))
+        }
     }
-}
 #endif

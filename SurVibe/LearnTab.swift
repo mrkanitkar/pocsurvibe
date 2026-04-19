@@ -19,17 +19,23 @@ import SwiftUI
 struct LearnTab: View {
     // MARK: - Properties
 
-    @Environment(\.modelContext) private var modelContext
-    @Environment(AppThemeManager.self) private var themeManager
-    @Environment(AppRouter.self) private var router
+    @Environment(\.modelContext)
+    private var modelContext
+    @Environment(AppThemeManager.self)
+    private var themeManager
+    @Environment(AppRouter.self)
+    private var router
 
-    @State private var progressManager: LessonProgressManager?
-    @State private var viewModel: LessonLibraryViewModel?
+    @State
+    private var progressManager: LessonProgressManager?
+    @State
+    private var viewModel: LessonLibraryViewModel?
 
     // MARK: - Body
 
     var body: some View {
-        @Bindable var router = router
+        @Bindable
+        var router = router
 
         NavigationSplitView {
             Group {
@@ -111,7 +117,8 @@ private struct LessonDetailViewResolver: View {
 
     let lessonID: Lesson.ID
 
-    @Query private var lessons: [Lesson]
+    @Query
+    private var lessons: [Lesson]
 
     // MARK: - Initialization
 
