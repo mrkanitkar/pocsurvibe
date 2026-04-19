@@ -17,6 +17,10 @@ final class SongProgress {
     var lastPlayedAt: Date = Date()
     /// One-way completion flag (false -> true only). Use `markCompleted()` to set.
     private(set) var isCompleted: Bool = false
+    /// User-overridden Sa (tonic) frequency in Hz for this song, or nil to use the
+    /// song's default derived from `keySignatureRaw`. Persists the *effective* Hz
+    /// (grid × cents factor); decomposition happens in `TanpuraController`.
+    var preferredSaHz: Double? = nil
 
     init(
         songId: String = "",
