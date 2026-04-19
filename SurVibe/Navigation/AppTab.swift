@@ -34,3 +34,17 @@ enum AppTab: String, CaseIterable, Hashable {
         }
     }
 }
+
+// MARK: - Keyboard Shortcuts
+
+extension AppTab {
+    /// Keyboard-shortcut digit for ⌘1–⌘4 tab switching.
+    var keyEquivalent: KeyEquivalent {
+        switch self {
+        case .home: "1"
+        case .learn: "2"
+        case .songs: "3"
+        case .profile: "4"
+        }
+    }
+}
