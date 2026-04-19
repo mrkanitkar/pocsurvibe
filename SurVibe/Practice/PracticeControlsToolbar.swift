@@ -9,10 +9,12 @@ struct PracticeControlsToolbar: View {
     let isPlaying: Bool
 
     /// Whether the metronome is enabled.
-    @Binding var isMetronomeEnabled: Bool
+    @Binding
+    var isMetronomeEnabled: Bool
 
     /// Whether the tanpura drone is enabled.
-    @Binding var isTanpuraEnabled: Bool
+    @Binding
+    var isTanpuraEnabled: Bool
 
     /// Current speed multiplier (for display).
     let speedMultiplier: Double
@@ -77,6 +79,6 @@ struct PracticeControlsToolbar: View {
             .accessibilityHint("End the practice session")
         }
         .padding()
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
+        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 16))
     }
 }

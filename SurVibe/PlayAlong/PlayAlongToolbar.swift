@@ -62,7 +62,8 @@ struct PlayAlongToolbar: View {
     // MARK: - Environment
 
     /// Whether the user has requested reduced motion in system accessibility settings.
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityReduceMotion)
+    private var reduceMotion
 
     // MARK: - Callbacks
 
@@ -113,7 +114,7 @@ struct PlayAlongToolbar: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-        .background(.ultraThinMaterial)
+        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 24))
     }
 
     // MARK: - Row 1: Header

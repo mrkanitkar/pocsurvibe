@@ -30,16 +30,23 @@ struct SongPlayAlongView: View {
     /// The song to play along with.
     let song: Song
 
-    /// View model managing playback, scoring, and session lifecycle.
-    @State var viewModel = PlayAlongViewModel()
+    /// View model received from `PlayAlongSceneHost`; do not own here.
+    ///
+    /// `@Bindable` gives SwiftUI two-way access to published properties without
+    /// taking ownership. Ownership lives in `PlayAlongSceneHost` so the VM
+    /// survives rotation and size-class changes without restarting the audio engine.
+    @Bindable
+    var viewModel: PlayAlongViewModel
 
     /// Owns tanpura drone state and debounces retune against the engine.
     /// `internal` so helpers in `SongPlayAlongView+Tanpura.swift` can read it.
-    @State var tanpura = TanpuraController()
+    @State
+    var tanpura = TanpuraController()
 
     /// Whether the tanpura settings sheet is presented.
     /// `internal` so helpers in `SongPlayAlongView+Tanpura.swift` can set it.
-    @State var showTanpuraSheet = false
+    @State
+    var showTanpuraSheet = false
 
     /// Pending persistence write for `preferredSaHz`. Canceled on rapid changes.
     @State private var persistDebounceTask: Task<Void, Never>?
@@ -54,13 +61,15 @@ struct SongPlayAlongView: View {
     /// not from the user) is ignored by the persistence observer. Cleared
     /// automatically by the observer itself.
     /// `internal` so `resetPreferredSaHz()` in the +Tanpura extension can set it.
-    @State var suppressNextPersistenceTick = false
+    @State
+    var suppressNextPersistenceTick = false
 
     /// Cached "SongProgress.preferredSaHz is non-nil" flag, updated at
     /// task-time and on every persist/reset. Replaces a per-render
     /// SwiftData fetch that previously fired on every sheet open.
     /// `internal` so the +Tanpura extension can read and flip it.
-    @State var hasStoredOverride: Bool = false
+    @State
+    var hasStoredOverride: Bool = false
 
     /// Piano key positions collected via preference key for note alignment.
     @State private var keyPositions: [KeyPosition] = []
@@ -72,22 +81,69 @@ struct SongPlayAlongView: View {
     @State private var showAppearanceSheet = false
 
     /// Whether the correctness flash overlay is visible (brief green/red flash).
-    @State var showCorrectnessBanner = false
+    @State
+    var showCorrectnessBanner = false
 
     /// Color of the current correctness flash (green for correct, red for wrong).
-    @State var correctnessBannerColor: Color = .green
+    @State
+    var correctnessBannerColor: Color = .green
 
     // MARK: - AppStorage (persisted preferences)
 
-    @AppStorage("playAlongWaitMode") private var storedWaitMode: Bool = false
+    @AppStorage("playAlongWaitMode")
+    private var storedWaitMode: Bool = false
 
     // MARK: - Environment
 
-    @Environment(AppThemeManager.self) var themeManager  // internal so the +Subviews extension (separate file) can read it
+    @Environment(AppThemeManager.self)
+    var themeManager  // internal so the +Subviews extension (separate file) can read it
     // internal so the +Tanpura extension (separate file) can fetch/save SongProgress
-    @Environment(\.modelContext) var modelContext
-    @Environment(\.dismiss) private var dismiss
-    @Environment(\.accessibilityReduceMotion) var reduceMotion
+    @Environment(\.modelContext)
+    var modelContext
+    @Environment(\.dismiss)
+    private var dismiss
+    @Environment(\.accessibilityReduceMotion)
+    var reduceMotion
+    @Environment(\.verticalSizeClass)
+    private var verticalSizeClass
+    @Environment(\.horizontalSizeClass)
+    private var horizontalSizeClass
+
+    // MARK: - Layout helpers
+
+    /// Returns `true` when the window should use a side-by-side (landscape)
+    /// layout: iPhone landscape (vertical-compact) or iPad / Mac regular width.
+    /// Stacks vertically for iPhone portrait and iPad Slide Over.
+    private var shouldUseLandscapeLayout: Bool {
+        verticalSizeClass == .compact || horizontalSizeClass == .regular
+    }
+
+    // MARK: - Transport actions
+
+    /// Actions published to `TransportCommands` via `.focusedSceneValue`.
+    ///
+    /// The closures capture `self` by value (View is a struct) which is safe —
+    /// each SwiftUI render produces a fresh struct; the closures are short-lived.
+    /// Seek uses `playbackDuration` to convert a 5-second offset into the
+    /// normalised progress fraction that `seek(to:)` expects.
+    private var transportActions: TransportActions {
+        TransportActions(
+            playPause: { handlePlayPause() },
+            seekBackward: {
+                let duration = viewModel.playbackDuration
+                guard duration > 0 else { return }
+                let newProgress = max(0, viewModel.playbackProgress - 5 / duration)
+                viewModel.seek(to: newProgress)
+            },
+            seekForward: {
+                let duration = viewModel.playbackDuration
+                guard duration > 0 else { return }
+                let newProgress = min(1, viewModel.playbackProgress + 5 / duration)
+                viewModel.seek(to: newProgress)
+            },
+            stop: { handleStop() }
+        )
+    }
 
     // MARK: - Body
 
@@ -101,162 +157,9 @@ struct SongPlayAlongView: View {
             )
             .ignoresSafeArea()
 
-            // Layer 2 — main content VStack (toolbar when summoned + notation + piano)
-            VStack(spacing: 0) {
-                if viewModel.chromeVisibility == .summoned {
-                    // Transport toolbar — theme-driven, only visible when chrome is summoned.
-                    PlayAlongToolbar(
-                        playbackState: viewModel.playbackState,
-                        tempoScale: viewModel.tempoScale,
-                        isWaitModeEnabled: viewModel.isWaitModeEnabled,
-                        isSoundEnabled: viewModel.isSoundEnabled,
-                        isMIDIConnected: viewModel.isMIDIConnected,
-                        midiDeviceName: viewModel.midiDeviceName,
-                        baseBPM: song.tempo,
-                        songTitle: song.title,
-                        songSubtitle: song.artist.isEmpty ? "Aaroha" : song.artist,
-                        playbackProgress: viewModel.playbackProgress,
-                        playbackDuration: viewModel.playbackDuration,
-                        onPlayPause: handlePlayPause,
-                        onStop: handleStop,
-                        onTempoChange: {
-                            viewModel.tempoScale = $0
-                            AnalyticsManager.shared.track(
-                                .playAlongTempoChanged,
-                                properties: ["tempo_scale": $0, "song_title": song.title]
-                            )
-                        },
-                        onWaitModeToggle: {
-                            viewModel.toggleWaitMode()
-                            storedWaitMode = viewModel.isWaitModeEnabled
-                        },
-                        onSoundToggle: {
-                            viewModel.isSoundEnabled.toggle()
-                            tanpura.setSoundEnabled(viewModel.isSoundEnabled)
-                            AnalyticsManager.shared.track(
-                                .playAlongSoundToggled,
-                                properties: ["enabled": viewModel.isSoundEnabled, "song_title": song.title]
-                            )
-                        },
-                        onTanpuraToggle: {
-                            tanpura.toggleEnabled()
-                            AnalyticsManager.shared.track(
-                                .tanpuraToggled,
-                                properties: [
-                                    "enabled": tanpura.isTanpuraEnabled,
-                                    "song_title": song.title,
-                                    "source": "toolbar"
-                                ]
-                            )
-                        },
-                        onModeTapped: { showAppearanceSheet = true },
-                        onSeek: { viewModel.seek(to: $0) }
-                    )
-                    .transition(
-                        reduceMotion
-                            ? .opacity
-                            : .move(edge: .top).combined(with: .opacity)
-                    )
-                }
-
-                // Main content area — theme-aware renderer dispatch.
-                //
-                // Gesture overlay summons/manages chrome. Gestures are attached
-                // HERE (not on the piano keyboard) so piano-key taps still route
-                // to `InteractivePianoView.onNoteOn`/`onNoteOff` without being
-                // swallowed. `.contentShape(Rectangle())` ensures the full area
-                // is hittable even when the underlying view renders `Color.clear`
-                // (e.g., `.hide` notation mode).
-                contentArea
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        // Tap = "I want controls" → summon chrome.
-                        viewModel.summonChrome()
-                    }
-                    .gesture(
-                        // Swipe down (from top edge or anywhere on the content):
-                        // downward translation dominates → summon chrome.
-                        DragGesture(minimumDistance: 30)
-                            .onEnded { value in
-                                if value.translation.height > 30
-                                    && abs(value.translation.width) < 50 {
-                                    viewModel.summonChrome()
-                                }
-                            }
-                    )
-                    .onLongPressGesture(minimumDuration: 0.5) {
-                        // TODO(Task 2.11+): open a seek scrubber on long-press
-                        // instead of summoning chrome. For now, treat long-press
-                        // on notation as an intent to see controls.
-                        viewModel.summonChrome()
-                    }
-                    // TODO(Task 2.11+): implement native two-finger tap for
-                    // wait-mode toggle via UIKit bridging (SwiftUI's TapGesture
-                    // doesn't distinguish finger count on iOS).
-
-                if shouldShowLyricStrip && !viewModel.noteEvents.isEmpty {
-                    LyricsStrip(
-                        words: sargamLyricWords,
-                        devanagariLine: nil,
-                        currentTime: viewModel.currentTime,
-                        backgroundColor: viewModel.karaokeBackgroundColor
-                    )
-                    .padding(.horizontal, 16)
-                    .padding(.bottom, 4)
-                }
-
-                // Scoring HUD overlay — visible during playback OR when notes have been scored in guided mode
-                CompactScoringHUD(
-                    accuracy: viewModel.accuracy,
-                    streak: viewModel.streak,
-                    notesHit: viewModel.notesHit,
-                    totalNotes: viewModel.noteEvents.count,
-                    isVisible: viewModel.playbackState == .playing
-                        || viewModel.playbackState == .paused
-                        || (viewModel.playbackState == .idle && viewModel.notesHit > 0)
-                )
-
-                // Pitch proximity feedback (shown when a note is detected from mic)
-                if let pitch = viewModel.currentPitch {
-                    pitchFeedbackBar(pitch: pitch)
-                        .padding(.horizontal)
-                        .padding(.bottom, 4)
-                }
-
-                // Piano keyboard at the bottom.
-                // highlightState is passed directly so CADisplayLink ticks (60–120 Hz)
-                // that update MIDI key highlights only re-render InteractivePianoView —
-                // NOT the entire SongPlayAlongView hierarchy. This eliminates the
-                // @MainActor saturation that caused 300–530ms MIDI scoring lag.
-                InteractivePianoView(
-                    activeMidiNotes: viewModel.effectiveMidiNotes,
-                    highlightState: viewModel.highlightState,
-                    activeCentsOffset: viewModel.currentPitch?.centsOffset ?? 0,
-                    expectedMidiNote: viewModel.expectedMidiNote,
-                    onNoteOn: { midiNote in
-                        viewModel.handleKeyboardNoteOn(midiNote: midiNote)
-                    },
-                    onNoteOff: { midiNote in
-                        viewModel.handleKeyboardNoteOff(midiNote: midiNote)
-                    },
-                    notationMode: viewModel.notationMode,
-                    manageSoundFont: false,
-                    // Two-hand highlight colors resolved once upstream from the
-                    // active theme (see `.task` / `.onChange(of: themeManager.currentPreset)`
-                    // above). Passed as `let` so the CADisplayLink-driven
-                    // `highlightState` mutations only re-render this view —
-                    // not `SongPlayAlongView.body`. InteractivePianoView reads
-                    // the per-note RH/LH/chord sets from `highlightState`
-                    // internally, preserving the latency contract.
-                    rhColor: viewModel.rhColor,
-                    lhColor: viewModel.lhColor,
-                    chordColor: viewModel.chordColor
-                )
-                .onPreferenceChange(KeyPositionPreference.self) { positions in
-                    keyPositions = positions
-                }
-            }
+            // Layer 2 — main content (toolbar + notation + piano),
+            // side-by-side in landscape / regular-width, stacked otherwise.
+            layoutContent
 
             // Layer 3 — persistent chrome overlays (always on top of content)
             VStack {
@@ -360,7 +263,7 @@ struct SongPlayAlongView: View {
                 properties: [
                     "preset": newPreset.rawValue,
                     "song_title": song.title,
-                    "source": "play_along_mode_button"
+                    "source": "play_along_mode_button",
                 ]
             )
         }
@@ -379,8 +282,9 @@ struct SongPlayAlongView: View {
             // AUD-VO: Announce current note to VoiceOver users.
             // Only announces when VoiceOver is running to avoid unnecessary overhead.
             guard UIAccessibility.isVoiceOverRunning,
-                  let index = newIndex,
-                  index < viewModel.noteEvents.count else { return }
+                let index = newIndex,
+                index < viewModel.noteEvents.count
+            else { return }
             let event = viewModel.noteEvents[index]
             // Post queued announcement so it doesn't cut off prior speech.
             UIAccessibility.post(
@@ -443,13 +347,203 @@ struct SongPlayAlongView: View {
                         "grid_hz": tanpura.saGridHz,
                         "cents_offset": tanpura.saCentsOffset,
                         "effective_hz": newHz,
-                        "song_title": song.title
+                        "song_title": song.title,
                     ]
                 )
             }
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Play along with \(song.title)")
+        .focusedSceneValue(\.transportActions, transportActions)
+    }
+
+    // MARK: - Layout
+
+    /// Notation, toolbar, scoring HUD, and pitch feedback — everything above (or
+    /// beside) the keyboard. Extracted so `layoutContent` can place it in either
+    /// a `VStack` or an `HStack` depending on `shouldUseLandscapeLayout`.
+    @ViewBuilder
+    private var notationAndChrome: some View {
+        VStack(spacing: 0) {
+            if viewModel.chromeVisibility == .summoned {
+                // Transport toolbar — theme-driven, only visible when chrome is summoned.
+                PlayAlongToolbar(
+                    playbackState: viewModel.playbackState,
+                    tempoScale: viewModel.tempoScale,
+                    isWaitModeEnabled: viewModel.isWaitModeEnabled,
+                    isSoundEnabled: viewModel.isSoundEnabled,
+                    isMIDIConnected: viewModel.isMIDIConnected,
+                    midiDeviceName: viewModel.midiDeviceName,
+                    baseBPM: song.tempo,
+                    songTitle: song.title,
+                    songSubtitle: song.artist.isEmpty ? "Aaroha" : song.artist,
+                    playbackProgress: viewModel.playbackProgress,
+                    playbackDuration: viewModel.playbackDuration,
+                    onPlayPause: handlePlayPause,
+                    onStop: handleStop,
+                    onTempoChange: {
+                        viewModel.tempoScale = $0
+                        AnalyticsManager.shared.track(
+                            .playAlongTempoChanged,
+                            properties: ["tempo_scale": $0, "song_title": song.title]
+                        )
+                    },
+                    onWaitModeToggle: {
+                        viewModel.toggleWaitMode()
+                        storedWaitMode = viewModel.isWaitModeEnabled
+                    },
+                    onSoundToggle: {
+                        viewModel.isSoundEnabled.toggle()
+                        tanpura.setSoundEnabled(viewModel.isSoundEnabled)
+                        AnalyticsManager.shared.track(
+                            .playAlongSoundToggled,
+                            properties: ["enabled": viewModel.isSoundEnabled, "song_title": song.title]
+                        )
+                    },
+                    onTanpuraToggle: {
+                        tanpura.toggleEnabled()
+                        AnalyticsManager.shared.track(
+                            .tanpuraToggled,
+                            properties: [
+                                "enabled": tanpura.isTanpuraEnabled,
+                                "song_title": song.title,
+                                "source": "toolbar",
+                            ]
+                        )
+                    },
+                    onModeTapped: { showAppearanceSheet = true },
+                    onSeek: { viewModel.seek(to: $0) }
+                )
+                .transition(
+                    reduceMotion
+                        ? .opacity
+                        : .move(edge: .top).combined(with: .opacity)
+                )
+            }
+
+            // Main content area — theme-aware renderer dispatch.
+            //
+            // Gesture overlay summons/manages chrome. Gestures are attached
+            // HERE (not on the piano keyboard) so piano-key taps still route
+            // to `InteractivePianoView.onNoteOn`/`onNoteOff` without being
+            // swallowed. `.contentShape(Rectangle())` ensures the full area
+            // is hittable even when the underlying view renders `Color.clear`
+            // (e.g., `.hide` notation mode).
+            contentArea
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    // Tap = "I want controls" → summon chrome.
+                    viewModel.summonChrome()
+                }
+                .gesture(
+                    // Swipe down (from top edge or anywhere on the content):
+                    // downward translation dominates → summon chrome.
+                    DragGesture(minimumDistance: 30)
+                        .onEnded { value in
+                            if value.translation.height > 30
+                                && abs(value.translation.width) < 50
+                            {
+                                viewModel.summonChrome()
+                            }
+                        }
+                )
+                .onLongPressGesture(minimumDuration: 0.5) {
+                    // TODO(Task 2.11+): open a seek scrubber on long-press
+                    // instead of summoning chrome. For now, treat long-press
+                    // on notation as an intent to see controls.
+                    viewModel.summonChrome()
+                }
+            // TODO(Task 2.11+): implement native two-finger tap for
+            // wait-mode toggle via UIKit bridging (SwiftUI's TapGesture
+            // doesn't distinguish finger count on iOS).
+
+            if shouldShowLyricStrip && !viewModel.noteEvents.isEmpty {
+                LyricsStrip(
+                    words: sargamLyricWords,
+                    devanagariLine: nil,
+                    currentTime: viewModel.currentTime,
+                    backgroundColor: viewModel.karaokeBackgroundColor
+                )
+                .padding(.horizontal, 16)
+                .padding(.bottom, 4)
+            }
+
+            // Scoring HUD overlay — visible during playback OR when notes have been scored in guided mode
+            CompactScoringHUD(
+                accuracy: viewModel.accuracy,
+                streak: viewModel.streak,
+                notesHit: viewModel.notesHit,
+                totalNotes: viewModel.noteEvents.count,
+                isVisible: viewModel.playbackState == .playing
+                    || viewModel.playbackState == .paused
+                    || (viewModel.playbackState == .idle && viewModel.notesHit > 0)
+            )
+
+            // Pitch proximity feedback (shown when a note is detected from mic)
+            if let pitch = viewModel.currentPitch {
+                pitchFeedbackBar(pitch: pitch)
+                    .padding(.horizontal)
+                    .padding(.bottom, 4)
+            }
+        }
+    }
+
+    /// The piano keyboard, with key-position preference reporting.
+    ///
+    /// `highlightState` is passed directly so CADisplayLink ticks (60–120 Hz)
+    /// that update MIDI key highlights only re-render `InteractivePianoView` —
+    /// NOT the entire `SongPlayAlongView` hierarchy. This eliminates the
+    /// `@MainActor` saturation that caused 300–530ms MIDI scoring lag.
+    @ViewBuilder
+    private var keyboardContent: some View {
+        InteractivePianoView(
+            activeMidiNotes: viewModel.effectiveMidiNotes,
+            highlightState: viewModel.highlightState,
+            activeCentsOffset: viewModel.currentPitch?.centsOffset ?? 0,
+            expectedMidiNote: viewModel.expectedMidiNote,
+            onNoteOn: { midiNote in
+                viewModel.handleKeyboardNoteOn(midiNote: midiNote)
+            },
+            onNoteOff: { midiNote in
+                viewModel.handleKeyboardNoteOff(midiNote: midiNote)
+            },
+            notationMode: viewModel.notationMode,
+            manageSoundFont: false,
+            // Two-hand highlight colors resolved once upstream from the
+            // active theme (see `.task` / `.onChange(of: themeManager.currentPreset)`
+            // above). Passed as `let` so the CADisplayLink-driven
+            // `highlightState` mutations only re-render this view —
+            // not `SongPlayAlongView.body`. InteractivePianoView reads
+            // the per-note RH/LH/chord sets from `highlightState`
+            // internally, preserving the latency contract.
+            rhColor: viewModel.rhColor,
+            lhColor: viewModel.lhColor,
+            chordColor: viewModel.chordColor
+        )
+        .onPreferenceChange(KeyPositionPreference.self) { positions in
+            keyPositions = positions
+        }
+    }
+
+    /// Composes `notationAndChrome` + `keyboardContent` into the active
+    /// layout variant: side-by-side in landscape / regular-width windows,
+    /// stacked vertically otherwise.
+    @ViewBuilder
+    private var layoutContent: some View {
+        if shouldUseLandscapeLayout {
+            HStack(alignment: .top, spacing: 0) {
+                notationAndChrome
+                    .frame(maxWidth: .infinity)
+                keyboardContent
+                    .frame(maxWidth: 400)
+            }
+        } else {
+            VStack(spacing: 0) {
+                notationAndChrome
+                keyboardContent
+            }
+        }
     }
 
     // MARK: - Lyric Strip Helpers
@@ -556,7 +650,8 @@ struct SongPlayAlongView: View {
     /// Top-right pill showing the active input source (mic vs MIDI).
     @ViewBuilder
     private var micSourcePill: some View {
-        let source: MicSourcePill.Source = viewModel.isMIDIConnected
+        let source: MicSourcePill.Source =
+            viewModel.isMIDIConnected
             ? .midi(deviceName: viewModel.midiDeviceName)
             : .mic
         MicSourcePill(
@@ -619,16 +714,14 @@ struct SongPlayAlongView: View {
 
 #Preview("Play Along — Idle") {
     NavigationStack {
-        SongPlayAlongView(
-            song: Song(title: "Raag Yaman", difficulty: 2, tempo: 120)
-        )
+        PlayAlongSceneHost(song: Song(title: "Raag Yaman", difficulty: 2, tempo: 120))
     }
     .environment(AppThemeManager())
 }
 
 #Preview("Play Along — With Song") {
     NavigationStack {
-        SongPlayAlongView(
+        PlayAlongSceneHost(
             song: {
                 let song = Song(title: "Twinkle Twinkle", difficulty: 1, tempo: 100)
                 return song

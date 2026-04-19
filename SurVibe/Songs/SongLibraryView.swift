@@ -12,34 +12,49 @@ import SwiftUI
 struct SongLibraryView: View {
     // MARK: - Properties
 
-    @Environment(AppThemeManager.self) private var themeManager
-    @Environment(SongLibraryViewModel.self) private var viewModel
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(AppThemeManager.self)
+    private var themeManager
+    @Environment(SongLibraryViewModel.self)
+    private var viewModel
+    @Environment(AppRouter.self)
+    private var router
+    @Environment(\.accessibilityReduceMotion)
+    private var reduceMotion
+
+    /// Tracks keyboard focus for hardware-keyboard navigation.
+    @FocusState
+    private var focusedSongID: Song.ID?
 
     /// Controls the sign-in prompt sheet for premium songs.
-    @State private var signInTrigger: SignInTrigger?
+    @State
+    private var signInTrigger: SignInTrigger?
 
     /// Song for which to show the detail sheet (via long-press context menu).
-    @State private var detailSong: Song?
+    @State
+    private var detailSong: Song?
 
     /// Controls the song import sheet.
-    @State private var showImportSheet: Bool = false
+    @State
+    private var showImportSheet: Bool = false
 
     /// Song to open in the edit sheet (user songs only).
-    @State private var songToEdit: Song?
+    @State
+    private var songToEdit: Song?
 
     /// Song pending delete confirmation (user songs only).
-    @State private var songToDelete: Song?
+    @State
+    private var songToDelete: Song?
 
     /// Two-column adaptive grid.
     private let columns = [
-        GridItem(.adaptive(minimum: 160), spacing: 16),
+        GridItem(.adaptive(minimum: 160), spacing: 16)
     ]
 
     // MARK: - Body
 
     var body: some View {
-        @Bindable var vm = viewModel
+        @Bindable
+        var vm = viewModel
 
         VStack(spacing: 0) {
             // Filter bar
@@ -89,10 +104,13 @@ struct SongLibraryView: View {
                     .environment(viewModel)
             }
         }
-        .alert("Delete Song", isPresented: Binding(
-            get: { songToDelete != nil },
-            set: { if !$0 { songToDelete = nil } }
-        )) {
+        .alert(
+            "Delete Song",
+            isPresented: Binding(
+                get: { songToDelete != nil },
+                set: { if !$0 { songToDelete = nil } }
+            )
+        ) {
             Button("Delete", role: .destructive) {
                 if let song = songToDelete {
                     viewModel.deleteSong(song)
@@ -124,11 +142,21 @@ struct SongLibraryView: View {
                             .onTapGesture {
                                 signInTrigger = .premiumSong
                             }
+                            .focused($focusedSongID, equals: song.id)
+                            .onKeyPress(.return) {
+                                signInTrigger = .premiumSong
+                                return .handled
+                            }
                     } else {
                         NavigationLink(value: song) {
                             SongCardView(song: song)
                         }
                         .buttonStyle(.plain)
+                        .focused($focusedSongID, equals: song.id)
+                        .onKeyPress(.return) {
+                            router.openSong(song.id)
+                            return .handled
+                        }
                         .contextMenu {
                             Button {
                                 detailSong = song
