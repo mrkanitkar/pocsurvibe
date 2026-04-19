@@ -13,8 +13,7 @@ struct ContentView: View {
 
     @State
     private var selectedTab: AppTab = .home
-    @State
-    private var router = AppRouter()
+    @Environment(AppRouter.self) private var router
 
     @Environment(OnboardingManager.self) private var onboardingManager
     @Environment(GamificationService.self) private var gamificationService: GamificationService?
@@ -54,7 +53,6 @@ struct ContentView: View {
             }
         }
         .tint(themeManager.resolved.accentColor)
-        .environment(router)
         .onChange(of: colorScheme) { _, newScheme in
             themeManager.updateColorScheme(newScheme)
         }
@@ -147,4 +145,5 @@ struct ContentView: View {
     ContentView()
         .environment(OnboardingManager())
         .environment(AppThemeManager())
+        .environment(AppRouter())
 }

@@ -204,6 +204,11 @@ struct SurVibeApp: App {
     /// and visual presets. Injected into the environment for all views.
     @State private var themeManager = AppThemeManager()
 
+    /// App-wide router managing tab selection and navigation. Hosted here
+    /// (not in `ContentView`) so menu-bar `AppCommands` can receive it as
+    /// a constructor parameter.
+    @State private var router = AppRouter()
+
     // MARK: - Body
 
     var body: some Scene {
@@ -213,6 +218,7 @@ struct SurVibeApp: App {
                 .environment(AuthManager.shared)
                 .environment(gamificationService)
                 .environment(themeManager)
+                .environment(router)
         }
         .modelContainer(modelContainer)
 
@@ -228,6 +234,7 @@ struct SurVibeApp: App {
                 .environment(AuthManager.shared)
                 .environment(gamificationService)
                 .environment(themeManager)
+                .environment(router)
         }
         #endif
     }
