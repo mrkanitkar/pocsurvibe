@@ -1,5 +1,6 @@
 import Foundation
 import SwiftData
+import Testing
 
 @testable import SurVibe
 
@@ -55,6 +56,9 @@ enum SwiftDataTestContainer {
     /// Returns a brand-new `ModelContext` on the shared container with
     /// every row from every model type deleted. Use this in test setup
     /// instead of allocating a fresh container.
+    ///
+    /// When adding a model, also add a `context.delete(model:)` line below —
+    /// the model-count assertion in `SwiftDataSchemaSyncTests` is the reminder.
     @MainActor
     static func freshContext() throws -> ModelContext {
         let context = ModelContext(shared)
@@ -70,5 +74,49 @@ enum SwiftDataTestContainer {
         try context.delete(model: UserProfile.self)
         try context.save()
         return context
+    }
+}
+
+/// Guards against silent drift between `SurVibeApp.appSchema`,
+/// `SwiftDataTestContainer.schema`, and `freshContext()`'s delete list.
+///
+/// If you add a new `@Model` class, these tests fail loudly until you:
+/// 1. Add it to `SurVibeApp.appSchema`
+/// 2. Add it to `SwiftDataTestContainer.schema`
+/// 3. Add a `context.delete(model:)` line to `freshContext()`
+/// 4. Bump `expectedModelCount` below
+@Suite("SwiftData Schema Sync")
+struct SwiftDataSchemaSyncTests {
+    /// Hard-coded model count. Bumping this is the checkpoint that forces
+    /// a human to revisit all three sync points above.
+    private static let expectedModelCount = 13
+
+    @Test("Test container schema matches the hard-coded model count")
+    func testContainerSchemaCountMatchesExpected() {
+        #expect(
+            SwiftDataTestContainer.schema.entities.count == Self.expectedModelCount,
+            """
+            SwiftDataTestContainer.schema has \
+            \(SwiftDataTestContainer.schema.entities.count) models; \
+            expected \(Self.expectedModelCount). If you added a model, also \
+            update freshContext() and bump expectedModelCount.
+            """
+        )
+    }
+
+    @Test("App schema and test container schema contain the same model set")
+    func appAndTestSchemasMatch() {
+        let appNames = Set(SurVibeApp.appSchema.entities.map(\.name))
+        let testNames = Set(SwiftDataTestContainer.schema.entities.map(\.name))
+        let appOnly = appNames.subtracting(testNames)
+        let testOnly = testNames.subtracting(appNames)
+        #expect(
+            appOnly.isEmpty && testOnly.isEmpty,
+            """
+            Schema drift detected.
+            In app but missing from test container: \(appOnly.sorted())
+            In test container but missing from app: \(testOnly.sorted())
+            """
+        )
     }
 }
