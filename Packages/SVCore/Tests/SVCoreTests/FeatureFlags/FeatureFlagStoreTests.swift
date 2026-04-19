@@ -7,49 +7,53 @@ import Testing
 @Suite("FeatureFlagStore")
 struct FeatureFlagStoreTests {
 
-    /// Helper: isolated UserDefaults + mock analytics for each test (no cross-test pollution).
-    private func makeStore(
-        suite: String = UUID().uuidString
-    ) -> (FeatureFlagStore, UserDefaults, MockAnalyticsProvider) {
+    /// Test harness: isolated UserDefaults + mock analytics for each test (no cross-test pollution).
+    private struct Harness {
+        let store: FeatureFlagStore
+        let defaults: UserDefaults
+        let provider: MockAnalyticsProvider
+    }
+
+    /// Creates a fresh, isolated `Harness` backed by a unique UserDefaults suite.
+    private func makeHarness(suite: String = UUID().uuidString) -> Harness {
         let defaults = UserDefaults(suiteName: suite)!
         defaults.removePersistentDomain(forName: suite)
         let provider = MockAnalyticsProvider()
         let store = FeatureFlagStore(defaults: defaults, analytics: provider)
-        return (store, defaults, provider)
+        return Harness(store: store, defaults: defaults, provider: provider)
     }
 
     @Test func everyFlagDefaultsToFalse() {
-        let (store, _, _) = makeStore()
+        let h = makeHarness()
         for flag in FeatureFlag.allCases {
-            #expect(store.isEnabled(flag) == false, "\(flag) should default to false")
+            #expect(h.store.isEnabled(flag) == false, "\(flag) should default to false")
         }
     }
 
     @Test func setEnabledRoundTripsThroughDefaults() {
-        let (store, defaults, _) = makeStore()
-        store.setEnabled(.onDeviceAI, true)
-        #expect(store.isEnabled(.onDeviceAI) == true)
-        #expect(defaults.bool(forKey: "ff.onDeviceAI") == true)
+        let h = makeHarness()
+        h.store.setEnabled(.onDeviceAI, true)
+        #expect(h.store.isEnabled(.onDeviceAI) == true)
+        #expect(h.defaults.bool(forKey: "ff.onDeviceAI") == true)
 
-        store.setEnabled(.onDeviceAI, false)
-        #expect(store.isEnabled(.onDeviceAI) == false)
-        #expect(defaults.bool(forKey: "ff.onDeviceAI") == false)
+        h.store.setEnabled(.onDeviceAI, false)
+        #expect(h.store.isEnabled(.onDeviceAI) == false)
+        #expect(h.defaults.bool(forKey: "ff.onDeviceAI") == false)
     }
 
     @Test func togglingOneFlagDoesNotAffectOthers() {
-        let (store, _, _) = makeStore()
-        store.setEnabled(.playAlongViewModelV2, true)
-        #expect(store.isEnabled(.playAlongViewModelV2) == true)
-        #expect(store.isEnabled(.onDeviceAI) == false)
-        #expect(store.isEnabled(.macDestination) == false)
+        let h = makeHarness()
+        h.store.setEnabled(.playAlongViewModelV2, true)
+        #expect(h.store.isEnabled(.playAlongViewModelV2) == true)
+        #expect(h.store.isEnabled(.onDeviceAI) == false)
+        #expect(h.store.isEnabled(.macDestination) == false)
     }
 
     @Test func togglingFiresAnalyticsEvent() {
-        let (store, _, provider) = makeStore()
+        let h = makeHarness()
+        h.store.setEnabled(.onDeviceAI, true)
 
-        store.setEnabled(.onDeviceAI, true)
-
-        let event = provider.tracked.first { $0.event == .featureFlagToggled }
+        let event = h.provider.tracked.first { $0.event == .featureFlagToggled }
         #expect(event != nil, "featureFlagToggled should be tracked")
         #expect(event?.properties?["flag"] as? String == "onDeviceAI")
         #expect(event?.properties?["enabled"] as? Bool == true)
