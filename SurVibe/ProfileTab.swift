@@ -13,19 +13,27 @@ import SwiftUI
 struct ProfileTab: View {
     // MARK: - Properties
 
-    @Environment(\.modelContext) private var modelContext
-    @Environment(AuthManager.self) private var authManager
-    @Environment(OnboardingManager.self) private var onboardingManager
-    @Environment(GamificationService.self) private var gamificationService: GamificationService?
-    @Environment(AppThemeManager.self) private var themeManager
+    @Environment(\.modelContext)
+    private var modelContext
+    @Environment(AuthManager.self)
+    private var authManager
+    @Environment(OnboardingManager.self)
+    private var onboardingManager
+    @Environment(GamificationService.self)
+    private var gamificationService: GamificationService?
+    @Environment(AppThemeManager.self)
+    private var themeManager
 
-    @State private var languageManager = LanguageManager()
+    @State
+    private var languageManager = LanguageManager()
 
     /// Controls the sign-in prompt sheet.
-    @State private var signInTrigger: SignInTrigger?
+    @State
+    private var signInTrigger: SignInTrigger?
 
     /// All UserProfile records — expected to be exactly one singleton.
-    @Query private var userProfiles: [UserProfile]
+    @Query
+    private var userProfiles: [UserProfile]
 
     /// The singleton user profile, or nil if not yet created.
     private var userProfile: UserProfile? { userProfiles.first }
@@ -218,7 +226,8 @@ struct ProfileTab: View {
     // MARK: - Settings Section
 
     /// User preference for auto-hiding sargam labels as accuracy improves.
-    @AppStorage("autoHideSargamLabels") private var autoHideSargamLabels: Bool = true
+    @AppStorage("autoHideSargamLabels")
+    private var autoHideSargamLabels: Bool = true
 
     /// Settings section -- language selector, sargam label toggle, and redo onboarding.
     private var settingsSection: some View {
@@ -357,12 +366,15 @@ struct ProfileTab: View {
         .environment(AuthManager.shared)
         .environment(OnboardingManager())
         .environment(AppThemeManager())
-        .modelContainer(for: [
-            UserProfile.self,
-            XPEntry.self,
-            RiyazEntry.self,
-            SongProgress.self,
-            LessonProgress.self,
-            Achievement.self,
-        ], inMemory: true)
+        .modelContainer(
+            for: [
+                UserProfile.self,
+                XPEntry.self,
+                RiyazEntry.self,
+                SongProgress.self,
+                LessonProgress.self,
+                Achievement.self,
+            ],
+            inMemory: true
+        )
 }
