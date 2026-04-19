@@ -13,7 +13,7 @@ import Testing
 /// pitch detection / MIDI input remain on the VM facade until SP-3d.
 ///
 /// ## Mock surface
-/// - `MockAudioEngineProvider` (SP-0) — exposes `startForPlaybackCallCount`, `stopCallCount`.
+/// - `MockAudioEngineProvider` (SP-0) — exposes `startCallCount`, `stopCallCount`.
 /// - `MockSoundFontPlayer` (SP-0) — exposes `stopAllNotesCallCount`.
 /// - `MockMetronomePlayer` (SP-0) — exposes `startCallCount`, `stopCallCount`, `bpm`.
 /// - `MockAnalyticsProvider` (SP-1) — records tracked events.
@@ -111,7 +111,7 @@ struct PlaybackCoordinatorTests {
         await coord.startScheduling()
 
         #expect(coord.playbackState == .playing)
-        #expect(engine.startForPlaybackCallCount == 1, "Engine.startForPlayback called exactly once")
+        #expect(engine.startCallCount == 1, "Engine started exactly once")
         #expect(metronome.startCallCount == 1, "Metronome started")
         #expect(coord.playbackStartDate != nil, "Self-driving timeline date set")
     }
