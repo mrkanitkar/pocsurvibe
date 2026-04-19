@@ -1,6 +1,7 @@
 import SVAudio
 import SVCore
 import SVLearning
+import SwiftData
 import SwiftUI
 
 /// Main container view for the song play-along experience.
@@ -30,6 +31,15 @@ struct SongPlayAlongView: View {
 
     /// View model managing playback, scoring, and session lifecycle.
     @State var viewModel = PlayAlongViewModel()
+
+    /// Owns tanpura drone state and debounces retune against the engine.
+    @State private var tanpura = TanpuraController()
+
+    /// Whether the tanpura settings sheet is presented.
+    @State private var showTanpuraSheet = false
+
+    /// Pending persistence write for `preferredSaHz`. Canceled on rapid changes.
+    @State private var persistDebounceTask: Task<Void, Never>?
 
     /// Piano key positions collected via preference key for note alignment.
     @State private var keyPositions: [KeyPosition] = []
@@ -97,12 +107,23 @@ struct SongPlayAlongView: View {
                         },
                         onSoundToggle: {
                             viewModel.isSoundEnabled.toggle()
+                            tanpura.setSoundEnabled(viewModel.isSoundEnabled)
                             AnalyticsManager.shared.track(
                                 .playAlongSoundToggled,
                                 properties: ["enabled": viewModel.isSoundEnabled, "song_title": song.title]
                             )
                         },
-                        onTanpuraToggle: { /* TODO(Task 2.11+): wire to tanpura audio */ },
+                        onTanpuraToggle: {
+                            tanpura.toggleEnabled()
+                            AnalyticsManager.shared.track(
+                                .tanpuraToggled,
+                                properties: [
+                                    "enabled": tanpura.isTanpuraEnabled,
+                                    "song_title": song.title,
+                                    "source": "toolbar"
+                                ]
+                            )
+                        },
                         onModeTapped: { /* TODO(Task 2.11+): present Profile appearance sheet */ },
                         onSeek: { viewModel.seek(to: $0) }
                     )
@@ -209,12 +230,12 @@ struct SongPlayAlongView: View {
                     tanpuraRagaPill
                     Spacer()
                     micSourcePill
+                        .allowsHitTesting(false)
                 }
                 .padding(.horizontal, 16)
                 .padding(.top, 16)
                 Spacer()
             }
-            .allowsHitTesting(false)
 
             // Layer 4 — persistent pause dot, above the piano keyboard
             VStack {
@@ -266,6 +287,17 @@ struct SongPlayAlongView: View {
             viewModel.cardBackgroundColor = themeManager.resolved.cardBackgroundColor
             viewModel.karaokeBackgroundColor = themeManager.resolved.karaokeBackgroundColor
             viewModel.isWaitModeEnabled = storedWaitMode
+            let slug = song.slugId
+            let progress = try? modelContext.fetch(
+                FetchDescriptor<SongProgress>(
+                    predicate: #Predicate { $0.songId == slug }
+                )
+            ).first
+            tanpura.seed(
+                preferredSaHz: progress?.preferredSaHz,
+                songDefaultHz: song.defaultSaFrequencyHz
+            )
+            tanpura.setSoundEnabled(viewModel.isSoundEnabled)
             await viewModel.loadSong(song)
         }
         .onChange(of: themeManager.currentPreset) { _, newPreset in
@@ -289,6 +321,8 @@ struct SongPlayAlongView: View {
             )
         }
         .onDisappear {
+            persistDebounceTask?.cancel()
+            tanpura.stop()
             viewModel.cleanup()
         }
         .onChange(of: viewModel.playbackState) { _, newState in
@@ -337,6 +371,36 @@ struct SongPlayAlongView: View {
                     dismiss()
                 }
             )
+        }
+        .sheet(isPresented: $showTanpuraSheet) {
+            TanpuraSettingsSheet(
+                controller: tanpura,
+                canResetToSongDefault: canResetToSongDefault,
+                onResetToSongDefault: {
+                    resetPreferredSaHz()
+                    AnalyticsManager.shared.track(
+                        .tanpuraResetToDefault,
+                        properties: ["song_title": song.title]
+                    )
+                }
+            )
+        }
+        .onChange(of: tanpura.effectiveSaHz) { _, newHz in
+            persistDebounceTask?.cancel()
+            persistDebounceTask = Task { @MainActor in
+                try? await Task.sleep(for: .seconds(1))
+                if Task.isCancelled { return }
+                persistPreferredSaHz(newHz)
+                AnalyticsManager.shared.track(
+                    .tanpuraSaChanged,
+                    properties: [
+                        "grid_hz": tanpura.saGridHz,
+                        "cents_offset": tanpura.saCentsOffset,
+                        "effective_hz": newHz,
+                        "song_title": song.title
+                    ]
+                )
+            }
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Play along with \(song.title)")
@@ -425,19 +489,31 @@ struct SongPlayAlongView: View {
                     song: song.title
                 )
             case .sargamGlass, .sargamGlassBars, .neonRhythm:
-                return .raga(
-                    name: song.artist.isEmpty ? "Raga" : song.artist,
-                    tonic: "C4"
-                )
+                return .raga(name: song.artist.isEmpty ? "Raga" : song.artist)
             default:
                 return .westernKey(key: "C major", bpm: song.tempo)
             }
         }()
         TanpuraRagaPill(
             mode: mode,
+            saLabel: Self.saLabel(pitchClass: tanpura.saPitchClass, octave: tanpura.saOctave),
             backgroundColor: viewModel.cardBackgroundColor,
-            foregroundColor: themeManager.resolved.primaryTextColor
+            foregroundColor: themeManager.resolved.primaryTextColor,
+            onTap: {
+                showTanpuraSheet = true
+                AnalyticsManager.shared.track(
+                    .tanpuraSheetOpened,
+                    properties: ["song_title": song.title]
+                )
+            }
         )
+    }
+
+    /// Pretty-print a pitch class + octave as "C♯4".
+    private static func saLabel(pitchClass: Int, octave: Int) -> String {
+        let names = ["C", "C♯", "D", "D♯", "E", "F", "F♯", "G", "G♯", "A", "A♯", "B"]
+        let pc = ((pitchClass % 12) + 12) % 12
+        return "\(names[pc])\(octave)"
     }
 
     /// Top-right pill showing the active input source (mic vs MIDI).
@@ -498,6 +574,58 @@ struct SongPlayAlongView: View {
         default:
             break
         }
+    }
+
+    // MARK: - Tanpura persistence helpers
+
+    /// True when the current `SongProgress` row has a non-nil `preferredSaHz`,
+    /// gating the "Reset to song default" footer button in the sheet.
+    private var canResetToSongDefault: Bool {
+        let slug = song.slugId
+        guard let progress = try? modelContext.fetch(
+            FetchDescriptor<SongProgress>(
+                predicate: #Predicate { $0.songId == slug }
+            )
+        ).first else { return false }
+        return progress.preferredSaHz != nil
+    }
+
+    /// Write the effective Sa Hz to the song's SongProgress row, creating it if needed.
+    private func persistPreferredSaHz(_ effectiveHz: Double) {
+        let slug = song.slugId
+        let existing = try? modelContext.fetch(
+            FetchDescriptor<SongProgress>(
+                predicate: #Predicate { $0.songId == slug }
+            )
+        ).first
+        let target: SongProgress
+        if let existing {
+            target = existing
+        } else {
+            target = SongProgress(songId: slug, songTitle: song.title)
+            modelContext.insert(target)
+        }
+        target.preferredSaHz = effectiveHz
+        do {
+            try modelContext.save()
+        } catch {
+            // Non-fatal: log and continue.
+            print("TanpuraWiring: save failed \(error.localizedDescription)")
+        }
+    }
+
+    /// Clear the persisted override and reseed the controller from the song default.
+    private func resetPreferredSaHz() {
+        let slug = song.slugId
+        if let progress = try? modelContext.fetch(
+            FetchDescriptor<SongProgress>(
+                predicate: #Predicate { $0.songId == slug }
+            )
+        ).first {
+            progress.preferredSaHz = nil
+            try? modelContext.save()
+        }
+        tanpura.seed(preferredSaHz: nil, songDefaultHz: song.defaultSaFrequencyHz)
     }
 }
 

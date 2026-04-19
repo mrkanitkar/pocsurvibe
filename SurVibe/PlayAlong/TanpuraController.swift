@@ -169,12 +169,24 @@ final class TanpuraController {
     /// Apply current state to the shared `TanpuraEngine` using its runtime
     /// mutators (`updateSaFrequency`, `updateVolume`). If not effectively
     /// playing, stops the engine; otherwise starts or retunes it in place.
+    ///
+    /// Guarded by `AudioEngineManager.shared.isRunning`: when the shared
+    /// AVAudioEngine has not been started (e.g., unit tests or before the
+    /// user enters a play-along session), we update volume bookkeeping only
+    /// and skip buffer scheduling. This keeps the controller safe to use in
+    /// contexts where the engine's nodes aren't connected yet — scheduling
+    /// a buffer on an unconnected node raises an NSException.
     private func applyRetune() {
         guard effectiveIsPlaying else {
             if engine.isPlaying { engine.stop() }
             return
         }
         engine.updateVolume(volume)
+        guard AudioEngineManager.shared.isRunning else {
+            // Engine not running yet — defer real audio start to the next
+            // retune after the host starts the shared engine.
+            return
+        }
         do {
             if engine.isPlaying {
                 // Already running: retune in place. `updateSaFrequency`
