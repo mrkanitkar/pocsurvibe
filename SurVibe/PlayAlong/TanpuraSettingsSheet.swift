@@ -91,7 +91,7 @@ struct TanpuraSettingsSheet: View {
                 }
 
                 Section {
-                    Button(role: .destructive) {
+                    Button {
                         onResetToSongDefault()
                     } label: {
                         Text("Reset to song default")
