@@ -4,7 +4,7 @@
 > Source of truth for "what shipped, what was deferred, what's next".
 > Created 2026-04-19 after SP-0 + SP-1 landed on `main`.
 
-## Status (2026-04-19, post-SP-3a merge)
+## Status (2026-04-19, post-SP-3b merge)
 
 | Sub-project | Status | Tag | Merge SHA | Commits |
 |---|---|---|---|:---:|
@@ -12,7 +12,7 @@
 | **SP-1** Adaptive Root Shell | ✅ shipped | `sp-1-adaptive-shell` @ `3b3677c` | `685d1c7` | 9 |
 | **SP-2** Per-surface layout | ✅ shipped | `sp-2-per-surface-layout` | `f50dd0f` | 10+ |
 | **SP-3a** ScoringCoordinator (phase 1 of 4) | ✅ shipped | `sp-3a-scoring` @ `8bf6059` | `55174c2` | 4 |
-| **SP-3b** PlaybackCoordinator (phase 2 of 4) | ⬜ next — spec ready at §5.2 | — | — | — |
+| **SP-3b** PlaybackCoordinator (phase 2 of 4) | ✅ shipped | `sp-3b-playback` @ `036a244` | — | 12 |
 | **SP-3c** View-chrome extraction (phase 3 of 4) | ⬜ pending | — | — | — |
 | **SP-3d** NoteRouter (phase 4 of 4, HIGH risk) | ⬜ pending | — | — | — |
 | **SP-3 umbrella** VM ≤ 200 lines + `file_length` disclaimer deleted | ⬜ awaits 3b/3c/3d | — | — | — |
@@ -28,6 +28,33 @@
 - Tests: 5 new ScoringCoordinatorTests pass; 8 pre-existing PlayAlong suites pass; 3/3 LatencyContractTests pass; SVCore 93/93.
 - Zero hardcoded platform checks on new file (AD-10 enforced).
 - Architectural improvements over plan: Task 5 discovered 5 private methods needing migration (not 4); `NoteScore` init takes 3 additional deviation fields which test helper passes as zeros.
+
+### SP-3b landed (2026-04-19)
+
+- Extracted: transport state, scheduling, session completion, `PracticeSessionRecorder`-mediated SwiftData write — all into `SurVibe/PlayAlong/Coordinators/PlaybackCoordinator.swift` (~597 lines post-format).
+- Facade pattern wired: `PlayAlongViewModel` holds `let playback = PlaybackCoordinator(...)`; 12 stored properties became delegating computed properties. External call sites untouched.
+- `PlayAlongViewModel.swift`: **1,788 → 1,353 lines** (-435 net).
+- Tests: 7 new PlaybackCoordinatorTests pass; 5 ScoringCoordinator pass; 8 pre-existing PlayAlong suites pass (64 tests total); 3/3 LatencyContractTests pass; SVCore 93/93.
+- Single-hop note-on invariant preserved: 0 hits for `AudioEngineManager.shared.noteOn` in `PlaybackCoordinator.swift` code (1 doc-comment hit only, line 33).
+- Zero hardcoded platform checks on new files (AD-10 enforced).
+
+**Architectural deviations applied (per spec §11):**
+- D-SP3b-1: Coordinator exposes domain verbs (`startScheduling/pauseScheduling/resumeScheduling`) not user-action verbs (Option B chosen).
+- D-SP3b-2: `waitController` is internal, not constructor-injected.
+- D-SP3b-3: `metronome: any MetronomePlaying` (real type), not `MetronomeScheduling`.
+- D-SP3b-4: Persistence delegated to `PracticeSessionRecorder` (no direct SongProgress writes).
+- D-SP3b-5: Analytics threaded via `AnalyticsProviding` nil-sentinel.
+- D-SP3b-6 (NEW): Schema-sync test infrastructure (`SwiftDataSchemaSyncTests`) added during Task 3 as defensive guardrail. Out-of-original-scope but useful; retained.
+
+**Test-suite snapshot (verified 2026-04-19 on `feat/sp-3b-playback-coordinator` @ `036a244`):**
+- SVCore: **93/93 passing**.
+- `PlaybackCoordinatorTests`: **7/7 passing**.
+- `ScoringCoordinatorTests`: **5/5 passing** (SP-3a no regression).
+- `LatencyContractTests`: **3/3 passing**.
+- 8 pre-existing PlayAlong suites: **64 tests, all passing** — `PlayAlongFullFlowTests` (10), `PlayAlongIntegrationTests` (1), `PlayAlongThemeIntegrationTests` (5), `PlayAlongChromeTests` (6), `PlayAlongGestureTests` (4), `ChordScoringIntegrationTests` (9), `PlayAlongViewModelTests` (24), `PlayAlongTempoScalingTests` (5).
+- Tag: `sp-3b-playback` @ `036a244` (12 commits on feature branch).
+
+---
 
 **Test-suite snapshot (verified 2026-04-19 on `main` @ `f50dd0f`):**
 - SVCore: **93/93 passing** (`swift test --package-path Packages/SVCore`, ≈0.44 s).
