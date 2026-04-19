@@ -131,21 +131,21 @@ struct SurVibeApp: App {
     private static func configureAnalytics() {
         let apiKey = Bundle.main.object(forInfoDictionaryKey: "POSTHOG_API_KEY") as? String ?? ""
         #if DEBUG
-        if apiKey.isEmpty || apiKey.contains("PLACEHOLDER") {
-            Logger.survibe(category: "App")
-                .warning("PostHog API key not configured. Analytics disabled.")
-        }
+            if apiKey.isEmpty || apiKey.contains("PLACEHOLDER") {
+                Logger.survibe(category: "App")
+                    .warning("PostHog API key not configured. Analytics disabled.")
+            }
         #endif
         #if !DEBUG
-        if apiKey.isEmpty || apiKey.contains("PLACEHOLDER") {
-            preconditionFailure(
-                """
-                PostHog API key is not configured. \
-                Set POSTHOG_API_KEY in PostHogConfig.xcconfig \
-                before building for Release.
-                """
-            )
-        }
+            if apiKey.isEmpty || apiKey.contains("PLACEHOLDER") {
+                preconditionFailure(
+                    """
+                    PostHog API key is not configured. \
+                    Set POSTHOG_API_KEY in PostHogConfig.xcconfig \
+                    before building for Release.
+                    """
+                )
+            }
         #endif
         if !apiKey.isEmpty, !apiKey.contains("PLACEHOLDER") {
             AnalyticsManager.shared.configure(apiKey: apiKey)
@@ -166,17 +166,20 @@ struct SurVibeApp: App {
         let appLogger = Logger.survibe(category: "App")
         guard
             let appSupportURL = FileManager.default.urls(
-                for: .applicationSupportDirectory, in: .userDomainMask
+                for: .applicationSupportDirectory,
+                in: .userDomainMask
             ).first
         else { return }
 
         let fm = FileManager.default
         let storeExtensions: Set<String> = ["store", "store-shm", "store-wal", "sqlite", "sqlite-shm", "sqlite-wal"]
 
-        guard let contents = try? fm.contentsOfDirectory(
-            at: appSupportURL,
-            includingPropertiesForKeys: nil
-        ) else { return }
+        guard
+            let contents = try? fm.contentsOfDirectory(
+                at: appSupportURL,
+                includingPropertiesForKeys: nil
+            )
+        else { return }
 
         for file in contents where storeExtensions.contains(file.pathExtension) {
             do {
@@ -191,23 +194,27 @@ struct SurVibeApp: App {
     // MARK: - State
 
     /// Onboarding manager injected into the view hierarchy.
-    @State private var onboardingManager = OnboardingManager()
+    @State
+    private var onboardingManager = OnboardingManager()
 
     /// Gamification service managing XP, Rang, Achievements, and Streaks.
     ///
     /// Uses a dedicated `ModelContext` from the same `ModelContainer`.
     /// All critical writes call `save()`, keeping it in sync with the
     /// view hierarchy's auto-saving context.
-    @State private var gamificationService: GamificationService
+    @State
+    private var gamificationService: GamificationService
 
     /// App-wide theme manager controlling background gradients, accent colors,
     /// and visual presets. Injected into the environment for all views.
-    @State private var themeManager = AppThemeManager()
+    @State
+    private var themeManager = AppThemeManager()
 
     /// App-wide router managing tab selection and navigation. Hosted here
     /// (not in `ContentView`) so menu-bar `AppCommands` can receive it as
     /// a constructor parameter.
-    @State private var router = AppRouter()
+    @State
+    private var router = AppRouter()
 
     // MARK: - Body
 
@@ -226,19 +233,19 @@ struct SurVibeApp: App {
         }
 
         #if os(macOS)
-        // Settings scene — on macOS (SP-6) this becomes the
-        // Preferences window, activated by Cmd+,.
-        // On iOS/iPadOS, this is unavailable by design (Apple HIG
-        // directs in-app settings to live in the app itself; SP-4 will add
-        // an iOS navigation route).
-        Settings {
-            SettingsView()
-                .environment(onboardingManager)
-                .environment(AuthManager.shared)
-                .environment(gamificationService)
-                .environment(themeManager)
-                .environment(router)
-        }
+            // Settings scene — on macOS (SP-6) this becomes the
+            // Preferences window, activated by Cmd+,.
+            // On iOS/iPadOS, this is unavailable by design (Apple HIG
+            // directs in-app settings to live in the app itself; SP-4 will add
+            // an iOS navigation route).
+            Settings {
+                SettingsView()
+                    .environment(onboardingManager)
+                    .environment(AuthManager.shared)
+                    .environment(gamificationService)
+                    .environment(themeManager)
+                    .environment(router)
+            }
         #endif
     }
 }
