@@ -4,17 +4,30 @@
 > Source of truth for "what shipped, what was deferred, what's next".
 > Created 2026-04-19 after SP-0 + SP-1 landed on `main`.
 
-## Status (2026-04-19, post-SP-2 merge)
+## Status (2026-04-19, post-SP-3a merge)
 
 | Sub-project | Status | Tag | Merge SHA | Commits |
 |---|---|---|---|:---:|
 | **SP-0** Foundation | ✅ shipped | `sp-0-foundation` @ `84b523c` | `51c6e76` | 11 |
 | **SP-1** Adaptive Root Shell | ✅ shipped | `sp-1-adaptive-shell` @ `3b3677c` | `685d1c7` | 9 |
-| **SP-2** Per-surface layout (NavSplitView + landscape + transport + adaptive piano) | ✅ shipped | `sp-2-per-surface-layout` | `f50dd0f` | 10+ |
-| **SP-3** PlayAlongViewModel split | ⬜ ready — preflight green (see §SP-3 readiness) | — | — | — |
+| **SP-2** Per-surface layout | ✅ shipped | `sp-2-per-surface-layout` | `f50dd0f` | 10+ |
+| **SP-3a** ScoringCoordinator (phase 1 of 4) | ✅ shipped | `sp-3a-scoring` @ `8bf6059` | `55174c2` | 4 |
+| **SP-3b** PlaybackCoordinator (phase 2 of 4) | ⬜ next — spec ready at §5.2 | — | — | — |
+| **SP-3c** View-chrome extraction (phase 3 of 4) | ⬜ pending | — | — | — |
+| **SP-3d** NoteRouter (phase 4 of 4, HIGH risk) | ⬜ pending | — | — | — |
+| **SP-3 umbrella** VM ≤ 200 lines + `file_length` disclaimer deleted | ⬜ awaits 3b/3c/3d | — | — | — |
 | **SP-4** Accessibility polish + iOS Settings nav | ⬜ pending | — | — | — |
 | **SP-5** Gen-AI harness | ⬜ pending | — | — | — |
 | **SP-6** Mac destination | ⬜ pending | — | — | — |
+
+### SP-3a landed (2026-04-19)
+
+- Extracted: `noteScores`, `notesHit`, `accuracy`, `streak`, `longestStreak`, `starRating`, `xpEarned`, `accuracySum` (private) + `appendScore` / `updateStreakForHit` / `updateStreakForMiss` / session-completion scoring math / reset path — all into `SurVibe/PlayAlong/Coordinators/ScoringCoordinator.swift` (~124 lines).
+- Facade pattern wired: `PlayAlongViewModel` holds `let scoring = ScoringCoordinator()`; 7 stored properties became 7 delegating computed properties. External call sites (20+ files) untouched.
+- `PlayAlongViewModel.swift`: **1,828 → 1,788 lines** (-40 net).
+- Tests: 5 new ScoringCoordinatorTests pass; 8 pre-existing PlayAlong suites pass; 3/3 LatencyContractTests pass; SVCore 93/93.
+- Zero hardcoded platform checks on new file (AD-10 enforced).
+- Architectural improvements over plan: Task 5 discovered 5 private methods needing migration (not 4); `NoteScore` init takes 3 additional deviation fields which test helper passes as zeros.
 
 **Test-suite snapshot (verified 2026-04-19 on `main` @ `f50dd0f`):**
 - SVCore: **93/93 passing** (`swift test --package-path Packages/SVCore`, ≈0.44 s).
