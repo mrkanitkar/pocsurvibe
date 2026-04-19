@@ -57,4 +57,20 @@ struct AnalyticsEventTests {
     @Test func tanpuraSheetOpenedHasExpectedRawValue() {
         #expect(AnalyticsEvent.tanpuraSheetOpened.rawValue == "play_along_tanpura_sheet_opened")
     }
+
+    @Test func rawValuesAreUnique() {
+        let rawValues = AnalyticsEvent.allCases.map(\.rawValue)
+        #expect(Set(rawValues).count == rawValues.count)
+    }
+
+    @Test func rawValuesUseSnakeCase() {
+        for event in AnalyticsEvent.allCases {
+            #expect(event.rawValue == event.rawValue.lowercased(),
+                    "\(event) raw value '\(event.rawValue)' must be lowercase")
+            #expect(!event.rawValue.contains(" "),
+                    "\(event) raw value must not contain spaces")
+            #expect(!event.rawValue.contains("-"),
+                    "\(event) raw value must use underscores, not hyphens")
+        }
+    }
 }
