@@ -13,21 +13,29 @@ struct ContentView: View {
 
     @State
     private var selectedTab: AppTab = .home
-    @State
-    private var router = AppRouter()
+    @Environment(AppRouter.self)
+    private var router
 
-    @Environment(OnboardingManager.self) private var onboardingManager
-    @Environment(GamificationService.self) private var gamificationService: GamificationService?
-    @Environment(AppThemeManager.self) private var themeManager
-    @Environment(\.colorScheme) private var colorScheme
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
-    @Environment(\.accessibilityReduceTransparency) private var systemReduceTransparency
+    @Environment(OnboardingManager.self)
+    private var onboardingManager
+    @Environment(GamificationService.self)
+    private var gamificationService: GamificationService?
+    @Environment(AppThemeManager.self)
+    private var themeManager
+    @Environment(\.colorScheme)
+    private var colorScheme
+    @Environment(\.accessibilityReduceMotion)
+    private var reduceMotion
+    @Environment(\.accessibilityReduceTransparency)
+    private var systemReduceTransparency
 
     /// Controls the post-onboarding welcome sheet.
-    @State private var showPostOnboarding = false
+    @State
+    private var showPostOnboarding = false
 
     /// Guards against showing post-onboarding more than once per session.
-    @State private var hasShownPostOnboarding = false
+    @State
+    private var hasShownPostOnboarding = false
 
     // MARK: - Body
 
@@ -53,8 +61,8 @@ struct ContentView: View {
                 ProfileTab()
             }
         }
+        .tabViewStyle(.sidebarAdaptable)
         .tint(themeManager.resolved.accentColor)
-        .environment(router)
         .onChange(of: colorScheme) { _, newScheme in
             themeManager.updateColorScheme(newScheme)
         }
@@ -147,4 +155,5 @@ struct ContentView: View {
     ContentView()
         .environment(OnboardingManager())
         .environment(AppThemeManager())
+        .environment(AppRouter())
 }

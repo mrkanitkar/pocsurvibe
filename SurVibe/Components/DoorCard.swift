@@ -93,6 +93,7 @@ struct DoorCard: View {
             .scaleEffect(isPressed && !reduceMotion ? 0.96 : 1.0)
         }
         .buttonStyle(.plain)
+        .hoverEffect(.automatic, isEnabled: isEnabled)
         .disabled(!isEnabled)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
@@ -132,7 +133,7 @@ struct DoorCard: View {
         icon: "music.note",
         title: "Songs",
         subtitle: "Explore melodies from Indian cinema",
-        gradientColors: [.rangNeel, Color(red: 0.18, green: 0.22, blue: 0.55)], // brand-darker companion to rangNeel
+        gradientColors: [.rangNeel, Color(red: 0.18, green: 0.22, blue: 0.55)],  // brand-darker companion to rangNeel
         isEnabled: true
     ) {
         // preview action
@@ -146,7 +147,7 @@ struct DoorCard: View {
         icon: "heart.fill",
         title: "Moods",
         subtitle: "Play by emotion",
-        gradientColors: [.rangLal, Color(red: 0.65, green: 0.12, blue: 0.12)], // brand-darker companion to rangLal
+        gradientColors: [.rangLal, Color(red: 0.65, green: 0.12, blue: 0.12)],  // brand-darker companion to rangLal
         isEnabled: false
     ) {
         // preview action
