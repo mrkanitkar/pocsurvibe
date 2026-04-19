@@ -45,7 +45,11 @@ struct SurVibeApp: App {
     // MARK: - Schema
 
     /// SwiftData schema with all app models.
-    private static var appSchema: Schema {
+    ///
+    /// Must stay in sync with `SwiftDataTestContainer.schema` and
+    /// `SwiftDataTestContainer.freshContext()`.
+    /// `SwiftDataSchemaSyncTests` enforces the app/test schema match at test time.
+    static var appSchema: Schema {
         Schema([
             UserProfile.self,
             RiyazEntry.self,
