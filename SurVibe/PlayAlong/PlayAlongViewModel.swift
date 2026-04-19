@@ -39,17 +39,23 @@ import os.log
 final class PlayAlongViewModel {
     // MARK: - Published State
 
-    /// Current playback state of the play-along session.
-    private(set) var playbackState: PlaybackState = .idle
+    /// Current playback state — delegates to `playback.playbackState`.
+    var playbackState: PlaybackState { playback.playbackState }
 
-    /// Ordered note events for the loaded song.
-    private(set) var noteEvents: [NoteEvent] = []
+    /// Ordered note events — delegates to `playback.noteEvents`.
+    var noteEvents: [NoteEvent] { playback.noteEvents }
 
-    /// Index of the note currently being played or evaluated.
-    private(set) var currentNoteIndex: Int?
+    /// Current note index — delegates to `playback.currentNoteIndex` (read+write).
+    var currentNoteIndex: Int? {
+        get { playback.currentNoteIndex }
+        set { playback.currentNoteIndex = newValue }
+    }
 
-    /// Scoring state per note, keyed by NoteEvent.id.
-    private(set) var noteStates: [UUID: FallingNotesLayoutEngine.NoteState] = [:]
+    /// Per-note state — delegates to `playback.noteStates` (read+write).
+    var noteStates: [UUID: FallingNotesLayoutEngine.NoteState] {
+        get { playback.noteStates }
+        set { playback.noteStates = newValue }
+    }
 
     /// Accumulated individual note scores for the session. Delegates to `scoring.noteScores`.
     var noteScores: [NoteScore] { scoring.noteScores }
@@ -57,31 +63,25 @@ final class PlayAlongViewModel {
     /// Count of non-miss note scores. Delegates to `scoring.notesHit`.
     var notesHit: Int { scoring.notesHit }
 
-    /// Current playback position in seconds from song start.
-    private(set) var currentTime: TimeInterval = 0
+    /// Current playback position in seconds — delegates to `playback.currentTime`.
+    var currentTime: TimeInterval { playback.currentTime }
 
-    /// Total duration of the song in seconds.
-    private(set) var duration: TimeInterval = 0
+    /// Total duration of the song in seconds — delegates to `playback.duration`.
+    var duration: TimeInterval { playback.duration }
 
-    /// Normalized playback progress (0.0 to 1.0) for the timeline scrubber.
-    var playbackProgress: Double {
-        guard duration > 0 else { return 0 }
-        return min(1.0, max(0.0, currentTime / duration))
-    }
+    /// Normalized playback progress (0.0 to 1.0) — delegates to `playback.playbackProgress`.
+    var playbackProgress: Double { playback.playbackProgress }
 
-    /// Total playback duration in seconds, exposed for the toolbar timeline.
-    var playbackDuration: TimeInterval { duration }
+    /// Total playback duration in seconds — delegates to `playback.playbackDuration`.
+    var playbackDuration: TimeInterval { playback.playbackDuration }
 
     /// Seek to a normalized position (0.0 to 1.0) in the song.
     ///
-    /// Adjusts `currentTime` and `playbackStartDate` so the playback
-    /// clock resumes from the new position. Only effective when paused.
+    /// Delegates to `playback.seek(to:)`.
     ///
     /// - Parameter progress: Normalized position from 0.0 (start) to 1.0 (end).
     func seek(to progress: Double) {
-        guard duration > 0 else { return }
-        let targetTime = progress * duration
-        currentTime = targetTime
+        playback.seek(to: progress)
     }
 
     /// Overall session accuracy (0.0-1.0). Delegates to `scoring.accuracy`.
@@ -99,23 +99,26 @@ final class PlayAlongViewModel {
     /// XP earned, computed at session completion. Delegates to `scoring.xpEarned`.
     var xpEarned: Int { scoring.xpEarned }
 
-    /// Human-readable error message when playbackState is .error.
-    private(set) var errorMessage: String?
+    /// Human-readable error message — delegates to `playback.errorMessage`.
+    var errorMessage: String? { playback.errorMessage }
 
-    /// Whether wait mode is enabled for this session.
-    var isWaitModeEnabled: Bool = false
-
-    /// Tempo scaling factor (1.0 = original tempo, 0.5 = half speed).
-    var tempoScale: Double = 1.0 {
-        didSet {
-            if metronome.isPlaying, let song {
-                metronome.setBPM(Double(song.tempo) * tempoScale)
-            }
-        }
+    /// Whether wait mode is enabled — delegates to `playback.isWaitModeEnabled` (read+write).
+    var isWaitModeEnabled: Bool {
+        get { playback.isWaitModeEnabled }
+        set { playback.isWaitModeEnabled = newValue }
     }
 
-    /// Whether SoundFont playback is enabled.
-    var isSoundEnabled: Bool = true
+    /// Tempo scaling factor — delegates to `playback.tempoScale` (read+write).
+    var tempoScale: Double {
+        get { playback.tempoScale }
+        set { playback.tempoScale = newValue }
+    }
+
+    /// Whether SoundFont playback is enabled — delegates to `playback.isSoundEnabled` (read+write).
+    var isSoundEnabled: Bool {
+        get { playback.isSoundEnabled }
+        set { playback.isSoundEnabled = newValue }
+    }
 
     /// Visual display mode (falling notes vs scrolling sheet).
     var viewMode: PlayAlongViewMode = .fallingNotes
@@ -307,8 +310,11 @@ final class PlayAlongViewModel {
     /// MIDI input provider for USB/Bluetooth keyboard detection.
     private let midiInput: any MIDIInputProviding
 
-    /// Model context for persisting session results. Set by SongPlayAlongView on appear.
-    var modelContext: ModelContext?
+    /// Model context for persistence — delegates to `playback.modelContext`.
+    var modelContext: ModelContext? {
+        get { playback.modelContext }
+        set { playback.modelContext = newValue }
+    }
 
     /// SoundFont player for MIDI note playback.
     private let soundFont: any SoundFontPlaying
@@ -351,10 +357,8 @@ final class PlayAlongViewModel {
     /// ContinuousClock instant when playback started (or resumed).
     private var playbackStartTime: ContinuousClock.Instant?
 
-    /// Wall-clock Date adjusted to represent "when time=0 was", used by
-    /// `FallingNotesView` to self-drive animation via `TimelineView` date.
-    /// Set on play/resume, cleared on pause/stop. Accounts for pause offset.
-    private(set) var playbackStartDate: Date?
+    /// Wall-clock Date for FallingNotesView animation — delegates to `playback.playbackStartDate`.
+    var playbackStartDate: Date? { playback.playbackStartDate }
 
     /// Elapsed time accumulated before the most recent pause.
     private var pauseElapsed: TimeInterval = 0
@@ -425,7 +429,11 @@ final class PlayAlongViewModel {
 
     /// Scoring coordinator — owns note scores, accuracy, streaks,
     /// star rating, and XP. SP-3a extraction.
-    let scoring = ScoringCoordinator()
+    let scoring: ScoringCoordinator
+
+    /// Playback coordinator — owns transport state, scheduling, session
+    /// completion, and persistence. SP-3b extraction.
+    let playback: PlaybackCoordinator
 
     // MARK: - Initialization
 
@@ -452,6 +460,16 @@ final class PlayAlongViewModel {
         self.metronome = metronome ?? MetronomePlayer.shared
         self.clock = clock ?? RealClock()
         self.midiInput = midiInput ?? MIDIInputManager.shared
+        let scoring = ScoringCoordinator()
+        self.scoring = scoring
+        self.playback = PlaybackCoordinator(
+            soundFont: self.soundFont,
+            audioEngine: self.audioEngine,
+            metronome: self.metronome,
+            clock: self.clock,
+            scoring: scoring,
+            analytics: nil  // nil-sentinel — uses AnalyticsManager.shared at call time
+        )
     }
 
     // MARK: - Public Methods
