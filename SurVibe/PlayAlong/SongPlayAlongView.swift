@@ -50,6 +50,12 @@ struct SongPlayAlongView: View {
     /// doesn't spuriously write a SongProgress row on every song open.
     @State private var didInitialSeed = false
 
+    /// Set to true by `resetPreferredSaHz()` so the next `effectiveSaHz`
+    /// change (which comes from the internal re-seed to the song default,
+    /// not from the user) is ignored by the persistence observer. Cleared
+    /// automatically by the observer itself.
+    @State private var suppressNextPersistenceTick = false
+
     /// Piano key positions collected via preference key for note alignment.
     @State private var keyPositions: [KeyPosition] = []
 
@@ -383,20 +389,14 @@ struct SongPlayAlongView: View {
             )
         }
         .sheet(isPresented: $showTanpuraSheet) {
-            TanpuraSettingsSheet(
-                controller: tanpura,
-                canResetToSongDefault: canResetToSongDefault,
-                onResetToSongDefault: {
-                    resetPreferredSaHz()
-                    AnalyticsManager.shared.track(
-                        .tanpuraResetToDefault,
-                        properties: ["song_title": song.title]
-                    )
-                }
-            )
+            tanpuraSettingsSheetContent
         }
         .onChange(of: tanpura.effectiveSaHz) { _, newHz in
             guard didInitialSeed else { return }
+            if suppressNextPersistenceTick {
+                suppressNextPersistenceTick = false
+                return
+            }
             persistDebounceTask?.cancel()
             persistDebounceTask = Task { @MainActor in
                 try? await Task.sleep(for: .seconds(1))
@@ -489,22 +489,55 @@ struct SongPlayAlongView: View {
 
     // MARK: - Persistent chrome pills
 
+    /// Tanpura settings sheet body, extracted from the `.sheet` modifier in
+    /// `body` so the top-level closure stays under the Swift type-checker's
+    /// complexity budget.
+    @ViewBuilder
+    private var tanpuraSettingsSheetContent: some View {
+        TanpuraSettingsSheet(
+            controller: tanpura,
+            canResetToSongDefault: canResetToSongDefault,
+            onResetToSongDefault: {
+                resetPreferredSaHz()
+                AnalyticsManager.shared.track(
+                    .tanpuraResetToDefault,
+                    properties: ["song_title": song.title]
+                )
+            },
+            onToggleAnalytics: { enabled in
+                AnalyticsManager.shared.track(
+                    .tanpuraToggled,
+                    properties: [
+                        "enabled": enabled,
+                        "song_title": song.title,
+                        "source": "sheet"
+                    ]
+                )
+            }
+        )
+    }
+
+    /// Resolves the pill mode for the current theme preset, supplying localized
+    /// fallbacks when `song.artist` is empty. Extracted into its own function so
+    /// the `String(localized:)` calls don't inflate the containing closure past
+    /// the Swift type-checker's complexity budget.
+    private func resolvedPillMode() -> TanpuraRagaPill.Mode {
+        switch themeManager.currentPreset {
+        case .popEra:
+            let artist = song.artist.isEmpty ? String(localized: "Artist") : song.artist
+            return .popSong(artist: artist, song: song.title)
+        case .sargamGlass, .sargamGlassBars, .neonRhythm:
+            let name = song.artist.isEmpty ? String(localized: "Raga") : song.artist
+            return .raga(name: name)
+        default:
+            return .westernKey(key: "C major", bpm: song.tempo)
+        }
+    }
+
     /// Context-aware top-left pill derived from the current theme/song.
     @ViewBuilder
     private var tanpuraRagaPill: some View {
-        let mode: TanpuraRagaPill.Mode = {
-            switch themeManager.currentPreset {
-            case .popEra:
-                return .popSong(
-                    artist: song.artist.isEmpty ? "Artist" : song.artist,
-                    song: song.title
-                )
-            case .sargamGlass, .sargamGlassBars, .neonRhythm:
-                return .raga(name: song.artist.isEmpty ? "Raga" : song.artist)
-            default:
-                return .westernKey(key: "C major", bpm: song.tempo)
-            }
-        }()
+        let mode: TanpuraRagaPill.Mode = resolvedPillMode()
         TanpuraRagaPill(
             mode: mode,
             saLabel: Self.saLabel(pitchClass: tanpura.saPitchClass, octave: tanpura.saOctave),
@@ -636,6 +669,10 @@ struct SongPlayAlongView: View {
             progress.preferredSaHz = nil
             try? modelContext.save()
         }
+        // Suppress the observer for the re-seed mutation below — otherwise
+        // the 1s debounce would write the song default right back into
+        // preferredSaHz, defeating the reset.
+        suppressNextPersistenceTick = true
         tanpura.seed(preferredSaHz: nil, songDefaultHz: song.defaultSaFrequencyHz)
     }
 }

@@ -16,8 +16,24 @@ struct TanpuraSettingsSheet: View {
     @Bindable var controller: TanpuraController
     let canResetToSongDefault: Bool
     let onResetToSongDefault: () -> Void
+    /// Called after the Sheet's master Toggle flips the controller state.
+    /// Receives the NEW `isTanpuraEnabled` value (post-toggle). Callers use
+    /// this to fire a `tanpuraToggled` analytics event with `source: "sheet"`.
+    let onToggleAnalytics: ((Bool) -> Void)?
 
     @Environment(\.dismiss) private var dismiss
+
+    init(
+        controller: TanpuraController,
+        canResetToSongDefault: Bool,
+        onResetToSongDefault: @escaping () -> Void,
+        onToggleAnalytics: ((Bool) -> Void)? = nil
+    ) {
+        self.controller = controller
+        self.canResetToSongDefault = canResetToSongDefault
+        self.onResetToSongDefault = onResetToSongDefault
+        self.onToggleAnalytics = onToggleAnalytics
+    }
 
     private static let pitchClassLabels = [
         "C", "C♯", "D", "D♯", "E", "F", "F♯", "G", "G♯", "A", "A♯", "B"
@@ -32,6 +48,7 @@ struct TanpuraSettingsSheet: View {
                         set: { _ in
                             UIImpactFeedbackGenerator(style: .light).impactOccurred()
                             controller.toggleEnabled()
+                            onToggleAnalytics?(controller.isTanpuraEnabled)
                         }
                     ))
                     .accessibilityLabel("Tanpura drone")
