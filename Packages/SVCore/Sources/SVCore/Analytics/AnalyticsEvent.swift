@@ -71,6 +71,12 @@ public enum AnalyticsEvent: String, Sendable {
     case playAlongRestarted = "play_along_restarted"
     case themeChanged = "theme_changed"
 
+    // Play-Along tanpura events
+    case tanpuraToggled = "play_along_tanpura_toggled"
+    case tanpuraSaChanged = "play_along_tanpura_sa_changed"
+    case tanpuraResetToDefault = "play_along_tanpura_reset_to_default"
+    case tanpuraSheetOpened = "play_along_tanpura_sheet_opened"
+
     // Song Import events
     case songImportStarted = "song_import_started"
     case songImportCompleted = "song_import_completed"

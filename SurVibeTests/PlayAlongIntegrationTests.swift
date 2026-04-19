@@ -1,4 +1,5 @@
 import Foundation
+import SwiftData
 import Testing
 import SVAudio
 import SVLearning
@@ -611,5 +612,41 @@ struct PlayAlongScoringIntegrationTests {
         if vm1.playbackState == .stopped && vm2.playbackState == .stopped {
             #expect(hardXP > easyXP)
         }
+    }
+}
+
+// MARK: - PlayAlongIntegrationTests
+
+/// Integration tests specifically targeting the tanpura-wiring surface:
+/// `TanpuraController.seed(preferredSaHz:songDefaultHz:)` behavior when a
+/// per-song `SongProgress.preferredSaHz` override is present.
+@MainActor
+struct PlayAlongIntegrationTests {
+    @MainActor
+    @Test func tanpuraSeedsFromPreferredSaHzWhenPresent() async throws {
+        // Given: a SongProgress with a preferredSaHz override (C#4 grid = 277.1826 Hz)
+        let container = try ModelContainer(
+            for: Song.self, SongProgress.self,
+            configurations: ModelConfiguration(isStoredInMemoryOnly: true)
+        )
+        let context = container.mainContext
+        let song = Song(title: "Yaman", difficulty: 1, tempo: 120)
+        song.slugId = "yaman-test"
+        song.keySignatureRaw = "C major"   // song default would be C4 = 261.6256
+        context.insert(song)
+        let progress = SongProgress(songId: "yaman-test", songTitle: "Yaman")
+        progress.preferredSaHz = 277.1826   // = C#4 grid
+        context.insert(progress)
+        try context.save()
+
+        // When: the controller seeds from progress
+        let tanpura = TanpuraController()
+        tanpura.seed(preferredSaHz: progress.preferredSaHz,
+                     songDefaultHz: song.defaultSaFrequencyHz)
+
+        // Then: saGridHz is C#4, not the song's C4 default
+        #expect(tanpura.saPitchClass == 1)   // C#
+        #expect(tanpura.saOctave == 4)
+        #expect(tanpura.saCentsOffset == 0)
     }
 }
