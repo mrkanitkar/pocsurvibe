@@ -221,7 +221,6 @@ struct SongPlayAlongView: View {
                 Spacer()
                 PersistentPauseDot(
                     isPlaying: viewModel.playbackState == .playing,
-                    backgroundColor: viewModel.cardBackgroundColor,
                     foregroundColor: themeManager.resolved.primaryTextColor,
                     onToggle: handlePlayPause
                 )
