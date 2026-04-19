@@ -9,29 +9,12 @@ import Testing
 /// Verifies that gate callbacks from lesson step views (listen, sing,
 /// exercise, quiz) correctly unlock gates, and that navigation respects
 /// gate status. Uses an in-memory ModelContainer for LessonProgressManager.
-@Suite("LessonPlayerViewModel Tests")
+/// Serialized + shared container — see `SwiftDataTestContainer.swift`.
+@Suite("LessonPlayerViewModel Tests", .serialized)
 @MainActor
 struct LessonPlayerViewModelTests {
 
     // MARK: - Helpers
-
-    /// Creates an in-memory ModelContainer with all required models.
-    private func makeContainer() throws -> ModelContainer {
-        let schema = Schema([
-            UserProfile.self,
-            RiyazEntry.self,
-            Achievement.self,
-            SongProgress.self,
-            LessonProgress.self,
-            SubscriptionState.self,
-            Song.self,
-            Lesson.self,
-            Curriculum.self,
-            XPEntry.self,
-        ])
-        let config = ModelConfiguration(isStoredInMemoryOnly: true)
-        return try ModelContainer(for: schema, configurations: [config])
-    }
 
     /// Creates a Lesson with the given steps encoded as JSON.
     private func makeLesson(steps: [LessonStep]) -> Lesson {
@@ -42,10 +25,9 @@ struct LessonPlayerViewModelTests {
         return lesson
     }
 
-    /// Creates a ViewModel from a lesson and in-memory progress manager.
+    /// Creates a ViewModel from a lesson and a fresh shared-container context.
     private func makeVM(steps: [LessonStep]) throws -> LessonPlayerViewModel {
-        let container = try makeContainer()
-        let context = ModelContext(container)
+        let context = try SwiftDataTestContainer.freshContext()
         let manager = LessonProgressManager(modelContext: context)
         let lesson = makeLesson(steps: steps)
         let vm = LessonPlayerViewModel(lesson: lesson, progressManager: manager)

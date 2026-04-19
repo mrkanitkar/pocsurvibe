@@ -5,37 +5,21 @@ import Testing
 
 /// Tests for XPManager and XPEntry gamification logic.
 ///
-/// All tests use an in-memory ModelContainer (no disk, no CloudKit).
-/// A UserProfile is pre-inserted in each test to match production expectations.
-@Suite("XPManager Tests")
+/// Uses `SwiftDataTestContainer.shared` (one container per test process)
+/// with a fresh `ModelContext` per test. See that file for why a per-test
+/// `ModelContainer(isStoredInMemoryOnly:)` crashes the host.
+/// Serialized because the shared container's state is mutated per test.
+@Suite("XPManager Tests", .serialized)
 @MainActor
 struct XPManagerTests {
 
     // MARK: - Test Helpers
 
-    /// Creates an in-memory ModelContainer with all app model types.
-    private func makeContainer() throws -> ModelContainer {
-        let schema = Schema([
-            UserProfile.self,
-            RiyazEntry.self,
-            Achievement.self,
-            SongProgress.self,
-            LessonProgress.self,
-            SubscriptionState.self,
-            Song.self,
-            Lesson.self,
-            Curriculum.self,
-            XPEntry.self,
-        ])
-        let config = ModelConfiguration(isStoredInMemoryOnly: true)
-        return try ModelContainer(for: schema, configurations: [config])
-    }
-
-    /// Creates a container, inserts a UserProfile, and returns a configured XPManager.
+    /// Returns a fresh `ModelContext` plus an `XPManager` with a UserProfile
+    /// pre-inserted to match production expectations.
     @MainActor
     private func makeManager() throws -> (XPManager, ModelContext) {
-        let container = try makeContainer()
-        let context = container.mainContext
+        let context = try SwiftDataTestContainer.freshContext()
         let profile = UserProfile(displayName: "Test User")
         context.insert(profile)
         try context.save()
@@ -208,9 +192,8 @@ struct XPManagerTests {
     @Test("awardXP creates UserProfile if none exists")
     @MainActor
     func awardXPCreatesProfileIfMissing() throws {
-        // Use a container WITHOUT a pre-inserted profile
-        let container = try makeContainer()
-        let context = container.mainContext
+        // Fresh context with NO pre-inserted profile.
+        let context = try SwiftDataTestContainer.freshContext()
         let manager = XPManager(modelContext: context)
 
         manager.awardXP(amount: 10, source: .lessonStep)

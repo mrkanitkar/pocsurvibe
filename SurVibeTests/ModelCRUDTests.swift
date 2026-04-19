@@ -4,26 +4,14 @@ import SwiftData
 
 /// D5: SwiftData CRUD + CloudKit config verification.
 /// All tests use in-memory ModelContainer (no disk, no CloudKit).
-@Suite("SwiftData Model CRUD Tests")
+/// Serialized + shared container — see `SwiftDataTestContainer.swift`.
+@Suite("SwiftData Model CRUD Tests", .serialized)
 @MainActor
 struct ModelCRUDTests {
 
-    /// Create an in-memory ModelContainer for testing.
+    /// Returns the shared test container (one per test process).
     private func makeTestContainer() throws -> ModelContainer {
-        let schema = Schema([
-            UserProfile.self,
-            RiyazEntry.self,
-            Achievement.self,
-            SongProgress.self,
-            LessonProgress.self,
-            SubscriptionState.self,
-            Song.self,
-            Lesson.self,
-            Curriculum.self,
-            XPEntry.self,
-        ])
-        let config = ModelConfiguration(isStoredInMemoryOnly: true)
-        return try ModelContainer(for: schema, configurations: [config])
+        SwiftDataTestContainer.shared
     }
 
     // MARK: - D5: ModelContainer Initialization
@@ -41,8 +29,7 @@ struct ModelCRUDTests {
     @Test("UserProfile create and read")
     @MainActor
     func testUserProfileCRUD() throws {
-        let container = try makeTestContainer()
-        let context = container.mainContext
+        let context = try SwiftDataTestContainer.freshContext()
 
         let profile = UserProfile(displayName: "Test User", preferredLanguage: "hi")
         context.insert(profile)
@@ -60,8 +47,7 @@ struct ModelCRUDTests {
     @Test("UserProfile addXP uses max-wins")
     @MainActor
     func testUserProfileXP() throws {
-        let container = try makeTestContainer()
-        let context = container.mainContext
+        let context = try SwiftDataTestContainer.freshContext()
 
         let profile = UserProfile(displayName: "XP Test")
         context.insert(profile)
@@ -76,8 +62,7 @@ struct ModelCRUDTests {
     @Test("RiyazEntry create and read")
     @MainActor
     func testRiyazEntryCRUD() throws {
-        let container = try makeTestContainer()
-        let context = container.mainContext
+        let context = try SwiftDataTestContainer.freshContext()
 
         let entry = RiyazEntry(
             durationMinutes: 30,
@@ -101,8 +86,7 @@ struct ModelCRUDTests {
     @Test("Achievement create and read (append-only)")
     @MainActor
     func testAchievementCRUD() throws {
-        let container = try makeTestContainer()
-        let context = container.mainContext
+        let context = try SwiftDataTestContainer.freshContext()
 
         let achievement = Achievement(
             achievementType: "first_riyaz",
@@ -125,8 +109,7 @@ struct ModelCRUDTests {
     @Test("SongProgress create and recordPlay max-wins")
     @MainActor
     func testSongProgressCRUD() throws {
-        let container = try makeTestContainer()
-        let context = container.mainContext
+        let context = try SwiftDataTestContainer.freshContext()
 
         let progress = SongProgress(songId: "song_001", songTitle: "Raag Yaman")
         context.insert(progress)
@@ -149,8 +132,7 @@ struct ModelCRUDTests {
     @Test("LessonProgress one-way completion flag")
     @MainActor
     func testLessonProgressCRUD() throws {
-        let container = try makeTestContainer()
-        let context = container.mainContext
+        let context = try SwiftDataTestContainer.freshContext()
 
         let lesson = LessonProgress(lessonId: "lesson_001", lessonTitle: "Introduction to Sa")
         context.insert(lesson)
@@ -174,8 +156,7 @@ struct ModelCRUDTests {
     @Test("SubscriptionState default is free")
     @MainActor
     func testSubscriptionStateCRUD() throws {
-        let container = try makeTestContainer()
-        let context = container.mainContext
+        let context = try SwiftDataTestContainer.freshContext()
 
         let sub = SubscriptionState()
         context.insert(sub)
@@ -194,17 +175,9 @@ struct ModelCRUDTests {
     @MainActor
     func testInMemoryFallbackContainer() throws {
         // Simulates the fallback path in SurVibeApp.init() when persistent storage fails.
-        let schema = Schema([
-            UserProfile.self,
-            RiyazEntry.self,
-            Achievement.self,
-            SongProgress.self,
-            LessonProgress.self,
-            SubscriptionState.self,
-        ])
-        let fallback = ModelConfiguration(isStoredInMemoryOnly: true)
-        let container = try ModelContainer(for: schema, configurations: [fallback])
-        let context = container.mainContext
+        // Uses the shared on-disk test container (the per-test in-memory
+        // configuration trips a SwiftData crash — see SwiftDataTestContainer).
+        let context = try SwiftDataTestContainer.freshContext()
 
         // Verify CRUD works on fallback container for each model type
         context.insert(UserProfile(displayName: "Fallback"))
