@@ -625,11 +625,7 @@ struct PlayAlongIntegrationTests {
     @MainActor
     @Test func tanpuraSeedsFromPreferredSaHzWhenPresent() async throws {
         // Given: a SongProgress with a preferredSaHz override (C#4 grid = 277.1826 Hz)
-        let container = try ModelContainer(
-            for: Song.self, SongProgress.self,
-            configurations: ModelConfiguration(isStoredInMemoryOnly: true)
-        )
-        let context = container.mainContext
+        let context = try SwiftDataTestContainer.freshContext()
         let song = Song(title: "Yaman", difficulty: 1, tempo: 120)
         song.slugId = "yaman-test"
         song.keySignatureRaw = "C major"   // song default would be C4 = 261.6256

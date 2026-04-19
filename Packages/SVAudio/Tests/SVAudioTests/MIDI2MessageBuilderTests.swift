@@ -136,8 +136,12 @@ struct MIDI2MessageBuilderTests {
 
     @Test("programChange auto-detects bank validity")
     func programChangeBankDetection() {
-        // Default bank values (0x7F, 0x7F) → bankIsValid = false
-        let noBank = MIDI2MessageBuilder.programChange(program: 5, channel: 0)
+        // Sentinel bank values (0x7F, 0x7F) → bankIsValid = false. Explicit
+        // 0x7F is required to disambiguate from the MIDI 1.0 UP overload,
+        // which has no bankMSB/bankLSB parameters and returns 1 word.
+        let noBank = MIDI2MessageBuilder.programChange(
+            program: 5, bankMSB: 0x7F, bankLSB: 0x7F, channel: 0
+        )
         // Explicit bank values → bankIsValid = true
         let withBank = MIDI2MessageBuilder.programChange(
             program: 5, bankMSB: 0, bankLSB: 1, channel: 0

@@ -7,36 +7,17 @@ import Testing
 /// Tests for the streak-freeze token lifecycle: grant, burn, idempotency, and cap.
 ///
 /// All tests use an in-memory `ModelContainer` to avoid CloudKit and disk I/O.
-@Suite("StreakFreeze Tests")
+/// Serialized + shared container — see `SwiftDataTestContainer.swift`
+/// for why per-test `isStoredInMemoryOnly` containers crash the host.
+@Suite("StreakFreeze Tests", .serialized)
 @MainActor
 struct StreakFreezeTests {
-
-    // MARK: - Helpers
-
-    /// Creates an in-memory ModelContainer for testing with all app models.
-    private func makeContainer() throws -> ModelContainer {
-        let schema = Schema([
-            UserProfile.self,
-            RiyazEntry.self,
-            Achievement.self,
-            SongProgress.self,
-            LessonProgress.self,
-            SubscriptionState.self,
-            Song.self,
-            Lesson.self,
-            Curriculum.self,
-            XPEntry.self,
-        ])
-        let config = ModelConfiguration(isStoredInMemoryOnly: true)
-        return try ModelContainer(for: schema, configurations: [config])
-    }
 
     // MARK: - Default State
 
     @Test("New profile starts with zero freeze tokens")
     func newProfileHasZeroTokens() throws {
-        let container = try makeContainer()
-        let context = container.mainContext
+        let context = try SwiftDataTestContainer.freshContext()
         let profile = UserProfile()
         context.insert(profile)
         try context.save()
@@ -49,8 +30,7 @@ struct StreakFreezeTests {
 
     @Test("Practicing this week grants 2 tokens")
     func grantingTokensAfterPracticeAddsTwo() throws {
-        let container = try makeContainer()
-        let context = container.mainContext
+        let context = try SwiftDataTestContainer.freshContext()
         let profile = UserProfile()
         context.insert(profile)
         // Entry for today — current ISO week
@@ -67,8 +47,7 @@ struct StreakFreezeTests {
 
     @Test("No tokens granted if user has not practiced this week")
     func noGrantIfNoPracticeThisWeek() throws {
-        let container = try makeContainer()
-        let context = container.mainContext
+        let context = try SwiftDataTestContainer.freshContext()
         let profile = UserProfile()
         context.insert(profile)
         // Entry from 8 days ago — last ISO week
@@ -87,8 +66,7 @@ struct StreakFreezeTests {
 
     @Test("Granting tokens is idempotent within the same ISO week")
     func grantingIsIdempotentWithinSameWeek() throws {
-        let container = try makeContainer()
-        let context = container.mainContext
+        let context = try SwiftDataTestContainer.freshContext()
         let profile = UserProfile()
         context.insert(profile)
         let entry = RiyazEntry(date: Date(), durationMinutes: 10)
@@ -106,8 +84,7 @@ struct StreakFreezeTests {
 
     @Test("Granting caps at maxTokens (default 4)")
     func grantingCapsAtFour() throws {
-        let container = try makeContainer()
-        let context = container.mainContext
+        let context = try SwiftDataTestContainer.freshContext()
         let profile = UserProfile()
         profile.streakFreezeTokens = 3 // already 3, only 1 slot left
         context.insert(profile)
@@ -123,8 +100,7 @@ struct StreakFreezeTests {
 
     @Test("Granting when already at cap marks week without adding tokens")
     func grantingAtCapMarksWeek() throws {
-        let container = try makeContainer()
-        let context = container.mainContext
+        let context = try SwiftDataTestContainer.freshContext()
         let profile = UserProfile()
         profile.streakFreezeTokens = 4 // already at cap
         context.insert(profile)
@@ -148,8 +124,7 @@ struct StreakFreezeTests {
 
     @Test("Burns 1 token when streak at risk (practiced yesterday, not today)")
     func burnFreezeWhenStreakAtRisk() throws {
-        let container = try makeContainer()
-        let context = container.mainContext
+        let context = try SwiftDataTestContainer.freshContext()
         let profile = UserProfile()
         profile.streakFreezeTokens = 2
         context.insert(profile)
@@ -167,8 +142,7 @@ struct StreakFreezeTests {
 
     @Test("No burn when no tokens available")
     func noBurnIfNoTokens() throws {
-        let container = try makeContainer()
-        let context = container.mainContext
+        let context = try SwiftDataTestContainer.freshContext()
         let profile = UserProfile()
         profile.streakFreezeTokens = 0
         context.insert(profile)
@@ -185,8 +159,7 @@ struct StreakFreezeTests {
 
     @Test("No burn when practiced today (streak not at risk)")
     func noBurnWhenPracticedToday() throws {
-        let container = try makeContainer()
-        let context = container.mainContext
+        let context = try SwiftDataTestContainer.freshContext()
         let profile = UserProfile()
         profile.streakFreezeTokens = 2
         context.insert(profile)
@@ -203,8 +176,7 @@ struct StreakFreezeTests {
 
     @Test("No burn when gap is more than 1 day")
     func noBurnForLargerGap() throws {
-        let container = try makeContainer()
-        let context = container.mainContext
+        let context = try SwiftDataTestContainer.freshContext()
         let profile = UserProfile()
         profile.streakFreezeTokens = 2
         context.insert(profile)
@@ -223,8 +195,7 @@ struct StreakFreezeTests {
 
     @Test("No burn when no practice entries exist")
     func noBurnWhenNoEntries() throws {
-        let container = try makeContainer()
-        let context = container.mainContext
+        let context = try SwiftDataTestContainer.freshContext()
         let profile = UserProfile()
         profile.streakFreezeTokens = 2
         context.insert(profile)
@@ -241,8 +212,7 @@ struct StreakFreezeTests {
 
     @Test("recompute() with no profile param still works (backward compat)")
     func recomputeWithoutProfileDoesNotCrash() throws {
-        let container = try makeContainer()
-        let context = container.mainContext
+        let context = try SwiftDataTestContainer.freshContext()
         let entry = RiyazEntry(date: Date(), durationMinutes: 10)
         context.insert(entry)
         try context.save()

@@ -10,34 +10,17 @@ import Testing
 /// Uses in-memory `ModelContainer` with a pre-created `UserProfile`.
 /// Verifies that rang recalculation correctly detects level-ups,
 /// returns nil when no change, and reports accurate progress fractions.
-@Suite("RangSystem Tests")
+/// Serialized + shared container — see `SwiftDataTestContainer.swift`
+/// for why per-test `isStoredInMemoryOnly` containers crash the host.
+@Suite("RangSystem Tests", .serialized)
 @MainActor
 struct RangSystemTests {
 
     // MARK: - Helpers
 
-    /// Creates an in-memory ModelContainer with all required models.
-    private func makeContainer() throws -> ModelContainer {
-        let schema = Schema([
-            UserProfile.self,
-            RiyazEntry.self,
-            Achievement.self,
-            SongProgress.self,
-            LessonProgress.self,
-            SubscriptionState.self,
-            Song.self,
-            Lesson.self,
-            Curriculum.self,
-            XPEntry.self,
-        ])
-        let config = ModelConfiguration(isStoredInMemoryOnly: true)
-        return try ModelContainer(for: schema, configurations: [config])
-    }
-
     /// Creates a RangSystem with a UserProfile at the given XP/rang.
     private func makeSystem(xp: Int, rang: Int = 1) throws -> (RangSystem, ModelContext) {
-        let container = try makeContainer()
-        let context = container.mainContext
+        let context = try SwiftDataTestContainer.freshContext()
         let profile = UserProfile()
         profile.totalXP = xp
         profile.currentRang = rang

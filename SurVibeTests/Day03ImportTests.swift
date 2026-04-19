@@ -6,12 +6,13 @@ import Testing
 
 // MARK: - ContentImportManager Tests
 
-@Suite("ContentImportManager Tests")
+@Suite("ContentImportManager Tests", .serialized)
 @MainActor
 struct ContentImportManagerTests {
     @Test("Import seed songs from bundle JSON")
     @MainActor
     func importSeedSongs() throws {
+        _ = try SwiftDataTestContainer.freshContext()  // reset shared container
         let container = try makeTestContainer()
         let summary = try ContentImportManager.importAllSeedContent(
             into: container,
@@ -25,6 +26,7 @@ struct ContentImportManagerTests {
     @Test("Import seed lessons from bundle JSON")
     @MainActor
     func importSeedLessons() throws {
+        _ = try SwiftDataTestContainer.freshContext()  // reset shared container
         let container = try makeTestContainer()
         let summary = try ContentImportManager.importAllSeedContent(
             into: container,
@@ -36,6 +38,7 @@ struct ContentImportManagerTests {
     @Test("Imported songs have correct slugIds")
     @MainActor
     func importedSongSlugIds() throws {
+        _ = try SwiftDataTestContainer.freshContext()  // reset shared container
         let container = try makeTestContainer()
         _ = try ContentImportManager.importAllSeedContent(into: container, from: .main)
 
@@ -52,6 +55,7 @@ struct ContentImportManagerTests {
     @Test("Imported songs have sargam notation data")
     @MainActor
     func importedSongsHaveSargam() throws {
+        _ = try SwiftDataTestContainer.freshContext()  // reset shared container
         let container = try makeTestContainer()
         _ = try ContentImportManager.importAllSeedContent(into: container, from: .main)
 
@@ -68,6 +72,7 @@ struct ContentImportManagerTests {
     @Test("Imported songs have western notation data")
     @MainActor
     func importedSongsHaveWestern() throws {
+        _ = try SwiftDataTestContainer.freshContext()  // reset shared container
         let container = try makeTestContainer()
         _ = try ContentImportManager.importAllSeedContent(into: container, from: .main)
 
@@ -84,6 +89,7 @@ struct ContentImportManagerTests {
     @Test("Imported lessons have steps data")
     @MainActor
     func importedLessonsHaveSteps() throws {
+        _ = try SwiftDataTestContainer.freshContext()  // reset shared container
         let container = try makeTestContainer()
         _ = try ContentImportManager.importAllSeedContent(into: container, from: .main)
 
@@ -102,6 +108,7 @@ struct ContentImportManagerTests {
     @Test("Import summary description is non-empty")
     @MainActor
     func summaryDescription() throws {
+        _ = try SwiftDataTestContainer.freshContext()  // reset shared container
         let container = try makeTestContainer()
         let summary = try ContentImportManager.importAllSeedContent(
             into: container, from: .main
@@ -113,12 +120,13 @@ struct ContentImportManagerTests {
 
 // MARK: - Seed Content Validation Tests
 
-@Suite("Seed Content Validation Tests")
+@Suite("Seed Content Validation Tests", .serialized)
 @MainActor
 struct SeedContentValidationTests {
     @Test("jana-gana-mana-v1 has correct metadata")
     @MainActor
     func janaGanaManaSongMetadata() throws {
+        _ = try SwiftDataTestContainer.freshContext()  // reset shared container
         let container = try makeTestContainer()
         _ = try ContentImportManager.importAllSeedContent(into: container, from: .main)
 
@@ -135,6 +143,7 @@ struct SeedContentValidationTests {
     @Test("Sargam and western note arrays are non-empty per song")
     @MainActor
     func notationArraysNonEmpty() throws {
+        _ = try SwiftDataTestContainer.freshContext()  // reset shared container
         let container = try makeTestContainer()
         _ = try ContentImportManager.importAllSeedContent(into: container, from: .main)
 
@@ -152,6 +161,7 @@ struct SeedContentValidationTests {
     @MainActor
     func validSwaraNames() throws {
         let validSwaras: Set<String> = ["Sa", "Re", "Ga", "Ma", "Pa", "Dha", "Ni"]
+        _ = try SwiftDataTestContainer.freshContext()  // reset shared container
         let container = try makeTestContainer()
         _ = try ContentImportManager.importAllSeedContent(into: container, from: .main)
 
@@ -173,6 +183,7 @@ struct SeedContentValidationTests {
     @Test("All western notes have valid MIDI numbers")
     @MainActor
     func validMIDINumbers() throws {
+        _ = try SwiftDataTestContainer.freshContext()  // reset shared container
         let container = try makeTestContainer()
         _ = try ContentImportManager.importAllSeedContent(into: container, from: .main)
 
@@ -194,6 +205,7 @@ struct SeedContentValidationTests {
     @Test("Lesson ordering is sequential")
     @MainActor
     func lessonOrdering() throws {
+        _ = try SwiftDataTestContainer.freshContext()  // reset shared container
         let container = try makeTestContainer()
         _ = try ContentImportManager.importAllSeedContent(into: container, from: .main)
 
@@ -214,6 +226,7 @@ struct SeedContentValidationTests {
     @Test("Second lesson has prerequisite referencing first lesson")
     @MainActor
     func lessonPrerequisites() throws {
+        _ = try SwiftDataTestContainer.freshContext()  // reset shared container
         let container = try makeTestContainer()
         _ = try ContentImportManager.importAllSeedContent(into: container, from: .main)
 
@@ -236,6 +249,7 @@ struct SeedContentValidationTests {
     @Test("Each lesson has between 5 and 6 steps")
     @MainActor
     func lessonStepCount() throws {
+        _ = try SwiftDataTestContainer.freshContext()  // reset shared container
         let container = try makeTestContainer()
         _ = try ContentImportManager.importAllSeedContent(into: container, from: .main)
 
@@ -268,19 +282,8 @@ struct SeedContentLoaderTests {
 
 // MARK: - Test Helpers
 
+/// Returns the shared on-disk test container. The previous in-memory
+/// per-test variant crashes the host — see `SwiftDataTestContainer.swift`.
 private func makeTestContainer() throws -> ModelContainer {
-    let schema = Schema([
-        UserProfile.self,
-        RiyazEntry.self,
-        Achievement.self,
-        SongProgress.self,
-        LessonProgress.self,
-        SubscriptionState.self,
-        Song.self,
-        Lesson.self,
-        Curriculum.self,
-        XPEntry.self,
-    ])
-    let config = ModelConfiguration(isStoredInMemoryOnly: true)
-    return try ModelContainer(for: schema, configurations: [config])
+    SwiftDataTestContainer.shared
 }

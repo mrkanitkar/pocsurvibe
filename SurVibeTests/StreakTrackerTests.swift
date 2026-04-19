@@ -7,29 +7,13 @@ import Testing
 /// Tests for `StreakTracker` which reads RiyazEntry from SwiftData to compute streaks.
 ///
 /// All tests use an in-memory `ModelContainer` (no disk, no CloudKit).
-@Suite("StreakTracker Tests")
+/// Serialized + shared container — see `SwiftDataTestContainer.swift`
+/// for why per-test `isStoredInMemoryOnly` containers crash the host.
+@Suite("StreakTracker Tests", .serialized)
 @MainActor
 struct StreakTrackerTests {
 
     // MARK: - Helpers
-
-    /// Creates an in-memory ModelContainer for testing, including all app models.
-    private func makeContainer() throws -> ModelContainer {
-        let schema = Schema([
-            UserProfile.self,
-            RiyazEntry.self,
-            Achievement.self,
-            SongProgress.self,
-            LessonProgress.self,
-            SubscriptionState.self,
-            Song.self,
-            Lesson.self,
-            Curriculum.self,
-            XPEntry.self,
-        ])
-        let config = ModelConfiguration(isStoredInMemoryOnly: true)
-        return try ModelContainer(for: schema, configurations: [config])
-    }
 
     /// A fixed base date for deterministic tests (2026-01-15 noon UTC).
     private var baseDate: Date {
@@ -53,8 +37,8 @@ struct StreakTrackerTests {
     @Test("Empty entries give zero streak")
     @MainActor
     func emptyEntriesGiveZeroStreak() throws {
-        let container = try makeContainer()
-        let tracker = StreakTracker(modelContext: container.mainContext)
+        let context = try SwiftDataTestContainer.freshContext()
+        let tracker = StreakTracker(modelContext: context)
         tracker.recompute()
         #expect(tracker.currentStreak == 0)
         #expect(tracker.longestStreak == 0)
@@ -66,8 +50,7 @@ struct StreakTrackerTests {
     @Test("Single entry gives streak of 1")
     @MainActor
     func singleEntryGivesStreak1() throws {
-        let container = try makeContainer()
-        let context = container.mainContext
+        let context = try SwiftDataTestContainer.freshContext()
 
         insertEntry(context: context, date: day(0))
         try context.save()
@@ -84,8 +67,7 @@ struct StreakTrackerTests {
     @Test("Three consecutive days give streak of 3")
     @MainActor
     func threeConsecutiveDaysGivesStreak3() throws {
-        let container = try makeContainer()
-        let context = container.mainContext
+        let context = try SwiftDataTestContainer.freshContext()
 
         insertEntry(context: context, date: day(0))
         insertEntry(context: context, date: day(1))
@@ -103,8 +85,7 @@ struct StreakTrackerTests {
     @Test("Gap in middle resets streak to most recent consecutive run")
     @MainActor
     func gapInMiddleResetsToRecent() throws {
-        let container = try makeContainer()
-        let context = container.mainContext
+        let context = try SwiftDataTestContainer.freshContext()
 
         // Days 0, 1, 2 (streak of 3), then gap, then days 4, 5 (streak of 2)
         insertEntry(context: context, date: day(0))
@@ -128,8 +109,7 @@ struct StreakTrackerTests {
     @Test("practicedToday is true when entry exists for today")
     @MainActor
     func practicedTodayTrueWhenEntryToday() throws {
-        let container = try makeContainer()
-        let context = container.mainContext
+        let context = try SwiftDataTestContainer.freshContext()
 
         insertEntry(context: context, date: Date())
         try context.save()
@@ -142,8 +122,7 @@ struct StreakTrackerTests {
     @Test("practicedToday is false when no entry for today")
     @MainActor
     func practicedTodayFalseWhenNoEntryToday() throws {
-        let container = try makeContainer()
-        let context = container.mainContext
+        let context = try SwiftDataTestContainer.freshContext()
 
         // Entry from yesterday only
         let yesterday = Calendar.current.date(byAdding: .day, value: -1, to: Date())!
@@ -160,8 +139,7 @@ struct StreakTrackerTests {
     @Test("Multiple entries on the same day count as one day in streak")
     @MainActor
     func duplicateSameDayEntriesCountOnce() throws {
-        let container = try makeContainer()
-        let context = container.mainContext
+        let context = try SwiftDataTestContainer.freshContext()
 
         // Three entries on day 0, two on day 1
         insertEntry(context: context, date: day(0))
