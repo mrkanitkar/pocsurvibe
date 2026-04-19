@@ -44,6 +44,7 @@ struct ThemePreviewCard: View {
                 )
             }
             .buttonStyle(.plain)
+            .hoverEffect(.automatic)
             .accessibilityLabel("\(preset.displayName) theme")
             .accessibilityHint(
                 isActive

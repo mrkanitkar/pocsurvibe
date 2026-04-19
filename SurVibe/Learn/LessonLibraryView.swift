@@ -1,3 +1,4 @@
+import SVCore
 import SwiftUI
 
 /// The main lesson library list view with search, filters, and sort.
@@ -15,6 +16,12 @@ struct LessonLibraryView: View {
 
     @Environment(AppThemeManager.self)
     private var themeManager
+
+    @Environment(AppRouter.self)
+    private var router
+
+    /// Tracks keyboard focus for hardware-keyboard navigation.
+    @FocusState private var focusedLessonID: Lesson.ID?
 
     /// The locked lesson that triggered the prerequisite alert.
     @State
@@ -83,11 +90,21 @@ struct LessonLibraryView: View {
                             .onTapGesture {
                                 lockedLessonAlert = item.lesson
                             }
+                            .focused($focusedLessonID, equals: item.lesson.id)
+                            .onKeyPress(.return) {
+                                lockedLessonAlert = item.lesson
+                                return .handled
+                            }
                     } else {
                         NavigationLink(value: item.lesson) {
                             LessonCardView(item: item)
                         }
                         .buttonStyle(.plain)
+                        .focused($focusedLessonID, equals: item.lesson.id)
+                        .onKeyPress(.return) {
+                            router.openLesson(item.lesson.id)
+                            return .handled
+                        }
                     }
                 }
             }
