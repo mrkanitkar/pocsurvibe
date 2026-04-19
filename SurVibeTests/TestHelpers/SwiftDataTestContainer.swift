@@ -25,6 +25,8 @@ enum SwiftDataTestContainer {
     /// All `@Model` types the app target ships. Tests that need only a
     /// subset still get the full schema — there is no cost to including
     /// unused types in an empty store.
+    ///
+    /// Must stay in sync with `SurVibeApp.appSchema` — all 13 models.
     static let schema = Schema([
         UserProfile.self,
         RiyazEntry.self,
@@ -36,6 +38,9 @@ enum SwiftDataTestContainer {
         Lesson.self,
         Curriculum.self,
         XPEntry.self,
+        NoteScoreEntry.self,
+        MIDIEventEntry.self,
+        PitchLogEntry.self,
     ])
 
     /// Process-global container — created once on first access.
@@ -68,6 +73,9 @@ enum SwiftDataTestContainer {
         try context.delete(model: Lesson.self)
         try context.delete(model: Curriculum.self)
         try context.delete(model: UserProfile.self)
+        try context.delete(model: NoteScoreEntry.self)
+        try context.delete(model: MIDIEventEntry.self)
+        try context.delete(model: PitchLogEntry.self)
         try context.save()
         return context
     }
