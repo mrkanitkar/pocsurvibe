@@ -13,19 +13,27 @@ import SwiftUI
 struct ProfileTab: View {
     // MARK: - Properties
 
-    @Environment(\.modelContext) private var modelContext
-    @Environment(AuthManager.self) private var authManager
-    @Environment(OnboardingManager.self) private var onboardingManager
-    @Environment(GamificationService.self) private var gamificationService: GamificationService?
-    @Environment(AppThemeManager.self) private var themeManager
+    @Environment(\.modelContext)
+    private var modelContext
+    @Environment(AuthManager.self)
+    private var authManager
+    @Environment(OnboardingManager.self)
+    private var onboardingManager
+    @Environment(GamificationService.self)
+    private var gamificationService: GamificationService?
+    @Environment(AppThemeManager.self)
+    private var themeManager
 
-    @State private var languageManager = LanguageManager()
+    @State
+    private var languageManager = LanguageManager()
 
     /// Controls the sign-in prompt sheet.
-    @State private var signInTrigger: SignInTrigger?
+    @State
+    private var signInTrigger: SignInTrigger?
 
     /// All UserProfile records — expected to be exactly one singleton.
-    @Query private var userProfiles: [UserProfile]
+    @Query
+    private var userProfiles: [UserProfile]
 
     /// The singleton user profile, or nil if not yet created.
     private var userProfile: UserProfile? { userProfiles.first }
@@ -218,7 +226,8 @@ struct ProfileTab: View {
     // MARK: - Settings Section
 
     /// User preference for auto-hiding sargam labels as accuracy improves.
-    @AppStorage("autoHideSargamLabels") private var autoHideSargamLabels: Bool = true
+    @AppStorage("autoHideSargamLabels")
+    private var autoHideSargamLabels: Bool = true
 
     /// Settings section -- language selector, sargam label toggle, and redo onboarding.
     private var settingsSection: some View {
@@ -231,6 +240,7 @@ struct ProfileTab: View {
                         .foregroundStyle(.secondary)
                 }
             }
+            .hoverEffect(.automatic)
             .accessibilityLabel(Text("App Language"))
             .accessibilityHint(
                 Text("Current language: \(languageManager.currentLanguageDisplayName). Double tap to change.")
@@ -244,6 +254,7 @@ struct ProfileTab: View {
             NavigationLink(value: "midiDevice") {
                 Label("MIDI Device", systemImage: "pianokeys")
             }
+            .hoverEffect(.automatic)
             .accessibilityLabel(Text("MIDI Device"))
             .accessibilityHint(
                 Text("Choose which connected MIDI keyboard feeds play-along sessions. Double tap to open.")
@@ -255,6 +266,7 @@ struct ProfileTab: View {
             } label: {
                 Label("Redo Onboarding", systemImage: "arrow.counterclockwise")
             }
+            .hoverEffect(.automatic)
             .accessibilityLabel(Text("Redo Onboarding"))
             .accessibilityHint(Text("Double tap to restart the onboarding flow and reconfigure your preferences"))
         }
@@ -273,6 +285,7 @@ struct ProfileTab: View {
                         .foregroundStyle(.secondary)
                 }
             }
+            .hoverEffect(.automatic)
             .accessibilityLabel("App Theme")
             .accessibilityHint(
                 "Current theme: \(themeManager.currentPreset.displayName). Double tap to change."
@@ -288,6 +301,7 @@ struct ProfileTab: View {
                     }
                 }
             }
+            .hoverEffect(.automatic)
             .accessibilityLabel("Display settings")
             .accessibilityHint("Dim Mode and brightness options. Double tap to open.")
         }
@@ -352,12 +366,15 @@ struct ProfileTab: View {
         .environment(AuthManager.shared)
         .environment(OnboardingManager())
         .environment(AppThemeManager())
-        .modelContainer(for: [
-            UserProfile.self,
-            XPEntry.self,
-            RiyazEntry.self,
-            SongProgress.self,
-            LessonProgress.self,
-            Achievement.self,
-        ], inMemory: true)
+        .modelContainer(
+            for: [
+                UserProfile.self,
+                XPEntry.self,
+                RiyazEntry.self,
+                SongProgress.self,
+                LessonProgress.self,
+                Achievement.self,
+            ],
+            inMemory: true
+        )
 }
