@@ -41,4 +41,20 @@ struct AnalyticsEventTests {
         #expect(AnalyticsEvent.playAlongSoundToggled.rawValue == "play_along_sound_toggled")
         #expect(AnalyticsEvent.playAlongRestarted.rawValue == "play_along_restarted")
     }
+
+    @Test func tanpuraToggledHasExpectedRawValue() {
+        #expect(AnalyticsEvent.tanpuraToggled.rawValue == "play_along_tanpura_toggled")
+    }
+
+    @Test func tanpuraSaChangedHasExpectedRawValue() {
+        #expect(AnalyticsEvent.tanpuraSaChanged.rawValue == "play_along_tanpura_sa_changed")
+    }
+
+    @Test func tanpuraResetToDefaultHasExpectedRawValue() {
+        #expect(AnalyticsEvent.tanpuraResetToDefault.rawValue == "play_along_tanpura_reset_to_default")
+    }
+
+    @Test func tanpuraSheetOpenedHasExpectedRawValue() {
+        #expect(AnalyticsEvent.tanpuraSheetOpened.rawValue == "play_along_tanpura_sheet_opened")
+    }
 }
