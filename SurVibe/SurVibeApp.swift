@@ -221,6 +221,9 @@ struct SurVibeApp: App {
                 .environment(router)
         }
         .modelContainer(modelContainer)
+        .commands {
+            AppCommands(router: router)
+        }
 
         #if os(macOS)
         // Settings scene — on macOS (SP-6) this becomes the
