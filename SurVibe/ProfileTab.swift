@@ -231,6 +231,7 @@ struct ProfileTab: View {
                         .foregroundStyle(.secondary)
                 }
             }
+            .hoverEffect(.automatic)
             .accessibilityLabel(Text("App Language"))
             .accessibilityHint(
                 Text("Current language: \(languageManager.currentLanguageDisplayName). Double tap to change.")
@@ -244,6 +245,7 @@ struct ProfileTab: View {
             NavigationLink(value: "midiDevice") {
                 Label("MIDI Device", systemImage: "pianokeys")
             }
+            .hoverEffect(.automatic)
             .accessibilityLabel(Text("MIDI Device"))
             .accessibilityHint(
                 Text("Choose which connected MIDI keyboard feeds play-along sessions. Double tap to open.")
@@ -255,6 +257,7 @@ struct ProfileTab: View {
             } label: {
                 Label("Redo Onboarding", systemImage: "arrow.counterclockwise")
             }
+            .hoverEffect(.automatic)
             .accessibilityLabel(Text("Redo Onboarding"))
             .accessibilityHint(Text("Double tap to restart the onboarding flow and reconfigure your preferences"))
         }
@@ -273,6 +276,7 @@ struct ProfileTab: View {
                         .foregroundStyle(.secondary)
                 }
             }
+            .hoverEffect(.automatic)
             .accessibilityLabel("App Theme")
             .accessibilityHint(
                 "Current theme: \(themeManager.currentPreset.displayName). Double tap to change."
@@ -288,6 +292,7 @@ struct ProfileTab: View {
                     }
                 }
             }
+            .hoverEffect(.automatic)
             .accessibilityLabel("Display settings")
             .accessibilityHint("Dim Mode and brightness options. Double tap to open.")
         }
