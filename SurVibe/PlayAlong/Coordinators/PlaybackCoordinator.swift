@@ -169,6 +169,183 @@ final class PlaybackCoordinator {
         currentTime = progress * duration
     }
 
+    /// Start scheduling the loaded song from the beginning. Idempotent guard:
+    /// only starts from `.idle` or `.stopped` with non-empty `noteEvents`.
+    ///
+    /// Sequence:
+    /// 1. Engine `start()` (in playAndRecord — caller already configured session).
+    /// 2. Metronome setBPM + start at `tempoScale × song.tempo`.
+    /// 3. `reset()` clears scoring + position.
+    /// 4. `playbackStartTime` = `clock.now`; `playbackStartDate` = `Date()`.
+    /// 5. Transition to `.playing`, start display link, kick off the playback loop.
+    /// 6. If `isWaitModeEnabled`, construct the `waitController`.
+    /// 7. Fire `songPlaybackStarted` analytics.
+    func startScheduling() async {
+        guard playbackState == .idle || playbackState == .stopped else { return }
+        guard !noteEvents.isEmpty else { return }
+
+        do {
+            try audioEngine.start()
+        } catch {
+            Self.logger.error("Engine start failed: \(error.localizedDescription)")
+            errorMessage = "Audio engine failed to start"
+            playbackState = .error("Audio engine failed to start")
+            return
+        }
+
+        let scaledBPM = Double(song?.tempo ?? 120) * tempoScale
+        metronome.setBPM(scaledBPM)
+        metronome.start()
+
+        reset()
+
+        playbackStartTime = clock.now
+        playbackStartDate = Date()
+        playbackState = .playing
+
+        startDisplayLink()
+        startPlayback()
+
+        if isWaitModeEnabled {
+            waitController = PlayAlongWaitController(noteEvents: noteEvents)
+        } else {
+            waitController = nil
+        }
+
+        track(.songPlaybackStarted, properties: [
+            "song_title": song?.title ?? "",
+            "tempo_scale": tempoScale,
+            "wait_mode": isWaitModeEnabled,
+        ])
+
+        Self.logger.info("Playback scheduling started")
+    }
+
+    // MARK: - Private — Scheduling
+
+    private func startPlayback() {
+        playbackTask?.cancel()
+        playbackTask = Task { [weak self] in
+            guard let self else { return }
+            await self.runPlaybackLoop(fromIndex: 0, timeOffset: 0)
+        }
+    }
+
+    private func startPlaybackFromCurrentPosition() {
+        playbackTask?.cancel()
+        let offset = pauseElapsed
+        let startIndex =
+            noteEvents.firstIndex { event in
+                (event.timestamp / tempoScale) >= offset
+            } ?? noteEvents.count
+
+        playbackTask = Task { [weak self] in
+            guard let self else { return }
+            await self.runPlaybackLoop(fromIndex: startIndex, timeOffset: 0)
+        }
+    }
+
+    private func runPlaybackLoop(fromIndex: Int, timeOffset: TimeInterval) async {
+        guard let startTime = playbackStartTime else { return }
+
+        for index in fromIndex..<noteEvents.count {
+            let event = noteEvents[index]
+            let scaledTimestamp = event.timestamp / tempoScale
+            let targetTime = startTime.advanced(by: .seconds(scaledTimestamp))
+
+            let sleepDuration = targetTime - clock.now
+            if sleepDuration > .zero {
+                do {
+                    try await clock.sleep(for: sleepDuration)
+                } catch {
+                    return
+                }
+            }
+
+            guard !Task.isCancelled else { return }
+
+            playNoteSound(event: event)
+
+            currentNoteIndex = index
+            noteStates[event.id] = .active
+            markPreviousNotesAsMissed(beforeIndex: index)
+
+            do {
+                if try await awaitWaitModeResolution(index: index) {
+                    return
+                }
+            } catch {
+                return
+            }
+        }
+
+        await awaitLastNoteCompletion()
+        guard !Task.isCancelled else { return }
+        completeSession()
+    }
+
+    private func playNoteSound(event: NoteEvent) {
+        guard isSoundEnabled else { return }
+        soundFont.playNote(
+            midiNote: event.midiNote,
+            velocity: event.velocity,
+            channel: 0
+        )
+        let scaledDuration = event.duration / tempoScale
+        Task { [weak self] in
+            guard let self else { return }
+            try? await self.clock.sleep(for: .seconds(scaledDuration))
+            self.soundFont.stopNote(midiNote: event.midiNote, channel: 0)
+        }
+    }
+
+    private func markPreviousNotesAsMissed(beforeIndex index: Int) {
+        for prevIndex in 0..<index {
+            let prevEvent = noteEvents[prevIndex]
+            if noteStates[prevEvent.id] == .active {
+                noteStates[prevEvent.id] = .missed
+                scoring.record(NoteScoreCalculator.missedNote(expectedNote: prevEvent.swarName))
+                scoring.updateStreak(grade: .miss)
+            }
+        }
+    }
+
+    private func awaitWaitModeResolution(index: Int) async throws -> Bool {
+        guard isWaitModeEnabled, let waitCtrl = waitController else { return false }
+        waitCtrl.setCurrentNoteIndex(index)
+        while waitCtrl.isWaitingForNote, !Task.isCancelled {
+            try? await clock.sleep(for: .milliseconds(50))
+        }
+        return Task.isCancelled
+    }
+
+    private func awaitLastNoteCompletion() async {
+        guard let last = noteEvents.last else { return }
+        let endTime = (last.timestamp + last.duration) / tempoScale
+        let startTime = playbackStartTime ?? clock.now
+        let targetEnd = startTime.advanced(by: .seconds(endTime))
+        let remaining = targetEnd - clock.now
+        if remaining > .zero {
+            try? await clock.sleep(for: remaining)
+        }
+    }
+
+    // MARK: - Private — Display Link
+
+    private func startDisplayLink() {
+        displayLinkTask?.cancel()
+        displayLinkTask = Task { [weak self] in
+            while !Task.isCancelled {
+                guard let self, self.playbackState == .playing else { return }
+                if let startTime = self.playbackStartTime {
+                    let elapsed = self.clock.now - startTime
+                    self.currentTime = self.elapsedSeconds(from: elapsed) * self.tempoScale
+                }
+                try? await Task.sleep(for: .milliseconds(50))
+            }
+        }
+    }
+
     // MARK: - Test seams (internal — do not call from production code)
 
     /// Install raw `NoteEvent`s for tests, bypassing the full `loadSong` flow.
@@ -224,5 +401,21 @@ final class PlaybackCoordinator {
     func elapsedSeconds(from duration: Duration) -> TimeInterval {
         Double(duration.components.seconds)
             + Double(duration.components.attoseconds) / 1_000_000_000_000_000_000
+    }
+
+    // MARK: - Private — Analytics
+
+    /// Dispatch an event via the injected analytics, falling back to the
+    /// shared singleton (nil-sentinel per SP-0 D-SP0-1).
+    private func track(_ event: AnalyticsEvent, properties: [String: any Sendable]?) {
+        let provider: any AnalyticsProviding = analytics ?? AnalyticsManager.shared
+        provider.track(event, properties: properties)
+    }
+
+    // MARK: - Task 5 placeholder
+
+    /// Stub — implemented in Task 5.
+    func completeSession() {
+        playbackState = .stopped
     }
 }
