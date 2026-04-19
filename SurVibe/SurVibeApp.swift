@@ -215,5 +215,20 @@ struct SurVibeApp: App {
                 .environment(themeManager)
         }
         .modelContainer(modelContainer)
+
+        #if os(macOS)
+        // Settings scene — on macOS (SP-6) this becomes the
+        // Preferences window, activated by Cmd+,.
+        // On iOS/iPadOS, this is unavailable by design (Apple HIG
+        // directs in-app settings to live in the app itself; SP-4 will add
+        // an iOS navigation route).
+        Settings {
+            SettingsView()
+                .environment(onboardingManager)
+                .environment(AuthManager.shared)
+                .environment(gamificationService)
+                .environment(themeManager)
+        }
+        #endif
     }
 }
