@@ -113,7 +113,7 @@ struct PlayAlongToolbar: View {
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
-        .background(.ultraThinMaterial)
+        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 24))
     }
 
     // MARK: - Row 1: Header

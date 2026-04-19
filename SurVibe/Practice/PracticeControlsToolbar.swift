@@ -77,6 +77,6 @@ struct PracticeControlsToolbar: View {
             .accessibilityHint("End the practice session")
         }
         .padding()
-        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 16))
+        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 16))
     }
 }
