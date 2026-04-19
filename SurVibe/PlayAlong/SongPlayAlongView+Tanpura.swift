@@ -94,15 +94,12 @@ extension SongPlayAlongView {
 
     /// True when the current `SongProgress` row has a non-nil `preferredSaHz`,
     /// gating the "Reset to song default" footer button in the sheet.
-    var canResetToSongDefault: Bool {
-        let slug = song.slugId
-        guard let progress = try? modelContext.fetch(
-            FetchDescriptor<SongProgress>(
-                predicate: #Predicate { $0.songId == slug }
-            )
-        ).first else { return false }
-        return progress.preferredSaHz != nil
-    }
+    ///
+    /// Trivial passthrough to the memoized `hasStoredOverride` flag. The flag
+    /// is seeded in `body.task` from the initial fetch and flipped by
+    /// `persistPreferredSaHz` / `resetPreferredSaHz`, so we avoid a SwiftData
+    /// fetch on every re-render of the sheet.
+    var canResetToSongDefault: Bool { hasStoredOverride }
 
     /// Write the effective Sa Hz to the song's SongProgress row, creating it if needed.
     func persistPreferredSaHz(_ effectiveHz: Double) {
@@ -122,6 +119,7 @@ extension SongPlayAlongView {
         target.preferredSaHz = effectiveHz
         do {
             try modelContext.save()
+            hasStoredOverride = true
         } catch {
             // Non-fatal: log and continue.
             tanpuraWiringLogger.error("Save failed: \(error.localizedDescription, privacy: .public)")
@@ -139,6 +137,7 @@ extension SongPlayAlongView {
             progress.preferredSaHz = nil
             try? modelContext.save()
         }
+        hasStoredOverride = false
         // Suppress the observer for the re-seed mutation below — otherwise
         // the 1s debounce would write the song default right back into
         // preferredSaHz, defeating the reset.

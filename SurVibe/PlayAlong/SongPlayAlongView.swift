@@ -56,6 +56,12 @@ struct SongPlayAlongView: View {
     /// `internal` so `resetPreferredSaHz()` in the +Tanpura extension can set it.
     @State var suppressNextPersistenceTick = false
 
+    /// Cached "SongProgress.preferredSaHz is non-nil" flag, updated at
+    /// task-time and on every persist/reset. Replaces a per-render
+    /// SwiftData fetch that previously fired on every sheet open.
+    /// `internal` so the +Tanpura extension can read and flip it.
+    @State var hasStoredOverride: Bool = false
+
     /// Piano key positions collected via preference key for note alignment.
     @State private var keyPositions: [KeyPosition] = []
 
@@ -314,6 +320,7 @@ struct SongPlayAlongView: View {
                 songDefaultHz: song.defaultSaFrequencyHz
             )
             tanpura.setSoundEnabled(viewModel.isSoundEnabled)
+            hasStoredOverride = (progress?.preferredSaHz != nil)
             didInitialSeed = true
             await viewModel.loadSong(song)
         }
