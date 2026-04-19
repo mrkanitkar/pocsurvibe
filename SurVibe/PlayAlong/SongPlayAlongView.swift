@@ -68,6 +68,9 @@ struct SongPlayAlongView: View {
     /// Whether the results overlay is presented.
     @State private var showResults = false
 
+    /// Whether the theme picker sheet is presented (from the toolbar's Mode button).
+    @State private var showAppearanceSheet = false
+
     /// Whether the correctness flash overlay is visible (brief green/red flash).
     @State var showCorrectnessBanner = false
 
@@ -146,7 +149,7 @@ struct SongPlayAlongView: View {
                                 ]
                             )
                         },
-                        onModeTapped: { /* TODO(Task 2.11+): present Profile appearance sheet */ },
+                        onModeTapped: { showAppearanceSheet = true },
                         onSeek: { viewModel.seek(to: $0) }
                     )
                     .transition(
@@ -343,6 +346,14 @@ struct SongPlayAlongView: View {
                 .playAlongNotationToggled,
                 properties: ["notation_mode": newPreset.notationMode.rawValue, "song_title": song.title]
             )
+            AnalyticsManager.shared.track(
+                .themeChanged,
+                properties: [
+                    "preset": newPreset.rawValue,
+                    "song_title": song.title,
+                    "source": "play_along_mode_button"
+                ]
+            )
         }
         .onDisappear {
             persistDebounceTask?.cancel()
@@ -398,6 +409,13 @@ struct SongPlayAlongView: View {
         }
         .sheet(isPresented: $showTanpuraSheet) {
             tanpuraSettingsSheetContent
+        }
+        .sheet(isPresented: $showAppearanceSheet) {
+            NavigationStack {
+                ThemeCarouselPicker()
+            }
+            .presentationDetents([.large])
+            .presentationDragIndicator(.visible)
         }
         .onChange(of: tanpura.effectiveSaHz) { _, newHz in
             guard didInitialSeed else { return }
