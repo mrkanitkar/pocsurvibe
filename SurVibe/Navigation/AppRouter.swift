@@ -89,4 +89,45 @@ final class AppRouter {
             }
         )
     }
+
+    // MARK: - SP-2: NavigationSplitView column selection
+
+    /// Highlighted song in Songs tab's NavigationSplitView sidebar.
+    /// `nil` = nothing selected (detail column renders `ContentUnavailableView`).
+    var selectedSongID: Song.ID?
+
+    /// Highlighted lesson in Learn tab's NavigationSplitView sidebar.
+    var selectedLessonID: Lesson.ID?
+
+    /// Deep-link: switch to Songs tab and select a song in the sidebar.
+    ///
+    /// - Parameters:
+    ///   - songID: The Song's `UUID` identifier.
+    ///   - analytics: Analytics sink (test-injection seam). Defaults to the shared singleton.
+    func openSong(
+        _ songID: Song.ID,
+        analytics: (any AnalyticsProviding)? = nil
+    ) {
+        switchTab(to: .songs)
+        selectedSongID = songID
+        let provider = analytics ?? AnalyticsManager.shared
+        provider.track(.sidebarUsed, properties: ["destination": "song"])
+        Self.logger.debug("Deep-link: open song")
+    }
+
+    /// Deep-link: switch to Learn tab and select a lesson in the sidebar.
+    ///
+    /// - Parameters:
+    ///   - lessonID: The Lesson's `UUID` identifier.
+    ///   - analytics: Analytics sink (test-injection seam). Defaults to the shared singleton.
+    func openLesson(
+        _ lessonID: Lesson.ID,
+        analytics: (any AnalyticsProviding)? = nil
+    ) {
+        switchTab(to: .learn)
+        selectedLessonID = lessonID
+        let provider = analytics ?? AnalyticsManager.shared
+        provider.track(.sidebarUsed, properties: ["destination": "lesson"])
+        Self.logger.debug("Deep-link: open lesson")
+    }
 }
