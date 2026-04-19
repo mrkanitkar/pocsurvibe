@@ -330,9 +330,6 @@ final class PlayAlongViewModel {
 
     // MARK: - Internal State
 
-    /// The loaded Song model.
-    private var song: Song?
-
     /// Lock-free SPSC ring buffer for accumulating audio samples for FFT chord
     /// detection. Sized to `latencyPreset.realSamples * 2` on each detection
     /// start so reads of the latest window never overlap with writes.
@@ -341,9 +338,6 @@ final class PlayAlongViewModel {
     /// free pointer write); drained by `runChordDetectionLoop`.
     private var ringBuffer: SPSCRingBuffer?
 
-    /// Task running the note-by-note playback scheduler.
-    private var playbackTask: Task<Void, Never>?
-
     /// Task reading pitch results from the microphone processor.
     private var pitchDetectionTask: Task<Void, Never>?
     private var chordDetectionTask: Task<Void, Never>?
@@ -351,15 +345,8 @@ final class PlayAlongViewModel {
     /// Task observing MIDI connection state changes (connect/disconnect).
     private var midiConnectionTask: Task<Void, Never>?
 
-    /// ContinuousClock instant when playback started (or resumed).
-    /// Retained here for `startPlaybackFromCurrentPosition` until SP-3d removes the VM scheduler.
-    private var playbackStartTime: ContinuousClock.Instant?
-
     /// Wall-clock Date for FallingNotesView animation — delegates to `playback.playbackStartDate`.
     var playbackStartDate: Date? { playback.playbackStartDate }
-
-    /// Elapsed time accumulated before the most recent pause.
-    private var pauseElapsed: TimeInterval = 0
 
     /// Wait mode controller, created when wait mode is enabled.
     private var waitController: PlayAlongWaitController?
@@ -693,16 +680,6 @@ final class PlayAlongViewModel {
             currentNoteIndex = nil
             expectedMidiNote = nil
         }
-    }
-
-    /// Reset guided-free-play state (NoteRouter territory until SP-3d).
-    /// Playback-side reset happens inside `playback.startScheduling()`.
-    private func resetGuidedState() {
-        expectedMidiNote = nil
-        guidedPlayState = .waitingForNote
-        isStuck = false
-        patienceTimerTask?.cancel()
-        patienceTimerTask = nil
     }
 
     // MARK: - Private Methods — Pitch Detection
@@ -1215,102 +1192,6 @@ final class PlayAlongViewModel {
         return Int((12.0 * log2(frequency / 440.0) + 69.0).rounded())
     }
 
-    // MARK: - Private Methods — Playback Scheduling (dead after SP-3b; coordinator runs its own loop)
-
-    /// Core playback loop — kept temporarily so `playbackTask` / `pauseElapsed` refs compile.
-    /// SP-3d removes this entire section once NoteRouter is extracted.
-    private func runPlaybackLoop(fromIndex: Int, timeOffset: TimeInterval) async {
-        guard let startTime = playbackStartTime else { return }
-
-        for index in fromIndex..<noteEvents.count {
-            let event = noteEvents[index]
-            let scaledTimestamp = event.timestamp / tempoScale
-            let targetTime = startTime.advanced(by: .seconds(scaledTimestamp))
-
-            let sleepDuration = targetTime - clock.now
-            if sleepDuration > .zero {
-                do {
-                    try await clock.sleep(for: sleepDuration)
-                } catch {
-                    return  // Task was cancelled
-                }
-            }
-
-            guard !Task.isCancelled else { return }
-
-            playNoteSound(event: event)
-
-            currentNoteIndex = index
-            noteStates[event.id] = .active
-            markPreviousNotesAsMissed(beforeIndex: index)
-
-            do {
-                if try await awaitWaitModeResolution(index: index) {
-                    return  // Task was cancelled during wait
-                }
-            } catch {
-                return  // Task was cancelled during wait
-            }
-        }
-
-        await awaitLastNoteCompletion()
-        guard !Task.isCancelled else { return }
-        // Dead after SP-3b — coordinator's own runPlaybackLoop calls completeSession.
-        playback.completeSession()
-    }
-
-    /// Play SoundFont note-on and schedule note-off after scaled duration.
-    private func playNoteSound(event: NoteEvent) {
-        guard isSoundEnabled else { return }
-        soundFont.playNote(
-            midiNote: event.midiNote,
-            velocity: event.velocity,
-            channel: 0
-        )
-        let scaledDuration = event.duration / tempoScale
-        Task { [weak self] in
-            guard let self else { return }
-            try? await self.clock.sleep(for: .seconds(scaledDuration))
-            self.soundFont.stopNote(midiNote: event.midiNote, channel: 0)
-        }
-    }
-
-    /// Mark all prior notes still in `.active` state as missed.
-    private func markPreviousNotesAsMissed(beforeIndex index: Int) {
-        for prevIndex in 0..<index {
-            let prevEvent = noteEvents[prevIndex]
-            if noteStates[prevEvent.id] == .active {
-                noteStates[prevEvent.id] = .missed
-                scoring.record(NoteScoreCalculator.missedNote(expectedNote: prevEvent.swarName))
-                scoring.updateStreak(grade: .miss)
-            }
-        }
-    }
-
-    /// Block the playback loop in wait mode until the note is resolved.
-    ///
-    /// - Returns: `true` if the Task was cancelled while waiting (caller should return).
-    private func awaitWaitModeResolution(index: Int) async throws -> Bool {
-        guard isWaitModeEnabled, let waitCtrl = waitController else { return false }
-        waitCtrl.setCurrentNoteIndex(index)
-        while waitCtrl.isWaitingForNote, !Task.isCancelled {
-            try? await clock.sleep(for: .milliseconds(50))
-        }
-        return Task.isCancelled
-    }
-
-    /// Sleep until the last note's full duration has elapsed, then return.
-    private func awaitLastNoteCompletion() async {
-        guard let last = noteEvents.last else { return }
-        let endTime = (last.timestamp + last.duration) / tempoScale
-        let startTime = playbackStartTime ?? clock.now
-        let targetEnd = startTime.advanced(by: .seconds(endTime))
-        let remaining = targetEnd - clock.now
-        if remaining > .zero {
-            try? await clock.sleep(for: remaining)
-        }
-    }
-
     // MARK: - Private Methods — Note Input Processing
 
     /// Process a note input (from either keyboard touch or pitch detection).
@@ -1469,33 +1350,4 @@ final class PlayAlongViewModel {
         )
     }
 
-    // MARK: - Private Methods — Utilities
-
-    /// Cancel all active playback and still-on-VM NoteRouter tasks.
-    ///
-    /// Note: `playbackTask` and display-link are coordinator-owned after SP-3b.
-    /// Task 8 will rename this and remove `playbackTask` from here.
-    private func cancelPlaybackTasks() {
-        playbackTask?.cancel()
-        playbackTask = nil
-        pitchDetectionTask?.cancel()
-        pitchDetectionTask = nil
-        midiInput.onNoteEvent = nil
-        midiInput.onControlChangeEvent = nil
-        midiConnectionTask?.cancel()
-        midiConnectionTask = nil
-        patienceTimerTask?.cancel()
-        patienceTimerTask = nil
-    }
-
-    /// Convert a `Duration` to seconds as a `TimeInterval`.
-    ///
-    /// Uses the components API to avoid floating-point precision issues.
-    ///
-    /// - Parameter duration: The duration to convert.
-    /// - Returns: Elapsed time in seconds.
-    private func elapsedSeconds(from duration: Duration) -> TimeInterval {
-        Double(duration.components.seconds)
-            + Double(duration.components.attoseconds) / 1_000_000_000_000_000_000
-    }
 }
