@@ -21,7 +21,8 @@ struct ThemePreviewCard: View {
     /// Callback invoked when the user taps this card.
     let onSelect: () -> Void
 
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.accessibilityReduceMotion)
+    private var reduceMotion
 
     // MARK: - Body
 
@@ -44,6 +45,7 @@ struct ThemePreviewCard: View {
                 )
             }
             .buttonStyle(.plain)
+            .hoverEffect(.automatic)
             .accessibilityLabel("\(preset.displayName) theme")
             .accessibilityHint(
                 isActive
@@ -134,7 +136,8 @@ struct ThemePreviewCard: View {
 /// switches the active era via `AppThemeManager.setEra(_:)`. The selected
 /// era is indicated with a white stroke ring.
 private struct PopEraSwatchRow: View {
-    @Environment(AppThemeManager.self) private var themeManager
+    @Environment(AppThemeManager.self)
+    private var themeManager
 
     var body: some View {
         HStack(spacing: 12) {
