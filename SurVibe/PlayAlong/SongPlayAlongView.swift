@@ -195,7 +195,16 @@ struct SongPlayAlongView: View {
                     // wait-mode toggle via UIKit bridging (SwiftUI's TapGesture
                     // doesn't distinguish finger count on iOS).
 
-                // TODO(Task 2.11+): wire LyricsStrip when song-lyrics model lands
+                if shouldShowLyricStrip && !viewModel.noteEvents.isEmpty {
+                    LyricsStrip(
+                        words: sargamLyricWords,
+                        devanagariLine: nil,
+                        currentTime: viewModel.currentTime,
+                        backgroundColor: viewModel.karaokeBackgroundColor
+                    )
+                    .padding(.horizontal, 16)
+                    .padding(.bottom, 4)
+                }
 
                 // Scoring HUD overlay — visible during playback OR when notes have been scored in guided mode
                 CompactScoringHUD(
@@ -441,6 +450,35 @@ struct SongPlayAlongView: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Play along with \(song.title)")
+    }
+
+    // MARK: - Lyric Strip Helpers
+
+    /// Lyric-strip words derived from the current song's note events.
+    ///
+    /// Each note becomes a syllable card showing its Sargam name, timed
+    /// to the note's start + duration window so `LyricsStrip`'s karaoke
+    /// highlight follows the playback clock.
+    private var sargamLyricWords: [LyricsStrip.LyricWord] {
+        viewModel.noteEvents.map { event in
+            LyricsStrip.LyricWord(
+                text: event.swarName,
+                startTime: event.timestamp,
+                endTime: event.timestamp + event.duration
+            )
+        }
+    }
+
+    /// True when the active theme's primary notation is Sargam, which
+    /// is also when showing a dedicated Sargam lyric strip adds value.
+    /// Western/Pop/Night themes already render note labels on the staff.
+    private var shouldShowLyricStrip: Bool {
+        switch themeManager.currentPreset {
+        case .sargamGlass, .sargamGlassBars, .neonRhythm:
+            return true
+        default:
+            return false
+        }
     }
 
     // MARK: - Content Area
