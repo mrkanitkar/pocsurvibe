@@ -161,6 +161,50 @@ final class PlaybackCoordinator {
 
     // MARK: - Public methods (transport state machine)
 
+    /// Parse the song into `noteEvents`, compute duration, initialize per-note
+    /// state. Pure data prep — no audio or input wiring.
+    ///
+    /// - Returns: `true` on success, `false` if neither MIDI nor notation
+    ///   data was available (in which case `playbackState` is set to `.error`).
+    @discardableResult
+    func loadSong(_ song: Song) -> Bool {
+        playbackState = .loading
+        self.song = song
+
+        if let midiData = song.midiData, !midiData.isEmpty,
+            case .success(let midiEvents) = MIDIParser.parse(data: midiData)
+        {
+            noteEvents = NoteEvent.fromMIDI(events: midiEvents)
+        } else if let sargam = song.decodedSargamNotes,
+            let western = song.decodedWesternNotes
+        {
+            noteEvents = NoteEvent.fromNotation(
+                sargamNotes: sargam,
+                westernNotes: western,
+                tempo: song.tempo
+            )
+        } else {
+            errorMessage = "No playable notation found"
+            playbackState = .error("No playable notation")
+            Self.logger.error("loadSong failed: no MIDI or notation data")
+            return false
+        }
+
+        if let last = noteEvents.last {
+            duration = last.timestamp + last.duration
+        }
+        for event in noteEvents {
+            noteStates[event.id] = .upcoming
+        }
+
+        currentNoteIndex = noteEvents.isEmpty ? nil : 0
+        playbackState = .idle
+        Self.logger.info(
+            "Song loaded: \(self.noteEvents.count) events, duration=\(String(format: "%.1f", self.duration))s"
+        )
+        return true
+    }
+
     /// Seek to a normalized position (0.0 to 1.0). Only effective when paused —
     /// matches the existing VM behavior; full mid-playback seek is out of scope
     /// for SP-3b (would require re-anchoring `playbackStartTime` and rescheduling).
@@ -219,6 +263,45 @@ final class PlaybackCoordinator {
         ])
 
         Self.logger.info("Playback scheduling started")
+    }
+
+    /// Pause the active scheduling. Records elapsed time for seamless resume,
+    /// cancels the playback + display-link tasks, stops sounding notes and
+    /// metronome.
+    func pauseScheduling() {
+        guard playbackState == .playing else { return }
+
+        if let startTime = playbackStartTime {
+            let elapsed = clock.now - startTime
+            pauseElapsed = elapsedSeconds(from: elapsed)
+        }
+
+        playbackState = .paused
+        playbackStartDate = nil
+
+        cancelPlaybackTasks()
+        soundFont.stopAllNotes()
+        metronome.stop()
+
+        track(.songPlaybackPaused, properties: ["song_title": song?.title ?? ""])
+        Self.logger.info("Scheduling paused at \(String(format: "%.1f", self.pauseElapsed))s")
+    }
+
+    /// Resume from the paused position. Adjusts the clock reference so elapsed
+    /// computation continues from the pause offset, restarts display link +
+    /// playback loop + metronome.
+    func resumeScheduling() {
+        guard playbackState == .paused else { return }
+
+        playbackStartTime = clock.now.advanced(by: .seconds(-pauseElapsed))
+        playbackStartDate = Date(timeIntervalSinceNow: -pauseElapsed)
+        playbackState = .playing
+
+        startDisplayLink()
+        startPlaybackFromCurrentPosition()
+        metronome.start()
+
+        Self.logger.info("Scheduling resumed from \(String(format: "%.1f", self.pauseElapsed))s")
     }
 
     // MARK: - Private — Scheduling
@@ -412,10 +495,94 @@ final class PlaybackCoordinator {
         provider.track(event, properties: properties)
     }
 
-    // MARK: - Task 5 placeholder
+    // MARK: - Public — Session completion
 
-    /// Stub — implemented in Task 5.
+    /// Stop scheduling early and complete the session with whatever notes
+    /// have been scored so far. Triggers results overlay.
+    func stopAndComplete() {
+        guard playbackState == .playing || playbackState == .paused else { return }
+        completeSession()
+    }
+
+    /// Complete the session: mark unfinished notes as missed, finalize scoring,
+    /// stop sound, persist results, fire analytics.
+    ///
+    /// AUD-028/034: noteStates mutations batched into a single dictionary
+    /// snapshot — one Canvas redraw instead of N individual property sets.
     func completeSession() {
+        let scoredNames = Set(scoring.noteScores.map(\.expectedNote))
+        var updatedStates = noteStates
+        var missedScores: [NoteScore] = []
+
+        for event in noteEvents {
+            let state = updatedStates[event.id]
+            if state == .active || state == .upcoming {
+                updatedStates[event.id] = .missed
+                if !scoredNames.contains(event.swarName) {
+                    missedScores.append(
+                        NoteScoreCalculator.missedNote(expectedNote: event.swarName)
+                    )
+                }
+            }
+        }
+
+        noteStates = updatedStates
+        missedScores.forEach { scoring.record($0) }
+
+        scoring.finalize(songDifficulty: song?.difficulty ?? 1)
+
+        cancelPlaybackTasks()
+        soundFont.stopAllNotes()
         playbackState = .stopped
+
+        persistSessionResults()
+        trackSessionCompletion()
+    }
+
+    /// Tear down playback resources. Does NOT touch pitch/MIDI tasks — those
+    /// are the facade's responsibility until SP-3d.
+    func cleanup() {
+        cancelPlaybackTasks()
+        soundFont.stopAllNotes()
+        SoundFontManager.shared.resetLoadedState()
+        audioEngine.stop()
+        metronome.stop()
+        waitController?.reset()
+        waitController = nil
+        playbackState = .idle
+        Self.logger.info("PlaybackCoordinator cleanup complete")
+    }
+
+    // MARK: - Private — Persistence
+
+    private func persistSessionResults() {
+        guard let modelContext, let song else { return }
+        let recorder = PracticeSessionRecorder(modelContext: modelContext)
+        let songInfo = SessionSongInfo(
+            songId: song.slugId.isEmpty ? song.id.uuidString : song.slugId,
+            songTitle: song.title,
+            ragaName: song.ragaName,
+            difficulty: song.difficulty
+        )
+        let durationMinutes = max(1, Int(pauseElapsed / 60))
+        recorder.recordSession(
+            songInfo: songInfo,
+            durationMinutes: durationMinutes,
+            noteScores: scoring.noteScores
+        )
+        Self.logger.info("Session persisted via PracticeSessionRecorder")
+    }
+
+    private func trackSessionCompletion() {
+        track(.songPlaybackCompleted, properties: [
+            "song_title": song?.title ?? "",
+            "accuracy": scoring.accuracy,
+            "star_rating": scoring.starRating,
+            "xp_earned": scoring.xpEarned,
+            "tempo_scale": tempoScale,
+        ])
+        Self.logger.info(
+            "Session completed: accuracy=\(String(format: "%.0f", self.scoring.accuracy * 100))%"
+        )
     }
 }
