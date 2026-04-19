@@ -101,7 +101,7 @@ struct SongDetailView: View {
         }
         .fullScreenCover(isPresented: $showPlayAlong) {
             NavigationStack {
-                SongPlayAlongView(song: song)
+                PlayAlongSceneHost(song: song)
             }
         }
         .navigationTitle(song.title)

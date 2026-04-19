@@ -2,6 +2,8 @@ import Foundation
 import SVCore
 import Testing
 
+@testable import SurVibe
+
 /// Static-source latency-contract guard.
 ///
 /// The design spec locks an inviolable rule: performance-critical views must
@@ -50,6 +52,29 @@ struct LatencyContractTests {
                 "VIOLATION: \(file) reads theme via @Environment — must use let parameters per latency contract"
             )
         }
+    }
+
+    @Test @MainActor
+    func rotationDoesNotRestartAudioEngine() async throws {
+        let engine = MockAudioEngineProvider()
+        let song = Song(title: "Rotation Test Song", difficulty: 1, tempo: 120)
+        let host = PlayAlongSceneHost(song: song, engineOverride: engine)
+
+        // Force the host's @State vm to instantiate (SwiftUI lazy init).
+        _ = host.body
+
+        let baseline = engine.startCallCount
+
+        // Simulate SwiftUI re-renders triggered by rotation / size-class change.
+        // If the VM were (incorrectly) placed in SongPlayAlongView as @State,
+        // each body call would re-initialize the VM and call AudioEngineManager.start().
+        _ = host.body
+        _ = host.body
+
+        #expect(
+            engine.startCallCount == baseline,
+            "Simulated re-render triggered \(engine.startCallCount - baseline) extra AudioEngineManager.start() calls — must be 0"
+        )
     }
 
     @Test @MainActor func featureFlagToggleDoesNotRestartEngine() async throws {

@@ -39,7 +39,7 @@ struct SongsTab: View {
                 .ignoresSafeArea()
             )
             .navigationDestination(for: Song.self) { song in
-                SongPlayAlongView(song: song)
+                PlayAlongSceneHost(song: song)
             }
         }
         .accessibilityLabel(AccessibilityHelper.tabLabel(for: "Songs"))

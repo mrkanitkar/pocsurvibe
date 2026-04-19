@@ -30,8 +30,12 @@ struct SongPlayAlongView: View {
     /// The song to play along with.
     let song: Song
 
-    /// View model managing playback, scoring, and session lifecycle.
-    @State var viewModel = PlayAlongViewModel()
+    /// View model received from `PlayAlongSceneHost`; do not own here.
+    ///
+    /// `@Bindable` gives SwiftUI two-way access to published properties without
+    /// taking ownership. Ownership lives in `PlayAlongSceneHost` so the VM
+    /// survives rotation and size-class changes without restarting the audio engine.
+    @Bindable var viewModel: PlayAlongViewModel
 
     /// Owns tanpura drone state and debounces retune against the engine.
     /// `internal` so helpers in `SongPlayAlongView+Tanpura.swift` can read it.
@@ -619,16 +623,14 @@ struct SongPlayAlongView: View {
 
 #Preview("Play Along — Idle") {
     NavigationStack {
-        SongPlayAlongView(
-            song: Song(title: "Raag Yaman", difficulty: 2, tempo: 120)
-        )
+        PlayAlongSceneHost(song: Song(title: "Raag Yaman", difficulty: 2, tempo: 120))
     }
     .environment(AppThemeManager())
 }
 
 #Preview("Play Along — With Song") {
     NavigationStack {
-        SongPlayAlongView(
+        PlayAlongSceneHost(
             song: {
                 let song = Song(title: "Twinkle Twinkle", difficulty: 1, tempo: 100)
                 return song
