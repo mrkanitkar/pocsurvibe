@@ -93,6 +93,7 @@ struct DoorCard: View {
             .scaleEffect(isPressed && !reduceMotion ? 0.96 : 1.0)
         }
         .buttonStyle(.plain)
+        .hoverEffect(.automatic, isEnabled: isEnabled)
         .disabled(!isEnabled)
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
