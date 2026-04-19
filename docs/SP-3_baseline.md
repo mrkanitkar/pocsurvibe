@@ -20,3 +20,14 @@ Captured 2026-04-19 pre-SP-3a on `feat/sp-3a-scoring-coordinator` branched from 
 
 ## SP-3 completion signal
 - `PlayAlongViewModel.swift` ≤ 200 lines AND `swiftlint:disable` directives deleted AND all latency tests green.
+
+## SP-3b pre-task snapshot (captured on `feat/sp-3b-playback-coordinator`)
+- `PlayAlongViewModel.swift`: **1,788 lines** (post-SP-3a baseline).
+- `ScoringCoordinator.swift`: 124 lines.
+- LatencyContractTests: 3/3 PASS.
+
+## Gate for SP-3b merge
+- `PlayAlongViewModel.swift` SHRINKS to **≤ ~1,200 lines** (target: ~600 LOC peeled into PlaybackCoordinator).
+- `PlaybackCoordinator.swift` ≈ 600 lines.
+- Both `featureFlagToggleDoesNotRestartEngine` + `rotationDoesNotRestartAudioEngine` GREEN.
+- All 8 PlayAlong suites GREEN.
