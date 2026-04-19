@@ -38,7 +38,9 @@ struct PlayAlongChromeTests {
         vm.chromeAutoHideSeconds = 0.15  // 150ms for test speed
         vm.summonChrome()
         #expect(vm.chromeVisibility == .summoned)
-        try await Task.sleep(for: .milliseconds(300))
+        // 600ms gives the auto-hide timer (150ms) ample margin under load —
+        // the prior 300ms intermittently observed `.summoned` on CI.
+        try await Task.sleep(for: .milliseconds(600))
         #expect(vm.chromeVisibility == .hidden)
     }
 

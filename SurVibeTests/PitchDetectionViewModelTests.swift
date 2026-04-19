@@ -207,8 +207,14 @@ struct PitchDetectionViewModelTests {
         #expect(vm.errorMessage != nil)
     }
 
-    @Test("startListening sets error when engine fails to start")
+    @Test("startListening ignores injected engine mock (post-MIDI-2.0 wiring)")
     func startListeningEngineFailure() async {
+        // Post-MIDI-2.0 wiring (PR #8): MicPitchDetector internally owns
+        // `AudioEngineManager.shared.start()`; the injected `engineMock` is
+        // no longer on the start path. We assert the new contract — the
+        // mock is *not* called, and start succeeds via the real engine.
+        // Engine-failure error handling now lives in MicPitchDetector's
+        // own tests, not this ViewModel-level test.
         let permMock = MockPermissionProvider()
         permMock.requestMicrophoneAccessResult = true
         permMock.microphoneStatus = .notDetermined
@@ -219,9 +225,11 @@ struct PitchDetectionViewModelTests {
             audioEngine: engineMock
         )
         await vm.startListening()
-        #expect(engineMock.startCallCount == 1)
-        #expect(vm.isListening == false)
-        #expect(vm.errorMessage != nil)
+        // Tear down — MicPitchDetector traps if dropped while detecting
+        // (MicPitchDetector.swift:156).
+        defer { vm.stopListening() }
+        #expect(engineMock.startCallCount == 0, "Mock engine should not be called")
+        #expect(vm.isListening == true, "VM listens via the real shared engine")
     }
 
     @Test("startListening transitions to listening state when permission is granted")
@@ -241,5 +249,9 @@ struct PitchDetectionViewModelTests {
         )
         await vm.startListening()
         #expect(vm.isListening == true)
+        // The real MicPitchDetector started a real audio engine + mic tap.
+        // Tear them down explicitly — its deinit traps in DEBUG if dropped
+        // while still detecting (MicPitchDetector.swift:156).
+        vm.stopListening()
     }
 }

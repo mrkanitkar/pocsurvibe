@@ -10,7 +10,8 @@ import Testing
 ///
 /// Verifies toast properties are correctly passed through and that
 /// the manager's observable property is set on unlock and can be cleared.
-@Suite("AchievementUnlockToast Tests")
+/// Serialized — manager-integration tests share `SwiftDataTestContainer.shared`.
+@Suite("AchievementUnlockToast Tests", .serialized)
 struct AchievementUnlockToastTests {
 
     // MARK: - Toast Property Tests
@@ -48,29 +49,13 @@ struct AchievementUnlockToastTests {
 
     // MARK: - Manager Integration Tests
 
-    /// Creates an in-memory ModelContainer with all required models.
-    private func makeContainer() throws -> ModelContainer {
-        let schema = Schema([
-            UserProfile.self,
-            RiyazEntry.self,
-            Achievement.self,
-            SongProgress.self,
-            LessonProgress.self,
-            SubscriptionState.self,
-            Song.self,
-            Lesson.self,
-            Curriculum.self,
-            XPEntry.self,
-        ])
-        let config = ModelConfiguration(isStoredInMemoryOnly: true)
-        return try ModelContainer(for: schema, configurations: [config])
-    }
+    // ModelContainer-based tests use SwiftDataTestContainer.shared via
+    // SwiftDataTestContainer.freshContext() — see that file for details.
 
     @Test("lastUnlockedAchievement is set on unlock")
     @MainActor
     func lastUnlockedSetOnUnlock() throws {
-        let container = try makeContainer()
-        let context = container.mainContext
+        let context = try SwiftDataTestContainer.freshContext()
         let profile = UserProfile()
         context.insert(profile)
         try context.save()
@@ -96,8 +81,7 @@ struct AchievementUnlockToastTests {
     @Test("lastUnlockedAchievement clears on nil assignment")
     @MainActor
     func lastUnlockedClearsOnNil() throws {
-        let container = try makeContainer()
-        let context = container.mainContext
+        let context = try SwiftDataTestContainer.freshContext()
         let profile = UserProfile()
         context.insert(profile)
         try context.save()
