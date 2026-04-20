@@ -17,7 +17,7 @@
 | **SP-3d** NoteRouter (phase 4 of 4, HIGH risk) | ✅ shipped | `sp-3d-note-router` @ `1089026` | `91ae34a` | 14 |
 | **SP-3 umbrella** VM ≤ 200 lines + `file_length` disclaimer deleted | ✅ shipped | `sp-3-vm-split-complete` @ `1089026` | `91ae34a` | — |
 | **SP-4a** Accessibility + Settings — core (narrow scope) | ✅ shipped | `sp-4-accessibility` @ `d916fa2` | `b6d340e` | 8 |
-| **SP-4b** Accessibility remainder (P2-6 arrow-key card nav, P2-12 detents audit, P2-13 tab-switch haptics) | ✅ shipped | `sp-4b-accessibility-remainder` @ `8770217` | `8770217` | 11 |
+| **SP-4b** Accessibility remainder (P2-6 arrow-key card nav, P2-12 detents audit, P2-13 tab-switch haptics) | ✅ shipped | `sp-4b-accessibility-remainder` @ `ce695b9` | `8770217` | 11 |
 | **SP-4c** Live Activity + Pencil + focus-ring polish (P1-2, P1-4 + SP-4b deferrals) | ⬜ pending | — | — | — |
 | **SP-5** Gen-AI harness | ⬜ pending | — | — | — |
 | **SP-6** Mac destination | ⬜ pending | — | — | — |
