@@ -45,10 +45,10 @@ struct SongLibraryView: View {
     @State
     private var songToDelete: Song?
 
-    /// Two-column adaptive grid.
-    private let columns = [
-        GridItem(.adaptive(minimum: 160), spacing: 16)
-    ]
+    /// Column count computed from measured grid width. Defaults to 2 until
+    /// `GeometryReader` reports a real width on first layout.
+    @State
+    private var gridColumnCount: Int = 2
 
     // MARK: - Body
 
@@ -139,10 +139,20 @@ struct SongLibraryView: View {
 
     // MARK: - Keyboard Focus
 
-    /// Column count used for arrow-key grid math.
-    /// Matches the practical column count of `.adaptive(minimum: 160)` on iPhone + split-iPad.
-    /// Wide-iPad multi-col layouts degrade gracefully (still navigate linearly).
-    private static let gridColumns = 2
+    /// Static column-count helper keyed by measured width. Used by both the
+    /// grid layout and the arrow-key focus math so they stay in lockstep.
+    ///
+    /// Empirical breakpoints validated against iPhone / iPad portrait / iPad landscape:
+    /// - <700pt: 2 columns (iPhone all sizes + split iPad regular)
+    /// - 700..<1000pt: 3 columns (iPad portrait, iPad landscape split)
+    /// - >=1000pt: 4 columns (iPad Pro landscape, Mac)
+    nonisolated static func columnCount(for width: CGFloat) -> Int {
+        switch width {
+        case ..<700: return 2
+        case 700..<1000: return 3
+        default: return 4
+        }
+    }
 
     /// Moves keyboard focus to the next song card in the given direction.
     private func moveFocus(_ direction: LibraryFocusNavigator.FocusDirection, from currentID: Song.ID) {
@@ -153,7 +163,7 @@ struct SongLibraryView: View {
                 for: direction,
                 currentIndex: currentIndex,
                 count: songs.count,
-                columns: Self.gridColumns
+                columns: gridColumnCount
             )
         else { return }
         focusedSongID = songs[nextIndex].id
@@ -161,87 +171,129 @@ struct SongLibraryView: View {
 
     // MARK: - Subviews
 
-    /// Song grid with 2-column adaptive layout.
+    /// Song grid with width-responsive column count (2/3/4 depending on width).
     private var songGrid: some View {
-        ScrollView {
-            LazyVGrid(columns: columns, spacing: 16) {
-                ForEach(viewModel.filteredSongs) { song in
-                    if viewModel.isPremiumLocked(song) {
-                        SongCardView(song: song)
-                            .onTapGesture {
-                                signInTrigger = .premiumSong
-                            }
-                            .focused($focusedSongID, equals: song.id)
-                            .onKeyPress(.return) {
-                                signInTrigger = .premiumSong
-                                return .handled
-                            }
-                            .onKeyPress(keys: [.upArrow, .downArrow, .leftArrow, .rightArrow]) { press in
-                                let direction: LibraryFocusNavigator.FocusDirection
-                                switch press.key {
-                                case .upArrow: direction = .up
-                                case .downArrow: direction = .down
-                                case .leftArrow: direction = .left
-                                case .rightArrow: direction = .right
-                                default: return .ignored
-                                }
-                                moveFocus(direction, from: song.id)
-                                return .handled
-                            }
-                    } else {
-                        NavigationLink(value: song) {
-                            SongCardView(song: song)
-                        }
-                        .buttonStyle(.plain)
-                        .focused($focusedSongID, equals: song.id)
-                        .onKeyPress(.return) {
-                            router.openSong(song.id)
-                            return .handled
-                        }
-                        .onKeyPress(keys: [.upArrow, .downArrow, .leftArrow, .rightArrow]) { press in
-                            let direction: LibraryFocusNavigator.FocusDirection
-                            switch press.key {
-                            case .upArrow: direction = .up
-                            case .downArrow: direction = .down
-                            case .leftArrow: direction = .left
-                            case .rightArrow: direction = .right
-                            default: return .ignored
-                            }
-                            moveFocus(direction, from: song.id)
-                            return .handled
-                        }
-                        .contextMenu {
-                            Button {
-                                detailSong = song
-                            } label: {
-                                Label("Song Details", systemImage: "info.circle")
-                            }
-                            if song.source == "user" {
-                                Button {
-                                    songToEdit = song
-                                } label: {
-                                    Label("Edit Song", systemImage: "pencil")
-                                }
-                                Button(role: .destructive) {
-                                    songToDelete = song
-                                } label: {
-                                    Label("Delete Song", systemImage: "trash")
-                                }
-                            }
-                        }
+        GeometryReader { proxy in
+            let count = Self.columnCount(for: proxy.size.width)
+            let gridColumnArray = Array(
+                repeating: GridItem(.flexible(), spacing: 16),
+                count: count
+            )
+
+            ScrollView {
+                LazyVGrid(columns: gridColumnArray, spacing: 16) {
+                    ForEach(viewModel.filteredSongs) { song in
+                        songCard(for: song)
+                    }
+                }
+                .padding(.horizontal)
+                .padding(.top, 8)
+                .padding(.bottom, 20)
+            }
+            .onAppear {
+                gridColumnCount = count
+            }
+            .onChange(of: proxy.size.width) { _, newWidth in
+                gridColumnCount = Self.columnCount(for: newWidth)
+            }
+        }
+    }
+
+    /// Renders a single song card with focus, keyboard, and context-menu wiring.
+    /// Extracted to keep `songGrid`'s GeometryReader body scannable.
+    @ViewBuilder
+    private func songCard(for song: Song) -> some View {
+        if viewModel.isPremiumLocked(song) {
+            SongCardView(song: song)
+                .onTapGesture {
+                    signInTrigger = .premiumSong
+                }
+                .focused($focusedSongID, equals: song.id)
+                .focusRing(
+                    itemID: song.id,
+                    focusedID: focusedSongID,
+                    accent: themeManager.resolved.accentColor
+                )
+                .onKeyPress(.return) {
+                    signInTrigger = .premiumSong
+                    return .handled
+                }
+                .onKeyPress(keys: [.upArrow, .downArrow, .leftArrow, .rightArrow]) { press in
+                    let direction: LibraryFocusNavigator.FocusDirection
+                    switch press.key {
+                    case .upArrow: direction = .up
+                    case .downArrow: direction = .down
+                    case .leftArrow: direction = .left
+                    case .rightArrow: direction = .right
+                    default: return .ignored
+                    }
+                    moveFocus(direction, from: song.id)
+                    return .handled
+                }
+                .onKeyPress(.escape) {
+                    focusedSongID = nil
+                    return .handled
+                }
+        } else {
+            NavigationLink(value: song) {
+                SongCardView(song: song)
+            }
+            .buttonStyle(.plain)
+            .focused($focusedSongID, equals: song.id)
+            .focusRing(
+                itemID: song.id,
+                focusedID: focusedSongID,
+                accent: themeManager.resolved.accentColor
+            )
+            .onKeyPress(.return) {
+                router.openSong(song.id)
+                return .handled
+            }
+            .onKeyPress(keys: [.upArrow, .downArrow, .leftArrow, .rightArrow]) { press in
+                let direction: LibraryFocusNavigator.FocusDirection
+                switch press.key {
+                case .upArrow: direction = .up
+                case .downArrow: direction = .down
+                case .leftArrow: direction = .left
+                case .rightArrow: direction = .right
+                default: return .ignored
+                }
+                moveFocus(direction, from: song.id)
+                return .handled
+            }
+            .onKeyPress(.escape) {
+                focusedSongID = nil
+                return .handled
+            }
+            .contextMenu {
+                Button {
+                    detailSong = song
+                } label: {
+                    Label("Song Details", systemImage: "info.circle")
+                }
+                if song.source == "user" {
+                    Button {
+                        songToEdit = song
+                    } label: {
+                        Label("Edit Song", systemImage: "pencil")
+                    }
+                    Button(role: .destructive) {
+                        songToDelete = song
+                    } label: {
+                        Label("Delete Song", systemImage: "trash")
                     }
                 }
             }
-            .padding(.horizontal)
-            .padding(.top, 8)
-            .padding(.bottom, 20)
         }
     }
 
     /// Loading state with shimmer placeholders.
     private var loadingState: some View {
         ScrollView {
-            LazyVGrid(columns: columns, spacing: 16) {
+            LazyVGrid(
+                columns: Array(repeating: GridItem(.flexible(), spacing: 16), count: gridColumnCount),
+                spacing: 16
+            ) {
                 ForEach(0..<6, id: \.self) { _ in
                     RoundedRectangle(cornerRadius: 12)
                         .fill(themeManager.resolved.cardBackgroundColor)

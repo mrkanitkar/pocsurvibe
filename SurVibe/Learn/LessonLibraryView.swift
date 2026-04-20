@@ -115,6 +115,11 @@ struct LessonLibraryView: View {
                                 lockedLessonAlert = item.lesson
                             }
                             .focused($focusedLessonID, equals: item.lesson.id)
+                            .focusRing(
+                                itemID: item.lesson.id,
+                                focusedID: focusedLessonID,
+                                accent: themeManager.resolved.accentColor
+                            )
                             .onKeyPress(.return) {
                                 lockedLessonAlert = item.lesson
                                 return .handled
@@ -125,12 +130,21 @@ struct LessonLibraryView: View {
                                 moveFocus(direction, from: item.lesson.id)
                                 return .handled
                             }
+                            .onKeyPress(.escape) {
+                                focusedLessonID = nil
+                                return .handled
+                            }
                     } else {
                         NavigationLink(value: item.lesson) {
                             LessonCardView(item: item)
                         }
                         .buttonStyle(.plain)
                         .focused($focusedLessonID, equals: item.lesson.id)
+                        .focusRing(
+                            itemID: item.lesson.id,
+                            focusedID: focusedLessonID,
+                            accent: themeManager.resolved.accentColor
+                        )
                         .onKeyPress(.return) {
                             router.openLesson(item.lesson.id)
                             return .handled
@@ -139,6 +153,10 @@ struct LessonLibraryView: View {
                             let direction: LibraryFocusNavigator.FocusDirection =
                                 (press.key == .upArrow) ? .up : .down
                             moveFocus(direction, from: item.lesson.id)
+                            return .handled
+                        }
+                        .onKeyPress(.escape) {
+                            focusedLessonID = nil
                             return .handled
                         }
                     }
