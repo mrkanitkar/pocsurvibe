@@ -4,7 +4,7 @@
 > Source of truth for "what shipped, what was deferred, what's next".
 > Created 2026-04-19 after SP-0 + SP-1 landed on `main`.
 
-## Status (2026-04-19, post-SP-3b merge)
+## Status (2026-04-20, post-SP-3c merge)
 
 | Sub-project | Status | Tag | Merge SHA | Commits |
 |---|---|---|---|:---:|
@@ -13,7 +13,7 @@
 | **SP-2** Per-surface layout | ✅ shipped | `sp-2-per-surface-layout` | `f50dd0f` | 10+ |
 | **SP-3a** ScoringCoordinator (phase 1 of 4) | ✅ shipped | `sp-3a-scoring` @ `8bf6059` | `55174c2` | 4 |
 | **SP-3b** PlaybackCoordinator (phase 2 of 4) | ✅ shipped | `sp-3b-playback` @ `036a244` | `ea90af7` | 12 |
-| **SP-3c** View-chrome extraction (phase 3 of 4) | ⬜ pending | — | — | — |
+| **SP-3c** View-chrome extraction (phase 3 of 4) | ✅ shipped | `sp-3c-view-chrome` @ `357f366` | — | 6 |
 | **SP-3d** NoteRouter (phase 4 of 4, HIGH risk) | ⬜ pending | — | — | — |
 | **SP-3 umbrella** VM ≤ 200 lines + `file_length` disclaimer deleted | ⬜ awaits 3b/3c/3d | — | — | — |
 | **SP-4** Accessibility polish + iOS Settings nav | ⬜ pending | — | — | — |
@@ -45,6 +45,33 @@
 - D-SP3b-4: Persistence delegated to `PracticeSessionRecorder` (no direct SongProgress writes).
 - D-SP3b-5: Analytics threaded via `AnalyticsProviding` nil-sentinel.
 - D-SP3b-6 (NEW): Schema-sync test infrastructure (`SwiftDataSchemaSyncTests`) added during Task 3 as defensive guardrail. Out-of-original-scope but useful; retained.
+
+### SP-3c landed (2026-04-20)
+
+- Extracted: chrome visibility + auto-hide timer state, viewMode, notationMode, 7 `@ObservationIgnored` theme color holders, theme color resolution method — all into `SurVibe/PlayAlong/Coordinators/PlayAlongChromeState.swift` (~145 lines).
+- Facade pattern wired: `PlayAlongViewModel` holds `let chrome = PlayAlongChromeState()`; 11 stored properties + 3 methods became delegating facade members. Local `ChromeVisibility` enum moved to `PlayAlongChromeState.ChromeVisibility`.
+- View-side change: `SongPlayAlongView` collapses 14 inline color assignments into 2 `viewModel.chrome.updateTheme(themeManager)` calls (D-SP3c-3). View color-resolution code eliminated.
+- `PlayAlongViewModel.swift`: 1,353 → 1,381 lines (+28 net). Line count grew rather than shrank because computed get+set delegations (2 lines each for get+set+braces) replace simple stored properties. D-SP3c-6 retained `chromeAutoHideSeconds` + `chromeAutoHideTask` on VM. Net extraction confirmed by coordinator size (~145 lines + test file).
+- Tests: 6 new PlayAlongChromeStateTests pass; 8 pre-existing PlayAlong suites pass (PlayAlongChromeTests is the regression guard, all 6 green); 3/3 LatencyContractTests; SP-3a/3b coordinator regression suites pass; SVCore 93/93.
+- Zero hardcoded platform checks on new file.
+- Zero audio-API hits on `PlayAlongChromeState.swift` (chrome state is pure UI presentation).
+
+**Architectural deviations applied (per spec §12):**
+- D-SP3c-1: latencyPreset stays on VM (defers to SP-3d alongside NoteRouter).
+- D-SP3c-2: 7 theme colors stay individual @ObservationIgnored (no observable struct).
+- D-SP3c-3: updateTheme(_:) centralizes color resolution.
+- D-SP3c-4: static let autoHideDuration on coordinator.
+- D-SP3c-5: chrome init takes zero dependencies.
+- D-SP3c-6 (NEW, plan-time discovered): VM retains `chromeAutoHideSeconds` + `chromeAutoHideTask` because `PlayAlongChromeTests` writes `vm.chromeAutoHideSeconds = X` to control auto-hide duration in tests. Coordinator owns visibility STATE; VM owns the SCHEDULING TIMER. Slight code smell (two timers) — candidate for SP-3d cleanup when this area gets revisited.
+
+**Test-suite snapshot (verified 2026-04-20 on `feat/sp-3c-chrome-state` @ `357f366`):**
+- SVCore: **93/93 passing**.
+- `PlayAlongChromeStateTests`: **6/6 passing** (new).
+- `PlaybackCoordinatorTests`: **7/7 passing** (SP-3b no regression).
+- `ScoringCoordinatorTests`: **5/5 passing** (SP-3a no regression).
+- `LatencyContractTests`: **3/3 passing**.
+- 8 pre-existing PlayAlong suites: **all passing** — `PlayAlongFullFlowTests` (10), `PlayAlongIntegrationTests` (1), `PlayAlongThemeIntegrationTests` (5), `PlayAlongChromeTests` (6), `PlayAlongGestureTests` (4), `ChordScoringIntegrationTests` (9), `PlayAlongViewModelTests` (24), `PlayAlongTempoScalingTests` (5).
+- Tag: `sp-3c-view-chrome` @ `357f366` (6 commits on feature branch).
 
 **Test-suite snapshot (verified 2026-04-19 on `feat/sp-3b-playback-coordinator` @ `036a244`):**
 - SVCore: **93/93 passing**.

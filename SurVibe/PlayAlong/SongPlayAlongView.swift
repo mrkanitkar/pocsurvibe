@@ -49,12 +49,14 @@ struct SongPlayAlongView: View {
     var showTanpuraSheet = false
 
     /// Pending persistence write for `preferredSaHz`. Canceled on rapid changes.
-    @State private var persistDebounceTask: Task<Void, Never>?
+    @State
+    private var persistDebounceTask: Task<Void, Never>?
 
     /// Set to true after the initial `tanpura.seed(...)` call in `.task`.
     /// Gates the `effectiveSaHz` persistence observer so the initial seed
     /// doesn't spuriously write a SongProgress row on every song open.
-    @State private var didInitialSeed = false
+    @State
+    private var didInitialSeed = false
 
     /// Set to true by `resetPreferredSaHz()` so the next `effectiveSaHz`
     /// change (which comes from the internal re-seed to the song default,
@@ -72,13 +74,16 @@ struct SongPlayAlongView: View {
     var hasStoredOverride: Bool = false
 
     /// Piano key positions collected via preference key for note alignment.
-    @State private var keyPositions: [KeyPosition] = []
+    @State
+    private var keyPositions: [KeyPosition] = []
 
     /// Whether the results overlay is presented.
-    @State private var showResults = false
+    @State
+    private var showResults = false
 
     /// Whether the theme picker sheet is presented (from the toolbar's Mode button).
-    @State private var showAppearanceSheet = false
+    @State
+    private var showAppearanceSheet = false
 
     /// Whether the correctness flash overlay is visible (brief green/red flash).
     @State
@@ -216,13 +221,7 @@ struct SongPlayAlongView: View {
             // Derive view mode and notation from the active theme preset
             viewModel.viewMode = themeManager.currentPreset.viewMode
             viewModel.notationMode = themeManager.currentPreset.notationMode
-            viewModel.rhColor = themeManager.resolved.rightHandColor
-            viewModel.lhColor = themeManager.resolved.leftHandColor
-            viewModel.chordColor = themeManager.resolved.chordColor
-            viewModel.notationLineColor = themeManager.resolved.notationLineColor
-            viewModel.notationSecondaryColor = themeManager.resolved.notationSecondaryColor
-            viewModel.cardBackgroundColor = themeManager.resolved.cardBackgroundColor
-            viewModel.karaokeBackgroundColor = themeManager.resolved.karaokeBackgroundColor
+            viewModel.chrome.updateTheme(themeManager)
             viewModel.isWaitModeEnabled = storedWaitMode
             let slug = song.slugId
             let progress = try? modelContext.fetch(
@@ -243,13 +242,7 @@ struct SongPlayAlongView: View {
             // Live-switch when user changes theme via quick-switch sheet
             viewModel.viewMode = newPreset.viewMode
             viewModel.notationMode = newPreset.notationMode
-            viewModel.rhColor = themeManager.resolved.rightHandColor
-            viewModel.lhColor = themeManager.resolved.leftHandColor
-            viewModel.chordColor = themeManager.resolved.chordColor
-            viewModel.notationLineColor = themeManager.resolved.notationLineColor
-            viewModel.notationSecondaryColor = themeManager.resolved.notationSecondaryColor
-            viewModel.cardBackgroundColor = themeManager.resolved.cardBackgroundColor
-            viewModel.karaokeBackgroundColor = themeManager.resolved.karaokeBackgroundColor
+            viewModel.chrome.updateTheme(themeManager)
             AnalyticsManager.shared.track(
                 .playAlongViewModeChanged,
                 properties: ["view_mode": newPreset.viewMode.rawValue, "song_title": song.title]
