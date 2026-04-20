@@ -16,7 +16,7 @@
 | **SP-3c** View-chrome extraction (phase 3 of 4) | ✅ shipped | `sp-3c-view-chrome` @ `357f366` | `8bd63bd` | 6 |
 | **SP-3d** NoteRouter (phase 4 of 4, HIGH risk) | ✅ shipped | `sp-3d-note-router` @ `1089026` | `91ae34a` | 14 |
 | **SP-3 umbrella** VM ≤ 200 lines + `file_length` disclaimer deleted | ✅ shipped | `sp-3-vm-split-complete` @ `1089026` | `91ae34a` | — |
-| **SP-4** Accessibility polish + iOS Settings nav | ✅ shipped | `sp-4-accessibility` @ `d916fa2` | — | 8 |
+| **SP-4** Accessibility polish + iOS Settings nav | ✅ shipped | `sp-4-accessibility` @ `d916fa2` | `b6d340e` | 8 |
 | **SP-5** Gen-AI harness | ⬜ pending | — | — | — |
 | **SP-6** Mac destination | ⬜ pending | — | — | — |
 
