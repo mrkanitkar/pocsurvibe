@@ -1,8 +1,8 @@
 // SurVibe/PlayAlong/Coordinators/PlayAlongChromeState.swift
 import Foundation
-import os
 import SVCore
 import SwiftUI
+import os
 
 /// Owns the play-along UI presentation state: chrome visibility + auto-hide,
 /// view/notation modes, and resolved theme color holders.
