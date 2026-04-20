@@ -63,6 +63,7 @@ struct LessonCompletionView: View {
                 .opacity(showContent ? 1.0 : 0.0)
             }
         }
+        .sensoryFeedback(.success, trigger: showConfetti)
         .onAppear {
             showConfetti = true
             if reduceMotion {

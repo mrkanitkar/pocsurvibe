@@ -36,6 +36,10 @@ struct AchievementUnlockToast: View {
 
     @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
+    /// Flips true on first appearance so `.sensoryFeedback(.success, trigger:)`
+    /// fires exactly once when the toast enters the hierarchy.
+    @State private var hasAppeared = false
+
     // MARK: - Body
 
     var body: some View {
@@ -63,8 +67,10 @@ struct AchievementUnlockToast: View {
         .accessibilityElement(children: .combine)
         .accessibilityLabel("Achievement unlocked: \(title)")
         .accessibilityAddTraits(.isStaticText)
+        .sensoryFeedback(.success, trigger: hasAppeared)
         .onAppear {
             Self.logger.info("Achievement toast shown: \(title, privacy: .public)")
+            hasAppeared = true
         }
     }
 }
