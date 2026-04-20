@@ -13,7 +13,7 @@
 | **SP-2** Per-surface layout | ✅ shipped | `sp-2-per-surface-layout` | `f50dd0f` | 10+ |
 | **SP-3a** ScoringCoordinator (phase 1 of 4) | ✅ shipped | `sp-3a-scoring` @ `8bf6059` | `55174c2` | 4 |
 | **SP-3b** PlaybackCoordinator (phase 2 of 4) | ✅ shipped | `sp-3b-playback` @ `036a244` | `ea90af7` | 12 |
-| **SP-3c** View-chrome extraction (phase 3 of 4) | ✅ shipped | `sp-3c-view-chrome` @ `357f366` | — | 6 |
+| **SP-3c** View-chrome extraction (phase 3 of 4) | ✅ shipped | `sp-3c-view-chrome` @ `357f366` | `8bd63bd` | 6 |
 | **SP-3d** NoteRouter (phase 4 of 4, HIGH risk) | ⬜ pending | — | — | — |
 | **SP-3 umbrella** VM ≤ 200 lines + `file_length` disclaimer deleted | ⬜ awaits 3b/3c/3d | — | — | — |
 | **SP-4** Accessibility polish + iOS Settings nav | ⬜ pending | — | — | — |
