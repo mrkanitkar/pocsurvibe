@@ -1,4 +1,5 @@
 // SurVibe/PlayAlong/Coordinators/NoteRouter.swift
+// swiftlint:disable file_length
 import Foundation
 import SVAudio
 import SVCore
@@ -26,6 +27,7 @@ import os
 ///   into the actor via `await`.
 @Observable
 @MainActor
+// swiftlint:disable:next type_body_length
 final class NoteRouter {
 
     /// Guided-play feedback state (only meaningful when playback is .idle/.paused).
@@ -167,6 +169,8 @@ final class NoteRouter {
         chordListenerTask?.cancel()
         chordListenerTask = nil
         latestChordResult = nil
+        patienceTimerTask?.cancel()
+        patienceTimerTask = nil
     }
 
     func handleKeyboardNoteOn(midiNote: Int) {
@@ -187,7 +191,8 @@ final class NoteRouter {
     }
 
     func handleKeyboardTouchGuided(midiNote: Int) {
-        // Task 7: guided routing.
+        guard playback.playbackState == .idle || playback.playbackState == .paused else { return }
+        handleGuidedNoteDetected(midiNote: midiNote)
     }
 
     func skipGuidedNote() {
@@ -202,7 +207,7 @@ final class NoteRouter {
             updateExpectedMidiNote()
             guidedPlayState = .waitingForNote
             isStuck = false
-            // Task 7: startPatienceTimer() call.
+            startPatienceTimer()
         } else {
             playback.currentNoteIndex = nil
             expectedMidiNote = nil
@@ -756,5 +761,125 @@ final class NoteRouter {
             probeToken: diff.probeToken,
             chordCompleteness: completeness
         )
+    }
+
+    // MARK: - Private Methods — Guided Free-Play
+
+    /// Handle a note detected in guided free-play mode (before/after timed playback).
+    ///
+    /// Compares the detected MIDI note against the expected note at
+    /// `currentNoteIndex`. On correct: flash green, advance to next note.
+    /// On wrong: flash red, keep waiting. Resets the patience timer on every
+    /// detected note so the hint only fires during silence.
+    ///
+    /// - Parameter midiNote: MIDI note number of the detected pitch.
+    private func handleGuidedNoteDetected(midiNote: Int) {
+        guard let index = playback.currentNoteIndex, index < playback.noteEvents.count else { return }
+
+        // Debounce: only score when the MIDI note changes (new onset).
+        // The mic fires ~20 frames/second while a note is held — without this
+        // the note would be scored and the index would advance multiple times
+        // before the user releases the key.
+        guard midiNote != lastGuidedMidiNote else { return }
+        lastGuidedMidiNote = midiNote
+
+        let expectedEvent = playback.noteEvents[index]
+        let isCorrect = Int(expectedEvent.midiNote) == midiNote
+
+        // Any note input resets the patience timer (user is actively playing)
+        isStuck = false
+        startPatienceTimer()
+
+        let detectedSwarName = Self.swarNameFromMIDI(UInt8(clamping: midiNote))
+        let centsDeviation: Double
+        if let pitch = currentPitch {
+            centsDeviation = abs(pitch.ragaCentsOffset ?? pitch.centsOffset)
+        } else {
+            centsDeviation = isCorrect ? 0 : 50
+        }
+
+        if isCorrect {
+            handleGuidedCorrectNote(
+                event: expectedEvent,
+                index: index,
+                detectedSwarName: detectedSwarName,
+                centsDeviation: centsDeviation
+            )
+        } else {
+            handleGuidedWrongNote(event: expectedEvent)
+        }
+    }
+
+    /// Score a correct guided-mode note and advance to the next event.
+    private func handleGuidedCorrectNote(
+        event: NoteEvent,
+        index: Int,
+        detectedSwarName: String,
+        centsDeviation: Double
+    ) {
+        playback.noteStates[event.id] = .correct
+        let score = NoteScoreCalculator.score(
+            expectedNote: event.swarName,
+            detectedNote: detectedSwarName,
+            pitchDeviationCents: centsDeviation,
+            timingDeviationSeconds: 0,
+            durationDeviation: 0,
+            ragaPitchDeviationCents: currentPitch?.ragaCentsOffset.map { abs($0) },
+            ragaContext: ragaScoringContext
+        )
+        scoring.record(score)
+        scoring.updateStreak(grade: score.grade)
+        guidedPlayState = .correct
+        lastGuidedMidiNote = nil
+
+        let nextIndex = index + 1
+        Task { [weak self] in
+            guard let self else { return }
+            try? await Task.sleep(for: .milliseconds(150))
+            if nextIndex < self.playback.noteEvents.count {
+                self.playback.currentNoteIndex = nextIndex
+                self.updateExpectedMidiNote()
+                self.guidedPlayState = .waitingForNote
+                self.isStuck = false
+                self.startPatienceTimer()
+            } else {
+                self.playback.currentNoteIndex = nil
+                self.expectedMidiNote = nil
+                self.guidedPlayState = .waitingForNote
+            }
+        }
+    }
+
+    /// Flash wrong feedback and reset debounce for the next attempt.
+    private func handleGuidedWrongNote(event: NoteEvent) {
+        playback.noteStates[event.id] = .wrong
+        guidedPlayState = .wrong
+        lastGuidedMidiNote = nil
+        Task { [weak self] in
+            guard let self else { return }
+            try? await Task.sleep(for: .milliseconds(100))
+            if self.guidedPlayState == .wrong {
+                self.guidedPlayState = .waitingForNote
+            }
+        }
+    }
+
+    /// Start the patience timer for the current expected note.
+    ///
+    /// After `patienceSeconds` of silence, transitions to `.stuck` state
+    /// so the view can show a hint overlay.
+    private func startPatienceTimer() {
+        patienceTimerTask?.cancel()
+        patienceTimerTask = Task { [weak self] in
+            guard let self else { return }
+            let timeout = self.patienceSeconds
+            try? await Task.sleep(for: .seconds(timeout))
+            guard !Task.isCancelled else { return }
+            // Only mark stuck when in guided mode (not during timed playback)
+            if self.playback.playbackState == .idle || self.playback.playbackState == .paused {
+                self.isStuck = true
+                self.guidedPlayState = .stuck
+            }
+        }
     }
 }
