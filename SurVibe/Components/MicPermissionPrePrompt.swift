@@ -14,8 +14,10 @@ import SwiftUI
 struct MicPermissionPrePrompt: View {
     // MARK: - Properties
 
-    @AppStorage("hasSeenMicPermissionPrePrompt") private var hasSeen: Bool = false
-    @Environment(\.dismiss) private var dismiss
+    @AppStorage("hasSeenMicPermissionPrePrompt")
+    private var hasSeen: Bool = false
+    @Environment(\.dismiss)
+    private var dismiss
 
     /// Invoked after the user confirms — callers may use this to kick off the
     /// system permission request. Safe to pass an empty closure when the
