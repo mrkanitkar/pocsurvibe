@@ -11,8 +11,11 @@ struct SettingsView: View {
     var body: some View {
         Form {
             Section("Appearance") {
-                Text("Populated in SP-4")
-                    .foregroundStyle(.secondary)
+                NavigationLink {
+                    AppearanceSettingsView()
+                } label: {
+                    Label("Display", systemImage: "paintbrush")
+                }
             }
             Section("Privacy") {
                 Text("Populated in SP-5")
