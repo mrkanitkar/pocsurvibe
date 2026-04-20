@@ -482,3 +482,77 @@ Wrapping them into an `@Observable` struct field on the chrome coordinator would
 ### Acceptance criteria — refined for SP-3c
 
 §6's SP-3c checklist remains authoritative. The behavioural acceptance — `PlayAlongChromeTests` (6 existing tests) continue to pass against the facade-delegated chrome state, view-side theme color reads still produce the same colors, auto-hide timer behaves identically — is unchanged.
+
+## 13. SP-3d plan-time refinements (locked 2026-04-20, post-SP-3c merge)
+
+Captured after plan-time code reading on `main` post-SP-3c merge (commit `a934d63`) plus a deeper audit cross-check against [docs/ADR_MIDI_Latency_Architecture.md](../../ADR_MIDI_Latency_Architecture.md) (ADR-002). Adjusts §5.4 where reality and the spec diverge significantly. Same Option-B-style reasoning as SP-3b/3c.
+
+### D-SP3d-1 — Reframe the load-bearing invariant (CRITICAL)
+
+§5.4 said NoteRouter "owns the SOLE site that calls `AudioEngineManager.shared.noteOn(_:velocity:)`" and called this the HIGHEST-risk invariant. Plan-time grep across the entire repo (`SurVibe/`, `Packages/`) returns **zero** call sites for `AudioEngineManager.shared.noteOn` (the only hit is the doc comment in `PlaybackCoordinator.swift:33` referencing this very (non-existent) invariant). Direct verification of `AudioEngineManager`'s public API surface confirms the methods are: `start()`, `startForPlayback()`, `stop()`, `removeMicTap()`, `setSamplerVolume`, `setTanpuraVolume`, `setMetronomeVolume`. **No `noteOn` / `playNote` / `startNote` method exists.**
+
+User input is detected (mic pitch / MIDI callback / on-screen touch) and scored, but never echoed through the audio engine — the user listens to themselves play (physical piano or MIDI controller's local sound) plus the app's scheduled accompaniment from `PlaybackCoordinator.playNoteSound` → `soundFont.playNote`.
+
+**Locked decision:** replace the spec §5.4 invariant with the ACTUAL load-bearing invariants from ADR-002:
+
+- **ADR-002 Phase 1 (CoreMIDI → highlight, sub-ms latency, lock-free):** `MIDINoteHighlightCoordinator` with `OSAllocatedUnfairLock` + `CADisplayLink` is "best-in-class" per ADR-002 §Decision. NoteRouter must NOT change this path. Phase 1 stays bit-for-bit identical: CoreMIDI thread → `coordinator.noteOn(midiNote)` (the highlight coordinator, not the audio engine) → `OSAllocatedUnfairLock` write → `CADisplayLink`-paced UI read. Zero actor hops, zero `await`.
+- **ADR-002 Phase 2 (off-MainActor scoring via custom actor):** `NoteMatchingActor` already exists at [NoteMatchingActor.swift:27](SurVibe/PlayAlong/NoteMatchingActor.swift) as a Swift custom actor (NOT MainActor). NoteRouter dispatches scoring through it. Pure computation off the main thread.
+- **Phase 3 (coalesced MainActor write back):** `NoteRouter` is `@MainActor` (matches every other coordinator). Phase 2 results hop back to MainActor for `@Observable` mutation only.
+
+Verification at task end: `grep AudioEngineManager.shared.noteOn` returns 0 hits (already true, must stay true). `grep coordinator.noteOn` returns exactly one hit on the MIDI highlight path. ADR-002 Phase 1 / Phase 2 architecture preserved.
+
+### D-SP3d-2 — Coordinator exposes domain verbs (Option B), not user-action verbs
+
+§5.4 listed `startMIDIDetection / stopMIDIDetection / startMicPitchDetection / stopMicPitchDetection` as separate methods. Plan-time code reading shows the VM has `startPitchDetection()` (which starts BOTH the mic processor AND the chord listener) and `startMIDIDetection()` (which sets up the CoreMIDI callback path). The two start sites are called in pairs from `loadSong / startSession / pauseSession`.
+
+**Locked decision:** unify into `startInputDetection()` and `stopInputDetection()` — domain verbs that match the coordinator's responsibility (input detection from any source). Internal private methods preserve the `startPitchDetection / startMIDIDetection` decomposition for clarity. Same Option B pattern as SP-3b/3c.
+
+```swift
+@Observable @MainActor final class NoteRouter {
+    func startInputDetection() async   // mic processor + MIDI callbacks + chord listener + connection monitoring + display-link integration
+    func stopInputDetection()          // cancel all input tasks, stop processor, clear MIDI callbacks
+    func handleKeyboardNoteOn(midiNote: Int)
+    func handleKeyboardNoteOff(midiNote: Int)
+    func handleKeyboardTouch(midiNote: Int) async  // legacy test entry point
+    func handleKeyboardTouchGuided(midiNote: Int)
+    func skipGuidedNote()
+}
+```
+
+### D-SP3d-3 — Move `latencyPreset` from VM to NoteRouter (closes deferred D-SP3c-1)
+
+VM line 191 `latencyPreset` didSet calls `audioProcessor.stop()` + `startPitchDetection()`. Both are NoteRouter territory.
+
+**Locked decision:** `latencyPreset` lives on `NoteRouter` with its didSet side-effect attached. The facade re-exposes via `var latencyPreset: LatencyPreset { get { noteRouter.latencyPreset } set { noteRouter.latencyPreset = newValue } }`. UserDefaults persistence stays inside the property's didSet (existing behavior).
+
+### D-SP3d-4 — Move `chromeAutoHideSeconds`/`chromeAutoHideTask` into PlayAlongChromeState (closes deferred D-SP3c-6)
+
+D-SP3c-6 retained these on VM because `PlayAlongChromeTests` writes `vm.chromeAutoHideSeconds = X` to control auto-hide duration in tests. The static `autoHideDuration` constant prevented direct extraction.
+
+**Locked decision:** `PlayAlongChromeState` grows `var autoHideOverrideSeconds: TimeInterval?` (defaults nil → uses `static let autoHideDuration`). When test sets `vm.chrome.autoHideOverrideSeconds = 0.1`, the coordinator's `resetAutoHide()` uses the override instead of the static constant. VM's `chromeAutoHideSeconds` and `chromeAutoHideTask` are deleted entirely. `PlayAlongChromeTests` is migrated to write `vm.chrome.autoHideOverrideSeconds = X` instead. Eliminates the dual-timer code smell.
+
+### D-SP3d-5 — Larger task count (12-14 tasks)
+
+§5.4 estimated ~500 LOC peel. Plan-time count is closer to ~880 LOC across pitch detection (~510), note input processing (~158), public input handlers (~150), guided-play state (~40), `latencyPreset` (~15), chrome cleanup (~10). Larger surface needs more decomposition than SP-3b's 11 tasks.
+
+**Locked decision:** SP-3d ships in 13 tasks (one more than SP-3b). Extra task is the chrome-state migration (D-SP3d-4) which touches a different file (`PlayAlongChromeState.swift` + `PlayAlongChromeTests.swift`) so deserves its own task to keep commits clean.
+
+### D-SP3d-6 — Update CLAUDE.md NSLock language to OSAllocatedUnfairLock
+
+CLAUDE.md says `MIDIInputManager uses NSLock instead of @MainActor because CoreMIDI callbacks arrive on arbitrary threads`. Reality (per AUD-033 in [Architecture_Audit_Report.md](../../Architecture_Audit_Report.md)): the actual code uses `OSAllocatedUnfairLock` (lower overhead than NSLock; FIFO unfair semantics prevent priority inversion). NoteRouter's docstring should reference the real lock primitive.
+
+**Locked decision:** SP-3d's NoteRouter docstring references `OSAllocatedUnfairLock` (matching reality). One-line CLAUDE.md update at the same time: `MIDIInputManager uses OSAllocatedUnfairLock (per AUD-033) instead of @MainActor`. Cosmetic doc fix, no behavior change.
+
+### D-SP3d-7 — SP-3 umbrella close-out is part of SP-3d
+
+§10's umbrella exit checklist (VM ≤ 200 lines, delete `// swiftlint:disable file_length`, push `sp-3-vm-split-complete` tag, flip tracker SP-3 row) ships within SP-3d. After NoteRouter extraction, the final tasks delete the disclaimer directives, verify VM line count, push the umbrella tag.
+
+**Locked decision:** SP-3d's final task batch handles the umbrella close-out. No separate sub-project needed. Two tags ship from SP-3d: `sp-3d-note-router` + `sp-3-vm-split-complete`.
+
+### Acceptance criteria — refined for SP-3d
+
+§6's SP-3d checklist remains authoritative + add:
+
+- ADR-002 Phase 1 invariant verification: `grep coordinator.noteOn` returns exactly 1 hit on the MIDI highlight path (currently `PlayAlongViewModel.swift:785`, post-SP-3d should be `NoteRouter.swift:<line>`).
+- ADR-002 Phase 2 invariant verification: `NoteMatchingActor` is the only `actor` (lowercase, custom Swift actor) under `SurVibe/PlayAlong/`. NoteRouter is `@MainActor` (not `actor`).
+- §10 umbrella exit checklist passes: VM ≤ 200 lines, file_length disclaimer deleted, `sp-3-vm-split-complete` tag pushed.
