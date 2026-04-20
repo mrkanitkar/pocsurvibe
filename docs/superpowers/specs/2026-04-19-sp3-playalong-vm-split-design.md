@@ -442,3 +442,43 @@ Per SP-0 D-SP0-1 / SP-1 D-SP1-1 pattern: `init(analytics: (any AnalyticsProvidin
 ### Acceptance criteria — refined for SP-3b
 
 §6's SP-3b checklist remains authoritative. The *coordinator method names* in that checklist read as the new Option-B verbs. The behavioural acceptance — TransportActions bindings (`togglePlayPause`, `seek(by:)`, `stop`) keep dispatching correctly via the facade, session completion still writes to `modelContext` via `PracticeSessionRecorder`, both latency gates green, all 8 PlayAlong suites green — is unchanged.
+
+## 12. SP-3c plan-time refinements (locked 2026-04-20, post-SP-3b merge)
+
+Captured after plan-time code reading on `main` post-SP-3b merge (commit `4ca65ae`). Adjusts §5.3 where reality and the spec diverge. Same Option-B-style "honest boundaries over speculative scaffolding" reasoning as SP-3b §11.
+
+### D-SP3c-1 — `latencyPreset` stays on VM, defers to SP-3d
+
+§5.3 listed `latencyPreset: LatencyPreset = .fast` on `PlayAlongChromeState`. Plan-time code reading shows `latencyPreset`'s `didSet` at [PlayAlongViewModel.swift:159-167](SurVibe/PlayAlong/PlayAlongViewModel.swift) calls `audioProcessor.stop()` + `startPitchDetection()` — pure NoteRouter territory. Moving to chrome state would require either (a) closure DI (the Option-A pattern rejected for SP-3b), or (b) splitting the persisted property from its side-effect (cosmetic separation that doesn't reduce VM size).
+
+**Locked decision:** `latencyPreset` stays on `PlayAlongViewModel` for SP-3c. SP-3d moves it alongside NoteRouter (which inherits the side-effect) so the property and its consequence ship together. No release shipped → spec adjustable.
+
+### D-SP3c-2 — Theme colors stay as 7 individual `@ObservationIgnored` properties
+
+§5.3 proposed bundling the 7 color properties into a `ResolvedPlayAlongColors` struct. Reality: views read `viewModel.rhColor`, `viewModel.lhColor`, etc. directly (verified via grep across `SurVibe/PlayAlong/`). Today these are `@ObservationIgnored` because they're set once at view `.task` and don't trigger re-renders.
+
+Wrapping them into an `@Observable` struct field on the chrome coordinator would change observation semantics — theme changes mid-play would propagate to views (they don't today). Strict "no behavior changes" mandate (spec §1) forbids this.
+
+**Locked decision:** keep the 7 individual properties as `@ObservationIgnored` stored properties on `PlayAlongChromeState`. Facade re-exposes each as a delegating computed property so `viewModel.rhColor` continues to work. SP-3c-or-later optimization to bundle into a struct is a separate, behavior-changing project.
+
+### D-SP3c-3 — `updateTheme(_:)` method centralizes color resolution
+
+§5.3 proposed `updateTheme(_ themeManager: AppThemeManager)` on the chrome coordinator. Reality: theme color assignment lives inline in [SongPlayAlongView.swift:219-225, 246-249](SurVibe/PlayAlong/SongPlayAlongView.swift) — the view does 7 manual reads of `themeManager.resolved.X` and assigns to `viewModel.X`.
+
+**Locked decision:** chrome coordinator gets `updateTheme(_ themeManager: AppThemeManager)`. The view replaces 14 lines of inline assignment with a single `chrome.updateTheme(themeManager)` call (or `viewModel.chrome.updateTheme(themeManager)` if accessed via facade). Behavior identical (same `themeManager.resolved.X` reads, same color targets), responsibility cleaner.
+
+### D-SP3c-4 — `chromeAutoHideSeconds` becomes `static let autoHideDuration`
+
+§5.3 proposed `static let autoHideDuration: TimeInterval = 6.0`. Today VM has `var chromeAutoHideSeconds: Double = 6.0` (line 249). The value is never reassigned in production code — confirmed via grep. Magic number → named static let with docstring per spec §1's hardcoded-logic discipline.
+
+**Locked decision:** `static let autoHideDuration: TimeInterval = 6.0` on `PlayAlongChromeState`. The VM's old `var chromeAutoHideSeconds` is removed (no callers outside the chrome methods that move into the coordinator).
+
+### D-SP3c-5 — Analytics not threaded (no track sites in chrome state)
+
+§5.3 didn't list analytics as a dependency. Confirmed: chrome visibility methods (`summonChrome`, `hideChrome`, `resetAutoHide`) and view-mode setters do NOT fire analytics today. No `init(analytics:)` parameter needed on the chrome coordinator. Simpler init than `PlaybackCoordinator`.
+
+**Locked decision:** chrome coordinator init takes zero dependencies — `init()` is sufficient. (Could add `themeManager` later if `updateTheme` becomes "configure once at init" instead of "call from view's `.task`," but that's a separate refactor and doesn't fit SP-3c's scope.)
+
+### Acceptance criteria — refined for SP-3c
+
+§6's SP-3c checklist remains authoritative. The behavioural acceptance — `PlayAlongChromeTests` (6 existing tests) continue to pass against the facade-delegated chrome state, view-side theme color reads still produce the same colors, auto-hide timer behaves identically — is unchanged.
