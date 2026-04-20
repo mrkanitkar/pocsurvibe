@@ -111,6 +111,12 @@ struct InteractivePianoView: View {
     @Environment(\.accessibilityReduceMotion)
     private var reduceMotion
 
+    /// Colorblind-aware differentiation: when true, render an R/L/• letter
+    /// overlay on top of highlighted keys so users who cannot distinguish
+    /// the RH/LH/chord fill colors still perceive which hand the key belongs to.
+    @Environment(\.accessibilityDifferentiateWithoutColor)
+    private var differentiateWithoutColor
+
     // MARK: - Constants
 
     /// Devanagari labels indexed by chromatic position (0 = Sa/C, 1 = Komal Re/Db, ...).
@@ -225,6 +231,16 @@ struct InteractivePianoView: View {
             if isNatural {
                 whiteKeyLabels(midi: midi, noteIndex: noteIndex, hasHighlight: hasHighlight)
             }
+            if differentiateWithoutColor, let letter = differentiateLetter(forMidi: midi) {
+                Text(verbatim: letter)
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(.white)
+                    .padding(2)
+                    .background(Color.black.opacity(0.55), in: Circle())
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                    .padding(.top, 2)
+                    .accessibilityHidden(true)
+            }
         }
         .scaleEffect(hasHighlight && !reduceMotion ? (isNatural ? 1.04 : 1.06) : 1.0)
         .animation(
@@ -334,6 +350,26 @@ struct InteractivePianoView: View {
         case (false, false):
             return isExpected ? .orange : nil
         }
+    }
+
+    /// Letter shown on a highlighted key when
+    /// `accessibilityDifferentiateWithoutColor` is enabled.
+    ///
+    /// R = right hand, L = left hand, `•` = both/chord. Returns nil when the
+    /// key has no RH/LH/chord membership (detection-only, touch-only, and
+    /// expected-note highlights are color-only and don't need differentiation).
+    ///
+    /// - Parameter midiNote: MIDI note number to classify.
+    /// - Returns: "R", "L", "•", or nil.
+    private func differentiateLetter(forMidi midiNote: Int) -> String? {
+        let rh = highlightState?.rhNotes ?? []
+        let lh = highlightState?.lhNotes ?? []
+        let chord = highlightState?.chordNotes ?? []
+        if chord.contains(midiNote) { return "•" }
+        if rh.contains(midiNote) && lh.contains(midiNote) { return "•" }
+        if rh.contains(midiNote) { return "R" }
+        if lh.contains(midiNote) { return "L" }
+        return nil
     }
 
     /// Compute the background fill color for a key.
