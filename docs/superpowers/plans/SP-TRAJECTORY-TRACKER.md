@@ -110,6 +110,66 @@ PlayAlongViewModel (god-object 1,828 → facade 446 lines, -1,382 net).
 
 Next: SP-4 Accessibility polish + iOS in-app Settings navigation.
 
+## Post-SP-3 pending-items audit (2026-04-20)
+
+Re-verified against `main @ 31f936d` (post-SP-3-merge) via direct grep. Some items previously tracked as pending are **already done** by intervening work; the true outstanding list is smaller than the original refactor-plan catalog.
+
+### ✅ Already done (mark closed)
+
+| Item | Source | Evidence on main |
+|---|---|---|
+| P1-7 Devanagari `accessibilityLabel` on SargamNoteView | Audit P1-7 | `SurVibe/Notation/SargamNoteView.swift:78` has `.accessibilityLabel(accessibilityDescription)` |
+| P1-9 Skip-onboarding button | Audit P1-9 | `OnboardingContainerView.swift:103` contains Skip button; line 9 docs it |
+| iOS Settings navigation (partial) | SP-0 AD-5 / SP-4 | `AppearanceSettingsView` wired via `NavigationLink(value: "display")` from `ProfileTab.swift:62`; macOS `Settings { SettingsView() }` scene at `SurVibeApp.swift:247` |
+| Pre-existing OnboardingManagerTests failure | SP-2 brief | `SurVibeTests/OnboardingManagerTests.swift` no longer exists — concern resolved or file renamed/removed |
+
+### ⬜ Genuinely outstanding P1 items → SP-4 scope candidates
+
+| Item | Source | Outstanding-on-main evidence |
+|---|---|---|
+| P1-2 Live Activity / Dynamic Island | Audit P1-2 | No `SurVibeWidgets/` target; 0 `ActivityKit` imports |
+| P1-4 Apple Pencil annotation on notation | Audit P1-4 | 0 `PKCanvasView` / `PencilKit` hits |
+| P1-5 Hand colors → Rang theme tokens | Audit P1-5 | `InteractivePianoView.swift:79,84` still `rhColor = .blue` / `lhColor = .red` |
+| P1-6 Differentiate-without-color on key highlights | Audit P1-6 | 0 `accessibilityDifferentiateWithoutColor` hits |
+| P1-8 Pinch-zoom on ScrollingSheetView + double-tap reset | Audit P1-8 | 0 `MagnificationGesture` hits on ScrollingSheetView |
+| P1-10 Mic permission pre-prompt | Audit P1-10 | `SurVibe/Components/MicPermissionPrePrompt.swift` does not exist |
+| SP-0 F5 Populate SettingsView Appearance section | SP-0 | `SettingsView.swift:14` still says `Text("Populated in SP-4")` |
+| P1-11 GenAI harness | Audit P1-11 | SVAI has only stubs (Protocols/Providers/Router/SVAI.swift); no AIGeneratedBadge/AIDisclosureSheet/PromptSanitiser/AIFeedbackControl |
+
+### ⬜ Outstanding P2 items → later or opportunistic
+
+| Item | Source | Outstanding-on-main evidence |
+|---|---|---|
+| P2-2 HapticEngine / `.sensoryFeedback` on success paths | Audit P2-2 | 0 hits on AchievementUnlockToast/LessonCompletionView/SongPlayAlongView (only existing use is ThemeCarouselPicker) |
+| P2-3 AppIntent "Start riyaz" | Audit P2-3 | 0 `import AppIntents` hits |
+| P2-4 Multi-window for play-along | Audit P2-4 | 0 `WindowGroup(for:` hits |
+| P2-5 External display scene | Audit P2-5 | no external-display scene present |
+| P2-6 `@FocusState` arrow-key card nav | Audit P2-6 | partial (Enter landed SP-2; arrow-key not yet) |
+| P2-7 SVAudio macOS port | Audit P2-7 | `Packages/SVAudio/Package.swift` still `platforms: [.iOS(.v26)]` only |
+| P2-8 `SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD` | Audit P2-8 | absent from pbxproj |
+| P2-9 TipKit migration | Audit P2-9 | 0 `import TipKit` hits |
+| P2-12 Presentation detents audit | Audit P2-12 | not audited |
+| P2-13 Haptics on tab switch | Audit P2-13 | no `.sensoryFeedback(...trigger: selectedTab)` on ContentView |
+| P2-14 Focus filters for riyaz mode | Audit P2-14 | 0 `FocusFilter` hits |
+
+### Cross-SP dependencies
+
+- **SP-4 ↔ SP-5:** `SP-5` wants a Privacy section on SettingsView. `SP-4` populates the Appearance section. No hard ordering — the two sections are independent `Section(...)` blocks. SP-4 first is more natural (Settings becomes usable sooner) but not required.
+- **SP-4 ↔ SP-6:** none.
+- **SP-5 ↔ SP-6:** none.
+
+### Dependency-graph summary for remaining trajectory
+
+```
+SP-4 (accessibility + Settings) ──┐
+                                  ├─→ can run in any order
+SP-5 (Gen-AI harness) ────────────┤
+                                  │
+SP-6 (Mac destination) ───────────┘
+```
+
+Recommended sequential order (for reviewability, not dependency): **SP-4 → SP-5 → SP-6**.
+
 **Test-suite snapshot (verified 2026-04-19 on `feat/sp-3b-playback-coordinator` @ `036a244`):**
 - SVCore: **93/93 passing**.
 - `PlaybackCoordinatorTests`: **7/7 passing**.
