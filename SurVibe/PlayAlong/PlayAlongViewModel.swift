@@ -206,46 +206,21 @@ final class PlayAlongViewModel {
     /// Chrome visibility — delegates to `chrome.chromeVisibility`.
     var chromeVisibility: PlayAlongChromeState.ChromeVisibility { chrome.chromeVisibility }
 
-    /// Seconds of inactivity before chrome auto-hides. `0` disables auto-hide.
-    ///
-    /// The VM-level timer is used so callers can override the duration at
-    /// runtime (e.g. tests set `0` to disable auto-hide). The coordinator
-    /// owns the visibility state; the VM-level task calls `chrome.hideChrome()`
-    /// when the countdown expires.
-    var chromeAutoHideSeconds: Double = 6.0
-
-    /// Outstanding VM-level auto-hide timer. Cancel when user interacts.
-    @ObservationIgnored
-    private var chromeAutoHideTask: Task<Void, Never>?
-
     // MARK: - Chrome Actions (v2) — delegates to chrome coordinator
 
     /// Show the chrome and start/restart the auto-hide countdown.
     func summonChrome() {
         chrome.summonChrome()
-        resetAutoHide()
     }
 
     /// Reset the auto-hide countdown (user interaction with a control).
-    ///
-    /// Uses `chromeAutoHideSeconds` so callers can override the duration.
-    /// Calls `chrome.hideChrome()` when the countdown expires.
     func resetAutoHide() {
-        chromeAutoHideTask?.cancel()
-        guard chromeAutoHideSeconds > 0 else { return }
-        let seconds = chromeAutoHideSeconds
-        chromeAutoHideTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .seconds(seconds))
-            guard !Task.isCancelled else { return }
-            self?.chrome.hideChrome()
-        }
+        chrome.resetAutoHide()
     }
 
     /// Hide chrome immediately. Cancels any pending auto-hide timer.
     func hideChrome() {
         chrome.hideChrome()
-        chromeAutoHideTask?.cancel()
-        chromeAutoHideTask = nil
     }
 
     // MARK: - Dependencies (injected for testability)
