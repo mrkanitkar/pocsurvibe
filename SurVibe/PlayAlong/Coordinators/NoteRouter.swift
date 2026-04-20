@@ -176,7 +176,11 @@ final class NoteRouter {
     func handleKeyboardNoteOn(midiNote: Int) {
         detectedMidiNotes.insert(midiNote)
         updateDetectedSwarInfo(from: detectedMidiNotes)
-        // Task 8: routing to processNoteInput / handleGuidedNoteDetected.
+        if playback.playbackState == .playing {
+            Task { await processNoteInput(midiNote: midiNote) }
+        } else if playback.playbackState == .idle || playback.playbackState == .paused {
+            handleGuidedNoteDetected(midiNote: midiNote)
+        }
     }
 
     func handleKeyboardNoteOff(midiNote: Int) {
@@ -187,7 +191,11 @@ final class NoteRouter {
     func handleKeyboardTouch(midiNote: Int) async {
         detectedMidiNotes.insert(midiNote)
         updateDetectedSwarInfo(from: detectedMidiNotes)
-        // Task 8: awaitable routing.
+        if playback.playbackState == .playing {
+            await processNoteInput(midiNote: midiNote)
+        } else if playback.playbackState == .idle || playback.playbackState == .paused {
+            handleGuidedNoteDetected(midiNote: midiNote)
+        }
     }
 
     func handleKeyboardTouchGuided(midiNote: Int) {
