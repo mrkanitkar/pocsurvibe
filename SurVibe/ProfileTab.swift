@@ -31,6 +31,10 @@ struct ProfileTab: View {
     @State
     private var signInTrigger: SignInTrigger?
 
+    /// Tracks which row has hardware-keyboard focus.
+    @FocusState
+    private var focusedRowID: ProfileRowID?
+
     /// All UserProfile records — expected to be exactly one singleton.
     @Query
     private var userProfiles: [UserProfile]
@@ -78,8 +82,45 @@ struct ProfileTab: View {
                     context: buildProfileAchievementContext()
                 )
             }
+            .onAppear {
+                if focusedRowID == nil {
+                    focusedRowID = .appLanguage
+                }
+            }
         }
         .accessibilityLabel(AccessibilityHelper.tabLabel(for: "Profile"))
+    }
+
+    // MARK: - Keyboard Focus
+
+    /// Moves keyboard focus to the next row in the given direction.
+    /// Linear list → columns = 1.
+    private func moveFocus(_ direction: LibraryFocusNavigator.FocusDirection, from currentID: ProfileRowID) {
+        let rows = ProfileRowID.allCases
+        guard let currentIndex = rows.firstIndex(of: currentID) else { return }
+        guard
+            let nextIndex = LibraryFocusNavigator.nextIndex(
+                for: direction,
+                currentIndex: currentIndex,
+                count: rows.count,
+                columns: 1
+            )
+        else { return }
+        focusedRowID = rows[nextIndex]
+    }
+
+    /// Builds the focus + keyboard + ring modifier chain for a ProfileTab row.
+    /// Consolidates the chain so each row site stays scannable.
+    private func profileRowNav(for rowID: ProfileRowID, onReturn: @escaping () -> KeyPress.Result) -> ProfileRowNavModifier {
+        ProfileRowNavModifier(
+            rowID: rowID,
+            focusedID: focusedRowID,
+            focusBinding: $focusedRowID,
+            accent: themeManager.resolved.accentColor,
+            onReturn: onReturn,
+            onMove: { direction, id in moveFocus(direction, from: id) },
+            onEscape: { focusedRowID = nil }
+        )
     }
 
     // MARK: - Gamification Sections
@@ -245,6 +286,7 @@ struct ProfileTab: View {
             .accessibilityHint(
                 Text("Current language: \(languageManager.currentLanguageDisplayName). Double tap to change.")
             )
+            .modifier(profileRowNav(for: .appLanguage) { .ignored })
 
             // Auto-hide sargam labels toggle
             Toggle("Auto-hide sargam labels", isOn: $autoHideSargamLabels)
@@ -259,6 +301,7 @@ struct ProfileTab: View {
             .accessibilityHint(
                 Text("Choose which connected MIDI keyboard feeds play-along sessions. Double tap to open.")
             )
+            .modifier(profileRowNav(for: .midiDevice) { .ignored })
 
             // Redo Onboarding
             Button {
@@ -269,6 +312,10 @@ struct ProfileTab: View {
             .hoverEffect(.automatic)
             .accessibilityLabel(Text("Redo Onboarding"))
             .accessibilityHint(Text("Double tap to restart the onboarding flow and reconfigure your preferences"))
+            .modifier(profileRowNav(for: .redoOnboarding) {
+                onboardingManager.resetOnboarding()
+                return .handled
+            })
         }
     }
 
@@ -290,6 +337,7 @@ struct ProfileTab: View {
             .accessibilityHint(
                 "Current theme: \(themeManager.currentPreset.displayName). Double tap to change."
             )
+            .modifier(profileRowNav(for: .theme) { .ignored })
 
             NavigationLink(value: "display") {
                 HStack {
@@ -304,6 +352,7 @@ struct ProfileTab: View {
             .hoverEffect(.automatic)
             .accessibilityLabel("Display settings")
             .accessibilityHint("Dim Mode and brightness options. Double tap to open.")
+            .modifier(profileRowNav(for: .display) { .ignored })
         }
     }
 
@@ -377,4 +426,47 @@ struct ProfileTab: View {
             ],
             inMemory: true
         )
+}
+
+// MARK: - ProfileRowID
+
+/// Stable identity for the 5 ProfileTab NavigationLink/Button rows with hoverEffect.
+/// Order matches the on-screen vertical list order (Settings section first, then Appearance).
+enum ProfileRowID: String, Hashable, CaseIterable {
+    case appLanguage
+    case midiDevice
+    case redoOnboarding
+    case theme
+    case display
+}
+
+// MARK: - ProfileRowNavModifier
+
+/// Attaches `@FocusState` binding + focus ring + Return + arrow-key + escape to a ProfileTab row.
+/// Centralises the modifier chain so each row call site is concise.
+struct ProfileRowNavModifier: ViewModifier {
+    let rowID: ProfileRowID
+    let focusedID: ProfileRowID?
+    let focusBinding: FocusState<ProfileRowID?>.Binding
+    let accent: Color
+    let onReturn: () -> KeyPress.Result
+    let onMove: (LibraryFocusNavigator.FocusDirection, ProfileRowID) -> Void
+    let onEscape: () -> Void
+
+    func body(content: Content) -> some View {
+        content
+            .focused(focusBinding, equals: rowID)
+            .focusRing(itemID: rowID, focusedID: focusedID, accent: accent)
+            .onKeyPress(.return) { onReturn() }
+            .onKeyPress(keys: [.upArrow, .downArrow]) { press in
+                let direction: LibraryFocusNavigator.FocusDirection =
+                    (press.key == .upArrow) ? .up : .down
+                onMove(direction, rowID)
+                return .handled
+            }
+            .onKeyPress(.escape) {
+                onEscape()
+                return .handled
+            }
+    }
 }
