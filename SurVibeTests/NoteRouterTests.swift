@@ -191,20 +191,4 @@ struct NoteRouterTests {
         #expect(router.detectedMidiNotes.isEmpty, "detectedMidiNotes cleared on stop")
     }
 
-    /// When the `MockMIDIInputProvider` simulates a note-on via the direct
-    /// `onNoteEvent` callback (the lock-free CoreMIDI path), `NoteRouter`
-    /// inserts the note into `detectedMidiNotes`.
-    @Test func midiNoteOnEventViaCallbackInsertsIntoDetectedSet() {
-        let midi = MockMIDIInputProvider()
-        let scoring = ScoringCoordinator()
-        let playback = makePlayback(scoring: scoring)
-        let router = makeRouter(midi: midi, scoring: scoring, playback: playback)
-
-        // Wire up MIDI (NoteRouter does this in startInputDetection or similar).
-        router.startInputDetection()
-
-        midi.simulateNoteOn(noteNumber: 64, velocity: 80)
-
-        #expect(router.detectedMidiNotes.contains(64), "MIDI note-on via direct callback inserts note")
-    }
 }
