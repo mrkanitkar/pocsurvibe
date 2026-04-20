@@ -128,6 +128,33 @@ struct SongLibraryView: View {
         .task {
             await viewModel.loadSongs()
         }
+        .onAppear {
+            if focusedSongID == nil, let first = viewModel.filteredSongs.first {
+                focusedSongID = first.id
+            }
+        }
+    }
+
+    // MARK: - Keyboard Focus
+
+    /// Column count used for arrow-key grid math.
+    /// Matches the practical column count of `.adaptive(minimum: 160)` on iPhone + split-iPad.
+    /// Wide-iPad multi-col layouts degrade gracefully (still navigate linearly).
+    private static let gridColumns = 2
+
+    /// Moves keyboard focus to the next song card in the given direction.
+    private func moveFocus(_ direction: LibraryFocusNavigator.FocusDirection, from currentID: Song.ID) {
+        let songs = viewModel.filteredSongs
+        guard let currentIndex = songs.firstIndex(where: { $0.id == currentID }) else { return }
+        guard
+            let nextIndex = LibraryFocusNavigator.nextIndex(
+                for: direction,
+                currentIndex: currentIndex,
+                count: songs.count,
+                columns: Self.gridColumns
+            )
+        else { return }
+        focusedSongID = songs[nextIndex].id
     }
 
     // MARK: - Subviews
@@ -147,6 +174,18 @@ struct SongLibraryView: View {
                                 signInTrigger = .premiumSong
                                 return .handled
                             }
+                            .onKeyPress(keys: [.upArrow, .downArrow, .leftArrow, .rightArrow]) { press in
+                                let direction: LibraryFocusNavigator.FocusDirection
+                                switch press.key {
+                                case .upArrow: direction = .up
+                                case .downArrow: direction = .down
+                                case .leftArrow: direction = .left
+                                case .rightArrow: direction = .right
+                                default: return .ignored
+                                }
+                                moveFocus(direction, from: song.id)
+                                return .handled
+                            }
                     } else {
                         NavigationLink(value: song) {
                             SongCardView(song: song)
@@ -155,6 +194,18 @@ struct SongLibraryView: View {
                         .focused($focusedSongID, equals: song.id)
                         .onKeyPress(.return) {
                             router.openSong(song.id)
+                            return .handled
+                        }
+                        .onKeyPress(keys: [.upArrow, .downArrow, .leftArrow, .rightArrow]) { press in
+                            let direction: LibraryFocusNavigator.FocusDirection
+                            switch press.key {
+                            case .upArrow: direction = .up
+                            case .downArrow: direction = .down
+                            case .leftArrow: direction = .left
+                            case .rightArrow: direction = .right
+                            default: return .ignored
+                            }
+                            moveFocus(direction, from: song.id)
                             return .handled
                         }
                         .contextMenu {
