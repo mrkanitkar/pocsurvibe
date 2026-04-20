@@ -167,46 +167,66 @@ SP-4c (L effort — may warrant dedicated sub-projects):
 
 Next recommended: SP-4b, then SP-5 Gen-AI harness, then SP-6 Mac destination. SP-4c can interleave with SP-5/6 if timing allows.
 
-## Post-SP-3 pending-items audit (2026-04-20)
+## Post-SP-4b pending-items audit (refreshed 2026-04-20)
 
-Re-verified against `main @ 31f936d` (post-SP-3-merge) via direct grep. Some items previously tracked as pending are **already done** by intervening work; the true outstanding list is smaller than the original refactor-plan catalog.
+Re-verified against `main @ e58d442` (post-SP-4b-merge) via direct grep + landed-block cross-check. Supersedes the post-SP-3 audit block.
 
-### ✅ Already done (mark closed)
+### ✅ Already done (closed by SP-4a / SP-4b)
 
-| Item | Source | Evidence on main |
+| Item | Source | Closed by |
 |---|---|---|
-| P1-7 Devanagari `accessibilityLabel` on SargamNoteView | Audit P1-7 | `SurVibe/Notation/SargamNoteView.swift:78` has `.accessibilityLabel(accessibilityDescription)` |
-| P1-9 Skip-onboarding button | Audit P1-9 | `OnboardingContainerView.swift:103` contains Skip button; line 9 docs it |
-| iOS Settings navigation (partial) | SP-0 AD-5 / SP-4 | `AppearanceSettingsView` wired via `NavigationLink(value: "display")` from `ProfileTab.swift:62`; macOS `Settings { SettingsView() }` scene at `SurVibeApp.swift:247` |
-| Pre-existing OnboardingManagerTests failure | SP-2 brief | `SurVibeTests/OnboardingManagerTests.swift` no longer exists — concern resolved or file renamed/removed |
+| P1-5 Hand colors → Rang theme tokens | Audit P1-5 | SP-4a (RangColorSystem.swift + InteractivePianoView defaults) |
+| P1-6 Differentiate-without-color on key highlights | Audit P1-6 | SP-4a (R/L overlay in InteractivePianoView) |
+| P1-7 Devanagari `accessibilityLabel` on SargamNoteView | Audit P1-7 | pre-SP-4a (`SargamNoteView.swift:78`) |
+| P1-8 Pinch-zoom on ScrollingSheetView + double-tap reset | Audit P1-8 | SP-4a |
+| P1-9 Skip-onboarding button | Audit P1-9 | pre-SP-4a (`OnboardingContainerView.swift:103-112`) |
+| P1-10 Mic permission pre-prompt | Audit P1-10 | SP-4a (`MicPermissionPrePrompt.swift` + SongPlayAlongView sheet wiring) |
+| SP-0 F5 Populate SettingsView Appearance section | SP-0 F5 | SP-4a (AppearanceSettingsView via NavigationLink from ProfileTab:62) |
+| iOS Settings navigation entry | SP-0 AD-5 / SP-4 | pre-SP-4a (AppearanceSettingsView wired) |
+| P2-2 HapticEngine / `.sensoryFeedback` on success paths | Audit P2-2 | SP-4a (AchievementUnlockToast + LessonCompletionView + SongPlayAlongView wiring) |
+| P2-6 `@FocusState` arrow-key card nav | Audit P2-6 | SP-4b (LibraryFocusNavigator + `.onKeyPress(keys:)` on Lessons + Songs) |
+| P2-12 Presentation detents audit | Audit P2-12 | SP-4b (5 sheets, HIG-aligned detents + grabbers) |
+| P2-13 Haptics on tab switch | Audit P2-13 | SP-4b (`.sensoryFeedback(.selection, trigger: selectedTab)` on ContentView) |
+| Pre-existing OnboardingManagerTests failure | SP-2 brief | file no longer exists |
 
-### ⬜ Genuinely outstanding P1 items → SP-4 scope candidates
+### ⬜ Genuinely outstanding — SP-4c + SP-5 + SP-6 scope
+
+**Routed to SP-4c (Accessibility finale + Platform depth):**
 
 | Item | Source | Outstanding-on-main evidence |
 |---|---|---|
 | P1-2 Live Activity / Dynamic Island | Audit P1-2 | No `SurVibeWidgets/` target; 0 `ActivityKit` imports |
 | P1-4 Apple Pencil annotation on notation | Audit P1-4 | 0 `PKCanvasView` / `PencilKit` hits |
-| P1-5 Hand colors → Rang theme tokens | Audit P1-5 | `InteractivePianoView.swift:79,84` still `rhColor = .blue` / `lhColor = .red` |
-| P1-6 Differentiate-without-color on key highlights | Audit P1-6 | 0 `accessibilityDifferentiateWithoutColor` hits |
-| P1-8 Pinch-zoom on ScrollingSheetView + double-tap reset | Audit P1-8 | 0 `MagnificationGesture` hits on ScrollingSheetView |
-| P1-10 Mic permission pre-prompt | Audit P1-10 | `SurVibe/Components/MicPermissionPrePrompt.swift` does not exist |
-| SP-0 F5 Populate SettingsView Appearance section | SP-0 | `SettingsView.swift:14` still says `Text("Populated in SP-4")` |
-| P1-11 GenAI harness | Audit P1-11 | SVAI has only stubs (Protocols/Providers/Router/SVAI.swift); no AIGeneratedBadge/AIDisclosureSheet/PromptSanitiser/AIFeedbackControl |
+| VoiceOver sweep | SP-4 upcoming-block scope | not formally done; no tracked sweep audit |
+| Focus-ring custom styling on library cards | SP-4b §6 deferral | uses system default NavigationLink focus ring |
+| Escape-to-clear-focus on library cards | SP-4b §6 deferral | no escape handler on `.onKeyPress` chain |
+| `@FocusState` on HomeTab DoorCards + ProfileTab rows | SP-4b §6 deferral | 0 `@FocusState` hits outside Lessons/Songs |
+| `GeometryReader` dynamic column count for Songs grid | SP-4b §6 deferral (AD-3) | hardcoded `gridColumns = 2` in SongLibraryView |
 
-### ⬜ Outstanding P2 items → later or opportunistic
+**Routed to SP-5 (Gen-AI harness):**
 
 | Item | Source | Outstanding-on-main evidence |
 |---|---|---|
-| P2-2 HapticEngine / `.sensoryFeedback` on success paths | Audit P2-2 | 0 hits on AchievementUnlockToast/LessonCompletionView/SongPlayAlongView (only existing use is ThemeCarouselPicker) |
+| P1-11 GenAI harness (AIGeneratedBadge / AIDisclosureSheet / AIFeedbackControl / PromptSanitiser / useAIFeatures toggle) | Audit P1-11 | SVAI has only stub scaffolding; 0 hits on the specified public types |
+
+**Routed to SP-6 (Mac destination):**
+
+| Item | Source | Outstanding-on-main evidence |
+|---|---|---|
+| P2-7 SVAudio macOS port | Audit P2-7 | `Packages/SVAudio/Package.swift` still `platforms: [.iOS(.v26)]` only |
+| P2-8 `SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD` flip | Audit P2-8 | absent from pbxproj |
+| Mac-specific LatencyContractTests body | SP-0 F1 deferral | stub at `LatencyContractTests+macOS.swift` has no-op body |
+| `macWindowOpened` analytics first call site | SP-0 F3 deferral | event case defined; 0 call sites |
+
+**Pending / opportunistic (not routed to a current sub-project):**
+
+| Item | Source | Outstanding-on-main evidence |
+|---|---|---|
 | P2-3 AppIntent "Start riyaz" | Audit P2-3 | 0 `import AppIntents` hits |
 | P2-4 Multi-window for play-along | Audit P2-4 | 0 `WindowGroup(for:` hits |
 | P2-5 External display scene | Audit P2-5 | no external-display scene present |
-| P2-6 `@FocusState` arrow-key card nav | Audit P2-6 | partial (Enter landed SP-2; arrow-key not yet) |
-| P2-7 SVAudio macOS port | Audit P2-7 | `Packages/SVAudio/Package.swift` still `platforms: [.iOS(.v26)]` only |
-| P2-8 `SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD` | Audit P2-8 | absent from pbxproj |
 | P2-9 TipKit migration | Audit P2-9 | 0 `import TipKit` hits |
-| P2-12 Presentation detents audit | Audit P2-12 | not audited |
-| P2-13 Haptics on tab switch | Audit P2-13 | no `.sensoryFeedback(...trigger: selectedTab)` on ContentView |
+| P2-10 Test coverage SVAdvanced + SVSocial | Audit P2-10 | still minimal |
 | P2-14 Focus filters for riyaz mode | Audit P2-14 | 0 `FocusFilter` hits |
 
 ### Cross-SP dependencies
