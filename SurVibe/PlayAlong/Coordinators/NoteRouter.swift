@@ -62,7 +62,7 @@ final class NoteRouter {
             UserDefaults.standard.set(latencyPreset.rawValue, forKey: "com.survibe.playAlong.latencyPreset")
             if audioProcessor.isActive {
                 audioProcessor.stop()
-                Task { [weak self] in await self?.startPitchDetection() }
+                startPitchDetection()
             }
         }
     }
@@ -112,6 +112,9 @@ final class NoteRouter {
     private var ragaScoringContext: RagaScoringContext?
     private var ragaMapper: RagaAwareMapper?
 
+    /// Wait mode controller — nil until PlaybackCoordinator exposes it (mirrors VM pattern).
+    private var waitController: PlayAlongWaitController?
+
     private var patienceSeconds: Double {
         let value = UserDefaults.standard.double(forKey: "com.survibe.waitMode.patience")
         return value > 0 ? value : 10.0
@@ -136,14 +139,12 @@ final class NoteRouter {
     // MARK: - Public methods (skeleton — Tasks 4-8 implement bodies)
 
     /// Start mic + MIDI + chord-listener detection.
-    /// Task 5 will append startPitchDetection() call; Task 8 wires full startup.
     func startInputDetection() {
         startMIDIDetection()
-        // Task 5 will append startPitchDetection() call.
+        startPitchDetection()
     }
 
     /// Stop and clear all input detection tasks/callbacks.
-    /// Task 8 adds audioProcessor.stop() + pitchDetectionTask cancels + chord tasks + patience timer.
     func stopInputDetection() {
         detectedMidiNotes = []
         midiInput.onNoteEvent = nil
@@ -156,7 +157,16 @@ final class NoteRouter {
         midiConnectionTask = nil
         isMIDIConnected = false
         midiDeviceName = nil
-        // Task 8 adds audioProcessor.stop() + pitchDetectionTask cancels + chord tasks + patience timer.
+        audioProcessor.ringBuffer = nil
+        ringBuffer = nil
+        audioProcessor.stop()
+        pitchDetectionTask?.cancel()
+        pitchDetectionTask = nil
+        chordDetectionTask?.cancel()
+        chordDetectionTask = nil
+        chordListenerTask?.cancel()
+        chordListenerTask = nil
+        latestChordResult = nil
     }
 
     func handleKeyboardNoteOn(midiNote: Int) {
@@ -365,11 +375,240 @@ final class NoteRouter {
         return Swar.nameForSemitone[semitone] ?? Swar.sa.rawValue
     }
 
-    /// Stub — Task 5 implements.
-    private func startPitchDetection() async {}
-
     nonisolated private static func midiNoteFromFrequency(_ frequency: Double) -> Int {
         guard frequency > 0 else { return 60 }
         return Int((12.0 * log2(frequency / 440.0) + 69.0).rounded())
+    }
+
+    // MARK: - Private Methods — Pitch + Chord Detection
+
+    /// Start microphone pitch and chord detection pipeline.
+    ///
+    /// Cancels any existing consumer tasks, allocates a fresh ring buffer sized to
+    /// the current latency preset, starts `PracticeAudioProcessor`, then launches
+    /// the melody detection task, chord detection task, and chord listener task.
+    private func startPitchDetection() {
+        // Cancel existing consumer tasks. Only restart the processor when it is not
+        // yet running — reinstalling the mic tap unnecessarily causes a dropout.
+        pitchDetectionTask?.cancel()
+        pitchDetectionTask = nil
+
+        // Allocate a fresh ring buffer sized to the current latency preset.
+        // Capacity = realSamples * 2 so we always have a full window available.
+        // SPSCRingBuffer rounds up to the next power of two internally, so the
+        // request is a hint — the actual capacity may be larger.
+        let preset = latencyPreset
+        let newRingBuffer = SPSCRingBuffer(capacity: preset.realSamples * 2)
+        ringBuffer = newRingBuffer
+
+        // Give PracticeAudioProcessor the ring buffer reference BEFORE start(),
+        // so the tap closure captures it when it is installed during start().
+        audioProcessor.ringBuffer = newRingBuffer
+
+        if !audioProcessor.isActive {
+            do {
+                try audioProcessor.start()
+                Self.logger.info("MicDiag: audioProcessor.start() succeeded")
+            } catch {
+                Self.logger.error(
+                    "MicDiag: audioProcessor.start() FAILED: \(error.localizedDescription, privacy: .public)"
+                )
+                return
+            }
+        } else {
+            Self.logger.info("MicDiag: audioProcessor already active — skipping start()")
+        }
+
+        let engineRunning = AudioEngineManager.shared.isRunning
+        let hasTap = AudioEngineManager.shared.hasMicTap
+        Self.logger.info(
+            "MicDiag: engine.isRunning=\(engineRunning) hasMicTap=\(hasTap) isMIDIConnected=\(self.isMIDIConnected)"
+        )
+        Self.logger.info(
+            "Pitch detection started: preset=\(preset.rawValue) realSamples=\(preset.realSamples)"
+        )
+
+        // --- Melody detection task ---
+        // Reads PitchResult from PracticeAudioProcessor's autocorrelation stream.
+        pitchDetectionTask = Task { [weak self] in
+            await self?.runMelodyDetectionLoop()
+        }
+
+        chordDetectionTask?.cancel()
+        chordDetectionTask = Task { [weak self] in
+            await self?.runChordDetectionLoop(realSamples: preset.realSamples)
+        }
+
+        // MAJ-2: subscribe to the chord stream so chord-aware scoring in
+        // `processNoteInput` always has a fresh `ChordResult` to consult.
+        chordListenerTask?.cancel()
+        chordListenerTask = Task { [weak self] in
+            guard let stream = self?.audioProcessor.chordStream else { return }
+            for await chord in stream {
+                guard !Task.isCancelled else { return }
+                self?.latestChordResult = chord
+            }
+        }
+    }
+
+    /// Poll the ring buffer for chromagram chord analysis and route to scoring.
+    ///
+    /// Runs every 50 ms, gated on minimum RMS amplitude to reject speaker bleed.
+    /// Falls back to scoring only when the melody autocorrelation path has not
+    /// handled a note in the last 80 ms (avoids double-scoring).
+    private func runChordDetectionLoop(realSamples: Int) async {
+        let buf = ringBuffer
+        let refPitch = 440.0
+        let amplitudeGate: Float = 0.01
+        // Pre-allocate the read buffer once; reuse on every poll. Owned by
+        // the chord task so it is deallocated when the task exits (cancel
+        // or stop). Avoids per-iteration heap churn at 20 Hz.
+        let workBuf = UnsafeMutableBufferPointer<Float>.allocate(capacity: realSamples)
+        workBuf.initialize(repeating: 0)
+        defer { workBuf.deallocate() }
+        while !Task.isCancelled {
+            try? await Task.sleep(for: .milliseconds(50))
+            guard let buf, buf.readLatest(count: realSamples, into: workBuf),
+                let base = workBuf.baseAddress
+            else { continue }
+            let samples = Array(UnsafeBufferPointer(start: base, count: realSamples))
+            let rms = Self.calculateRMS(samples)
+            guard rms >= amplitudeGate else { continue }
+            let result = ChromagramDSP.analyzeChord(
+                samples: samples,
+                sampleRate: 44100,
+                referencePitch: refPitch
+            )
+            guard !result.detectedPitches.isEmpty else { continue }
+            guard !isMIDIConnected else { continue }
+
+            let midiNotes = Set(result.detectedPitches.map { $0.midiNote })
+            detectedMidiNotes = midiNotes
+            updateDetectedSwarInfo(from: midiNotes)
+
+            let melodyAge = Date().timeIntervalSince(lastMelodyDetectionDate)
+            guard melodyAge > 0.080 else { continue }
+            guard let dominant = result.detectedPitches.max(by: { $0.confidence < $1.confidence }) else {
+                continue
+            }
+            routeNoteToScoring(midiNote: dominant.midiNote)
+        }
+    }
+
+    /// Route a detected MIDI note to timed scoring or guided free-play.
+    private func routeNoteToScoring(midiNote: Int) {
+        if playback.playbackState == .playing {
+            handleNoteDetected(midiNote: midiNote)
+        } else if playback.playbackState == .idle || playback.playbackState == .paused {
+            handleGuidedNoteDetected(midiNote: midiNote)
+        }
+    }
+
+    /// Consume the autocorrelation pitch stream and update UI/scoring state.
+    ///
+    /// Extracted from `startPitchDetection()` to keep that function within the
+    /// SwiftLint `function_body_length` limit. Runs for the lifetime of
+    /// `pitchDetectionTask` and exits when the stream ends or the Task is cancelled.
+    private func runMelodyDetectionLoop() async {
+        var pitchResultCount = 0
+        var belowThresholdCount = 0
+        Self.logger.info("MicDiag: melody task started — isMIDIConnected=\(self.isMIDIConnected)")
+        for await pitchResult in self.audioProcessor.pitchStream {
+            guard !Task.isCancelled else {
+                Self.logger.info(
+                    "MicDiag: melody task cancelled (results=\(pitchResultCount) belowThresh=\(belowThresholdCount))"
+                )
+                return
+            }
+
+            let enriched = self.enrichPitchWithRagaContext(pitchResult)
+
+            let ampStr = String(format: "%.4f", enriched.amplitude)
+            let confStr = String(format: "%.3f", enriched.confidence)
+            let freqStr = String(format: "%.1f", enriched.frequency)
+            let silThresh = String(format: "%.4f", PracticeConstants.silenceThreshold)
+            let confThresh = String(format: "%.3f", PracticeConstants.confidenceThreshold)
+            let midiConn = self.isMIDIConnected
+            Self.logger.info(
+                // swiftlint:disable:next line_length
+                "MicDiag: pitchStream result #\(pitchResultCount) freq=\(freqStr)Hz note=\(enriched.noteName, privacy: .public)\(enriched.octave) amp=\(ampStr)/\(silThresh) conf=\(confStr)/\(confThresh) midiConnected=\(midiConn)"
+            )
+            pitchResultCount += 1
+
+            if enriched.amplitude >= PracticeConstants.silenceThreshold,
+                enriched.confidence >= PracticeConstants.confidenceThreshold
+            {
+                processMelodyPitch(enriched)
+            } else {
+                belowThresholdCount += 1
+                clearMelodyHighlight()
+            }
+        }
+        Self.logger.info(
+            "MicDiag: melody task stream ended (results=\(pitchResultCount) belowThresh=\(belowThresholdCount))"
+        )
+    }
+
+    /// Process a pitch that passed amplitude and confidence thresholds.
+    private func processMelodyPitch(_ enriched: PitchResult) {
+        currentPitch = enriched
+        lastMelodyDetectionDate = Date()
+        let midiNote = Self.midiNoteFromFrequency(enriched.frequency)
+        if !isMIDIConnected {
+            Self.logger.info(
+                "MicDiag: highlight note=\(midiNote) (\(enriched.noteName, privacy: .public)\(enriched.octave))"
+            )
+            detectedMidiNotes = [midiNote]
+            updateDetectedSwarInfo(from: detectedMidiNotes)
+        } else {
+            Self.logger.info("MicDiag: MIDI connected — skipping detectedMidiNotes update")
+        }
+        routeNoteToScoring(midiNote: midiNote)
+    }
+
+    /// Clear melody highlight state when pitch falls below threshold.
+    private func clearMelodyHighlight() {
+        currentPitch = nil
+        if !isMIDIConnected {
+            detectedMidiNotes = []
+            highlightState.detectedSwarInfo = nil
+        }
+        lastGuidedMidiNote = nil
+    }
+
+    /// Calculate RMS amplitude from audio samples.
+    ///
+    /// - Parameter samples: Float audio samples.
+    /// - Returns: Root-mean-square amplitude (0.0–1.0).
+    private static func calculateRMS(_ samples: [Float]) -> Float {
+        var sum: Float = 0
+        for s in samples { sum += s * s }
+        return sqrt(sum / Float(samples.count))
+    }
+
+    /// Enrich a pitch result with raga-aware mapping when a mapper is configured.
+    ///
+    /// When a `RagaAwareMapper` is available, re-maps the frequency to get JI
+    /// cents offset and in-raga status. Falls through to the original result otherwise.
+    ///
+    /// - Parameter pitch: Raw pitch result from the audio processor.
+    /// - Returns: Enriched pitch result with `isInRaga` and `ragaCentsOffset` set.
+    private func enrichPitchWithRagaContext(_ pitch: PitchResult) -> PitchResult {
+        guard let mapper = ragaMapper else { return pitch }
+        do {
+            let mapping = try mapper.mapFrequency(pitch.frequency, referencePitch: 440.0)
+            return PitchResult(
+                frequency: pitch.frequency,
+                amplitude: pitch.amplitude,
+                noteName: mapping.noteName,
+                octave: mapping.octave,
+                centsOffset: pitch.centsOffset,
+                confidence: pitch.confidence,
+                isInRaga: mapping.isInRaga,
+                ragaCentsOffset: mapping.ragaCentsOffset
+            )
+        } catch {
+            return pitch
+        }
     }
 }
