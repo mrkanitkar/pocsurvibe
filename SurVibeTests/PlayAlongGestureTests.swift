@@ -40,7 +40,7 @@ struct PlayAlongGestureTests {
 
     @Test @MainActor func repeatedTapsResetAutoHideTimer() async throws {
         let vm = PlayAlongViewModel()
-        vm.chromeAutoHideSeconds = 0.2
+        vm.chrome.autoHideOverrideSeconds = 0.2
         vm.summonChrome()
         try await Task.sleep(for: .milliseconds(100))
         vm.summonChrome()  // tap → resets timer
