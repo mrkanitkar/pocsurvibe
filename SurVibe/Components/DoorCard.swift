@@ -58,7 +58,7 @@ struct DoorCard: View {
         Button(action: action) {
             VStack(spacing: 8) {
                 Image(systemName: icon)
-                    .font(.system(size: 32))
+                    .font(.largeTitle)
                     .foregroundStyle(themeManager.resolved.badgeTextColor)
                     .accessibilityHidden(true)
 
