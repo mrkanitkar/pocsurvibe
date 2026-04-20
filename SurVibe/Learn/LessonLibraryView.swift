@@ -77,6 +77,29 @@ struct LessonLibraryView: View {
         .task {
             await viewModel.loadLessons()
         }
+        .onAppear {
+            if focusedLessonID == nil, let first = viewModel.filteredLessons.first {
+                focusedLessonID = first.lesson.id
+            }
+        }
+    }
+
+    // MARK: - Keyboard Focus
+
+    /// Moves keyboard focus to the next lesson card in the given direction.
+    /// Linear list → columns = 1.
+    private func moveFocus(_ direction: LibraryFocusNavigator.FocusDirection, from currentID: Lesson.ID) {
+        let lessons = viewModel.filteredLessons
+        guard let currentIndex = lessons.firstIndex(where: { $0.lesson.id == currentID }) else { return }
+        guard
+            let nextIndex = LibraryFocusNavigator.nextIndex(
+                for: direction,
+                currentIndex: currentIndex,
+                count: lessons.count,
+                columns: 1
+            )
+        else { return }
+        focusedLessonID = lessons[nextIndex].lesson.id
     }
 
     // MARK: - Subviews
@@ -96,6 +119,12 @@ struct LessonLibraryView: View {
                                 lockedLessonAlert = item.lesson
                                 return .handled
                             }
+                            .onKeyPress(keys: [.upArrow, .downArrow]) { press in
+                                let direction: LibraryFocusNavigator.FocusDirection =
+                                    (press.key == .upArrow) ? .up : .down
+                                moveFocus(direction, from: item.lesson.id)
+                                return .handled
+                            }
                     } else {
                         NavigationLink(value: item.lesson) {
                             LessonCardView(item: item)
@@ -104,6 +133,12 @@ struct LessonLibraryView: View {
                         .focused($focusedLessonID, equals: item.lesson.id)
                         .onKeyPress(.return) {
                             router.openLesson(item.lesson.id)
+                            return .handled
+                        }
+                        .onKeyPress(keys: [.upArrow, .downArrow]) { press in
+                            let direction: LibraryFocusNavigator.FocusDirection =
+                                (press.key == .upArrow) ? .up : .down
+                            moveFocus(direction, from: item.lesson.id)
                             return .handled
                         }
                     }

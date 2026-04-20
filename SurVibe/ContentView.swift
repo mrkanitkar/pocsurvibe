@@ -62,6 +62,7 @@ struct ContentView: View {
             }
         }
         .tabViewStyle(.sidebarAdaptable)
+        .sensoryFeedback(.selection, trigger: selectedTab)
         .tint(themeManager.resolved.accentColor)
         .onChange(of: colorScheme) { _, newScheme in
             themeManager.updateColorScheme(newScheme)
