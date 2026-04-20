@@ -49,12 +49,14 @@ struct SongPlayAlongView: View {
     var showTanpuraSheet = false
 
     /// Pending persistence write for `preferredSaHz`. Canceled on rapid changes.
-    @State private var persistDebounceTask: Task<Void, Never>?
+    @State
+    private var persistDebounceTask: Task<Void, Never>?
 
     /// Set to true after the initial `tanpura.seed(...)` call in `.task`.
     /// Gates the `effectiveSaHz` persistence observer so the initial seed
     /// doesn't spuriously write a SongProgress row on every song open.
-    @State private var didInitialSeed = false
+    @State
+    private var didInitialSeed = false
 
     /// Set to true by `resetPreferredSaHz()` so the next `effectiveSaHz`
     /// change (which comes from the internal re-seed to the song default,
@@ -72,13 +74,16 @@ struct SongPlayAlongView: View {
     var hasStoredOverride: Bool = false
 
     /// Piano key positions collected via preference key for note alignment.
-    @State private var keyPositions: [KeyPosition] = []
+    @State
+    private var keyPositions: [KeyPosition] = []
 
     /// Whether the results overlay is presented.
-    @State private var showResults = false
+    @State
+    private var showResults = false
 
     /// Whether the theme picker sheet is presented (from the toolbar's Mode button).
-    @State private var showAppearanceSheet = false
+    @State
+    private var showAppearanceSheet = false
 
     /// Whether the correctness flash overlay is visible (brief green/red flash).
     @State

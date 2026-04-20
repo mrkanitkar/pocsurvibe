@@ -3,6 +3,7 @@ import Foundation
 import SVCore
 import SwiftUI
 import Testing
+
 @testable import SurVibe
 
 /// Unit tests for `PlayAlongChromeState` (SP-3c).
@@ -27,7 +28,8 @@ struct PlayAlongChromeStateTests {
 
     // MARK: - Tests
 
-    @Test func initialStateIsSummonedAndHasDefaultModes() {
+    @Test
+    func initialStateIsSummonedAndHasDefaultModes() {
         let chrome = PlayAlongChromeState()
 
         #expect(chrome.chromeVisibility == .summoned, "Starts summoned so users see controls on first open")
@@ -35,7 +37,8 @@ struct PlayAlongChromeStateTests {
         #expect(chrome.notationMode == .sargam, "Default notation mode")
     }
 
-    @Test func summonChromeShowsItAndStartsAutoHideTimer() async throws {
+    @Test
+    func summonChromeShowsItAndStartsAutoHideTimer() async throws {
         let chrome = PlayAlongChromeState()
         chrome.hideChrome()
         #expect(chrome.chromeVisibility == .hidden)
@@ -48,7 +51,8 @@ struct PlayAlongChromeStateTests {
         #expect(chrome.chromeVisibility == .hidden, "Auto-hides after autoHideDuration seconds")
     }
 
-    @Test func hideChromeImmediatelyCancelsTimer() {
+    @Test
+    func hideChromeImmediatelyCancelsTimer() {
         let chrome = PlayAlongChromeState()
         chrome.summonChrome()
         chrome.hideChrome()
@@ -56,7 +60,8 @@ struct PlayAlongChromeStateTests {
         #expect(chrome.chromeVisibility == .hidden)
     }
 
-    @Test func resetAutoHideRestartsTimer() async throws {
+    @Test
+    func resetAutoHideRestartsTimer() async throws {
         let chrome = PlayAlongChromeState()
         chrome.summonChrome()
 
@@ -68,12 +73,14 @@ struct PlayAlongChromeStateTests {
         #expect(chrome.chromeVisibility == .summoned, "Reset extended the auto-hide window")
     }
 
-    @Test func autoHideDurationConstantIsSixSeconds() {
+    @Test
+    func autoHideDurationConstantIsSixSeconds() {
         // Magic-number elimination per D-SP3c-4.
         #expect(PlayAlongChromeState.autoHideDuration == 6.0)
     }
 
-    @Test func updateThemeResolvesAllSevenColors() async {
+    @Test
+    func updateThemeResolvesAllSevenColors() async {
         Self.clearThemeDefaults()
         let chrome = PlayAlongChromeState()
         let themeManager = AppThemeManager(colorScheme: .light)
