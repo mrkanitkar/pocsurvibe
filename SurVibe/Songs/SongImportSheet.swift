@@ -75,11 +75,14 @@ struct SongImportSheet: View {
                 .tag(SongImportViewModel.ImportTab.mySongs)
                 .tabItem { Label("My Songs", systemImage: "person.crop.rectangle.stack") }
         }
+        .presentationDetents([.large])
         .onChange(of: vm.importSucceeded) { _, succeeded in
             if succeeded { dismiss() }
         }
         .sheet(isPresented: Binding(get: { vm.showWarnings }, set: { vm.showWarnings = $0 })) {
             warningsSheet(vm: vm)
+                .presentationDetents([.medium])
+                .presentationDragIndicator(.visible)
         }
         .alert("Import Error", isPresented: Binding(
             get: { vm.importError != nil },
