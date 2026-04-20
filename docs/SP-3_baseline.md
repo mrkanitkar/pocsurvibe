@@ -31,3 +31,15 @@ Captured 2026-04-19 pre-SP-3a on `feat/sp-3a-scoring-coordinator` branched from 
 - `PlaybackCoordinator.swift` ≈ 600 lines.
 - Both `featureFlagToggleDoesNotRestartEngine` + `rotationDoesNotRestartAudioEngine` GREEN.
 - All 8 PlayAlong suites GREEN.
+
+## SP-3c pre-task snapshot (captured on `feat/sp-3c-chrome-state`)
+- `PlayAlongViewModel.swift`: **1,353 lines** (post-SP-3b baseline).
+- `PlaybackCoordinator.swift`: 597 lines (unchanged).
+- `ScoringCoordinator.swift`: 124 lines (unchanged).
+- LatencyContractTests: 3/3 PASS.
+
+## Gate for SP-3c merge
+- `PlayAlongViewModel.swift` SHRINKS to **≤ ~1,250 lines** (target: ~150 LOC peeled into PlayAlongChromeState).
+- `PlayAlongChromeState.swift` ≈ 150 lines.
+- Both `featureFlagToggleDoesNotRestartEngine` + `rotationDoesNotRestartAudioEngine` GREEN.
+- All 8 PlayAlong suites GREEN. `PlayAlongChromeTests` is the regression guard.
