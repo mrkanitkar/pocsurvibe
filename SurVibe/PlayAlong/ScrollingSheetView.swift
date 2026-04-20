@@ -33,6 +33,15 @@ import SwiftUI
 struct ScrollingSheetView: View {
     // MARK: - Properties
 
+    /// Persistent zoom factor applied on top of the active pinch gesture.
+    /// Clamped to `0.5...3.0` to mirror `NotationContainerView`.
+    @State
+    private var zoomScale: CGFloat = 1.0
+
+    /// Live pinch gesture value — multiplies with `zoomScale` during a pinch.
+    @GestureState
+    private var pinchScale: CGFloat = 1.0
+
     /// The song whose notation should be displayed.
     let song: Song
 
@@ -175,9 +184,33 @@ struct ScrollingSheetView: View {
                 }
             }
         }
+        .scaleEffect(zoomScale * pinchScale, anchor: .center)
+        .gesture(pinchGesture)
+        .simultaneousGesture(doubleTapReset)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Scrolling notation sheet")
         .accessibilityHint("Notation auto-scrolls to follow the current note during playback")
+    }
+
+    // MARK: - Gestures
+
+    /// Pinch-to-zoom gesture clamped between 0.5x and 3.0x (matches `NotationContainerView`).
+    private var pinchGesture: some Gesture {
+        MagnificationGesture()
+            .updating($pinchScale) { currentState, gestureState, _ in
+                gestureState = currentState
+            }
+            .onEnded { value in
+                let newZoom = zoomScale * value
+                zoomScale = min(3.0, max(0.5, newZoom))
+            }
+    }
+
+    /// Double-tap gesture that resets the persistent zoom factor to 1.0.
+    private var doubleTapReset: some Gesture {
+        TapGesture(count: 2).onEnded {
+            zoomScale = 1.0
+        }
     }
 }
 

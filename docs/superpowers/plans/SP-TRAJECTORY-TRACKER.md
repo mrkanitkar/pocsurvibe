@@ -4,7 +4,7 @@
 > Source of truth for "what shipped, what was deferred, what's next".
 > Created 2026-04-19 after SP-0 + SP-1 landed on `main`.
 
-## Status (2026-04-20, post-SP-3d merge — SP-3 umbrella COMPLETE)
+## Status (2026-04-20, post-SP-4 merge)
 
 | Sub-project | Status | Tag | Merge SHA | Commits |
 |---|---|---|---|:---:|
@@ -16,7 +16,7 @@
 | **SP-3c** View-chrome extraction (phase 3 of 4) | ✅ shipped | `sp-3c-view-chrome` @ `357f366` | `8bd63bd` | 6 |
 | **SP-3d** NoteRouter (phase 4 of 4, HIGH risk) | ✅ shipped | `sp-3d-note-router` @ `1089026` | `91ae34a` | 14 |
 | **SP-3 umbrella** VM ≤ 200 lines + `file_length` disclaimer deleted | ✅ shipped | `sp-3-vm-split-complete` @ `1089026` | `91ae34a` | — |
-| **SP-4** Accessibility polish + iOS Settings nav | ⬜ pending | — | — | — |
+| **SP-4** Accessibility polish + iOS Settings nav | ✅ shipped | `sp-4-accessibility` @ `d916fa2` | — | 8 |
 | **SP-5** Gen-AI harness | ⬜ pending | — | — | — |
 | **SP-6** Mac destination | ⬜ pending | — | — | — |
 
@@ -109,6 +109,18 @@ Four coordinators shipped across 4 sub-projects:
 PlayAlongViewModel (god-object 1,828 → facade 446 lines, -1,382 net).
 
 Next: SP-4 Accessibility polish + iOS in-app Settings navigation.
+
+### SP-4 landed (2026-04-20)
+
+- Shipped 6 outstanding items: P1-5 Rang hand-color tokens, P1-6 differentiate-without-color R/L overlay on piano keys, P1-8 pinch-zoom + double-tap reset on ScrollingSheetView, P1-10 MicPermissionPrePrompt component + wiring, SP-0 F5 SettingsView Appearance section → AppearanceSettingsView, P2-2 `.sensoryFeedback` on achievement/lesson/correct-note.
+- New: `SurVibe/Components/MicPermissionPrePrompt.swift`, `SurVibeTests/InteractivePianoViewAccessibilityTests.swift`, `SurVibeTests/MicPermissionPrePromptTests.swift`, `SurVibeTests/SettingsViewAppearanceTests.swift`.
+- Modified: `RangColorSystem.swift` (3 new tokens), `InteractivePianoView.swift` (defaults + R/L overlay), `ScrollingSheetView.swift` (pinch-zoom), `SettingsView.swift` (Appearance link), `SongPlayAlongView.swift` (pre-prompt sheet + haptics), `AchievementUnlockToast.swift` + `LessonCompletionView.swift` (haptics).
+- Zero coordinator changes; zero latency-gate interaction.
+- All narrow regression suites + SVCore 93/93 green.
+- 6 exit-signal greps pass.
+- Tag: `sp-4-accessibility`.
+
+Next: **SP-5 Gen-AI harness** (fresh session per post-SP-3 context-budget analysis).
 
 ## Post-SP-3 pending-items audit (2026-04-20)
 

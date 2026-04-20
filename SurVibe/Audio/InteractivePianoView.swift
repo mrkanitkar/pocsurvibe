@@ -73,22 +73,23 @@ struct InteractivePianoView: View {
 
     /// Color used to highlight right-hand MIDI notes (from `highlightState?.rhNotes`).
     ///
-    /// Defaults to system blue — matches the existing detection highlight color
-    /// so call sites that don't populate `rhNotes` see no visual change.
+    /// Defaults to the Rang right-hand semantic token (P1-5) — colorblind-aware
+    /// and WCAG AA compliant on white piano keys. Overridden by the active theme
+    /// via `PlayAlongChromeState.updateTheme` in production flows.
     /// Passed as `let` to preserve the latency contract — no environment reads.
-    var rhColor: Color = .blue
+    var rhColor: Color = Color.rangRightHand
 
     /// Color used to highlight left-hand MIDI notes (from `highlightState?.lhNotes`).
     ///
-    /// Defaults to system red.
-    var lhColor: Color = .red
+    /// Defaults to the Rang left-hand semantic token (P1-5).
+    var lhColor: Color = Color.rangLeftHand
 
     /// Color used to highlight chord / both-hands MIDI notes
     /// (from `highlightState?.chordNotes`, or notes present in both
     /// `rhNotes` and `lhNotes`).
     ///
-    /// Defaults to system purple.
-    var chordColor: Color = .purple
+    /// Defaults to the Rang both-hands semantic token (P1-5).
+    var chordColor: Color = Color.rangBothHands
 
     // MARK: - Internal State
 
@@ -109,6 +110,12 @@ struct InteractivePianoView: View {
 
     @Environment(\.accessibilityReduceMotion)
     private var reduceMotion
+
+    /// Colorblind-aware differentiation: when true, render an R/L/• letter
+    /// overlay on top of highlighted keys so users who cannot distinguish
+    /// the RH/LH/chord fill colors still perceive which hand the key belongs to.
+    @Environment(\.accessibilityDifferentiateWithoutColor)
+    private var differentiateWithoutColor
 
     // MARK: - Constants
 
@@ -224,6 +231,16 @@ struct InteractivePianoView: View {
             if isNatural {
                 whiteKeyLabels(midi: midi, noteIndex: noteIndex, hasHighlight: hasHighlight)
             }
+            if differentiateWithoutColor, let letter = differentiateLetter(forMidi: midi) {
+                Text(verbatim: letter)
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(.white)
+                    .padding(2)
+                    .background(Color.black.opacity(0.55), in: Circle())
+                    .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)
+                    .padding(.top, 2)
+                    .accessibilityHidden(true)
+            }
         }
         .scaleEffect(hasHighlight && !reduceMotion ? (isNatural ? 1.04 : 1.06) : 1.0)
         .animation(
@@ -333,6 +350,26 @@ struct InteractivePianoView: View {
         case (false, false):
             return isExpected ? .orange : nil
         }
+    }
+
+    /// Letter shown on a highlighted key when
+    /// `accessibilityDifferentiateWithoutColor` is enabled.
+    ///
+    /// R = right hand, L = left hand, `•` = both/chord. Returns nil when the
+    /// key has no RH/LH/chord membership (detection-only, touch-only, and
+    /// expected-note highlights are color-only and don't need differentiation).
+    ///
+    /// - Parameter midiNote: MIDI note number to classify.
+    /// - Returns: "R", "L", "•", or nil.
+    private func differentiateLetter(forMidi midiNote: Int) -> String? {
+        let rh = highlightState?.rhNotes ?? []
+        let lh = highlightState?.lhNotes ?? []
+        let chord = highlightState?.chordNotes ?? []
+        if chord.contains(midiNote) { return "•" }
+        if rh.contains(midiNote) && lh.contains(midiNote) { return "•" }
+        if rh.contains(midiNote) { return "R" }
+        if lh.contains(midiNote) { return "L" }
+        return nil
     }
 
     /// Compute the background fill color for a key.

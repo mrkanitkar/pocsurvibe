@@ -85,6 +85,16 @@ struct SongPlayAlongView: View {
     @State
     private var showAppearanceSheet = false
 
+    /// Whether the first-run microphone pre-prompt sheet should be shown.
+    ///
+    /// Initialised from `MicPermissionPrePrompt.shouldShow`, which reads the
+    /// `hasSeenMicPermissionPrePrompt` flag from `UserDefaults`. The sheet
+    /// displays in parallel with the existing `.task` that calls
+    /// `viewModel.loadSong(song)`; `loadSong` itself issues the system
+    /// permission request — this pre-prompt merely explains why first.
+    @State
+    private var showMicPrePrompt: Bool = MicPermissionPrePrompt.shouldShow
+
     /// Whether the correctness flash overlay is visible (brief green/red flash).
     @State
     var showCorrectnessBanner = false
@@ -216,6 +226,10 @@ struct SongPlayAlongView: View {
         }
         .navigationTitle(song.title)
         .navigationBarTitleDisplayMode(.inline)
+        .sensoryFeedback(.selection, trigger: viewModel.scoring.notesHit)
+        .sheet(isPresented: $showMicPrePrompt) {
+            MicPermissionPrePrompt(onContinue: {})
+        }
         .task {
             viewModel.modelContext = modelContext
             // Derive view mode and notation from the active theme preset
