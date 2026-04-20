@@ -226,6 +226,7 @@ struct SongPlayAlongView: View {
         }
         .navigationTitle(song.title)
         .navigationBarTitleDisplayMode(.inline)
+        .sensoryFeedback(.selection, trigger: viewModel.scoring.notesHit)
         .sheet(isPresented: $showMicPrePrompt) {
             MicPermissionPrePrompt(onContinue: {})
         }
