@@ -93,6 +93,8 @@ struct SongLibraryView: View {
             NavigationStack {
                 SongDetailView(song: song)
             }
+            .presentationDetents([.medium, .large])
+            .presentationDragIndicator(.visible)
         }
         .sheet(isPresented: $showImportSheet) {
             SongImportSheet()
