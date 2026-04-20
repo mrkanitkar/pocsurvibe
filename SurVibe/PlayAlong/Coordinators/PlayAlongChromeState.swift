@@ -38,6 +38,17 @@ final class PlayAlongChromeState {
     /// `6.0` literal that lived on the VM (D-SP3c-4).
     static let autoHideDuration: TimeInterval = 6.0
 
+    // MARK: - Auto-hide override
+
+    /// Optional override for `autoHideDuration` (used by tests to shorten the
+    /// timer). `nil` → uses the static constant.
+    ///
+    /// Closes D-SP3c-6: previously the VM owned this knob + a parallel timer
+    /// so callers could override the duration at runtime. Now the coordinator
+    /// is the single source of truth; the VM's `resetAutoHide()` delegates here.
+    @ObservationIgnored
+    var autoHideOverrideSeconds: TimeInterval?
+
     // MARK: - Chrome visibility
 
     /// Whether the PlayAlong toolbar/summoned chrome is visible.
@@ -106,13 +117,14 @@ final class PlayAlongChromeState {
 
     /// Reset the auto-hide countdown (user interaction with a control).
     ///
-    /// `autoHideDuration == 0` would disable auto-hide entirely; the constant
-    /// is positive today, but the guard preserves that escape hatch.
+    /// Uses `autoHideOverrideSeconds` if set (tests), otherwise
+    /// `autoHideDuration`. A duration of `0` disables auto-hide entirely.
     func resetAutoHide() {
         chromeAutoHideTask?.cancel()
-        guard Self.autoHideDuration > 0 else { return }
+        let duration = autoHideOverrideSeconds ?? Self.autoHideDuration
+        guard duration > 0 else { return }
         chromeAutoHideTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .seconds(Self.autoHideDuration))
+            try? await Task.sleep(for: .seconds(duration))
             guard !Task.isCancelled else { return }
             self?.chromeVisibility = .hidden
         }
