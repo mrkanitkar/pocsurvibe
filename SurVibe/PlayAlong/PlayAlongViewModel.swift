@@ -223,28 +223,13 @@ final class PlayAlongViewModel {
         chrome.hideChrome()
     }
 
-    // MARK: - Dependencies (injected for testability)
-
-    /// MIDI input provider for USB/Bluetooth keyboard detection.
-    private let midiInput: any MIDIInputProviding
+    // MARK: - Delegating passthroughs
 
     /// Model context for persistence — delegates to `playback.modelContext`.
     var modelContext: ModelContext? {
         get { playback.modelContext }
         set { playback.modelContext = newValue }
     }
-
-    /// SoundFont player for MIDI note playback.
-    private let soundFont: any SoundFontPlaying
-
-    /// Audio engine for mic/playback setup.
-    private let audioEngine: any AudioEngineProviding
-
-    /// Metronome player (stopped during play-along to avoid BPM conflict).
-    private let metronome: any MetronomePlaying
-
-    /// Drift-corrected clock for scheduling.
-    private let clock: any ClockProviding
 
     /// Wall-clock Date for FallingNotesView animation — delegates to `playback.playbackStartDate`.
     var playbackStartDate: Date? { playback.playbackStartDate }
@@ -289,25 +274,20 @@ final class PlayAlongViewModel {
         clock: (any ClockProviding)? = nil,
         midiInput: (any MIDIInputProviding)? = nil
     ) {
-        self.soundFont = soundFont ?? SoundFontManager.shared
-        self.audioEngine = audioEngine ?? AudioEngineManager.shared
-        self.metronome = metronome ?? MetronomePlayer.shared
-        self.clock = clock ?? RealClock()
-        self.midiInput = midiInput ?? MIDIInputManager.shared
         let scoring = ScoringCoordinator()
         self.scoring = scoring
         self.playback = PlaybackCoordinator(
-            soundFont: self.soundFont,
-            audioEngine: self.audioEngine,
-            metronome: self.metronome,
-            clock: self.clock,
+            soundFont: soundFont ?? SoundFontManager.shared,
+            audioEngine: audioEngine ?? AudioEngineManager.shared,
+            metronome: metronome ?? MetronomePlayer.shared,
+            clock: clock ?? RealClock(),
             scoring: scoring,
             analytics: nil  // nil-sentinel — uses AnalyticsManager.shared at call time
         )
         self.noteRouter = NoteRouter(
-            midiInput: self.midiInput,
+            midiInput: midiInput ?? MIDIInputManager.shared,
             scoring: scoring,
-            playback: self.playback
+            playback: playback
         )
     }
 
