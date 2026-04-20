@@ -135,17 +135,28 @@ final class NoteRouter {
 
     // MARK: - Public methods (skeleton — Tasks 4-8 implement bodies)
 
-    /// Start mic + MIDI + chord-listener detection. Stub — Task 4 wires MIDI,
-    /// Task 5 wires pitch detection, Task 8 wires full startup.
+    /// Start mic + MIDI + chord-listener detection.
+    /// Task 5 will append startPitchDetection() call; Task 8 wires full startup.
     func startInputDetection() {
-        // Task 4 wires startMIDIDetection(); Task 5 wires startPitchDetection().
+        startMIDIDetection()
+        // Task 5 will append startPitchDetection() call.
     }
 
-    /// Stop and clear all input detection tasks/callbacks. Stub — Task 8 wires full cleanup.
+    /// Stop and clear all input detection tasks/callbacks.
+    /// Task 8 adds audioProcessor.stop() + pitchDetectionTask cancels + chord tasks + patience timer.
     func stopInputDetection() {
+        detectedMidiNotes = []
         midiInput.onNoteEvent = nil
         midiInput.onControlChangeEvent = nil
-        detectedMidiNotes = []
+        midiInput.stop()
+        highlightCoordinator.onActiveNotesChanged = nil
+        highlightCoordinator.stop()
+        highlightState.midiHighlightNotes = []
+        midiConnectionTask?.cancel()
+        midiConnectionTask = nil
+        isMIDIConnected = false
+        midiDeviceName = nil
+        // Task 8 adds audioProcessor.stop() + pitchDetectionTask cancels + chord tasks + patience timer.
     }
 
     func handleKeyboardNoteOn(midiNote: Int) {
@@ -208,6 +219,125 @@ final class NoteRouter {
             ragaMapper = RagaAwareMapper(ragaContext: ragaContext)
         } else {
             ragaMapper = nil
+        }
+    }
+
+    // MARK: - Public — MIDI routing
+
+    /// Handle a note detected from pitch detection or MIDI input.
+    /// Scores the detected note against the current expected note.
+    func handleNoteDetected(midiNote: Int) {
+        guard playback.playbackState == .playing else { return }
+        Task { await processNoteInput(midiNote: midiNote) }
+    }
+
+    // MARK: - Private Methods — MIDI Detection
+
+    /// Start live MIDI keyboard detection.
+    ///
+    /// Clears any previous callbacks, starts the highlight coordinator,
+    /// syncs connection state, installs the two-phase note callback, and
+    /// begins connection monitoring.
+    private func startMIDIDetection() {
+        midiInput.onNoteEvent = nil  // clear any previous callback before re-registering
+        midiInput.onControlChangeEvent = nil
+        midiConnectionTask?.cancel()
+        midiConnectionTask = nil
+        highlightCoordinator.start()
+        // Relay coordinator highlight changes into the isolated HighlightState
+        // observable. Only InteractivePianoView observes HighlightState, so this
+        // write never triggers SongPlayAlongView.body to re-evaluate.
+        let hs = highlightState
+        highlightCoordinator.onActiveNotesChanged = { notes in
+            hs.midiHighlightNotes = notes
+        }
+        midiInput.start()
+
+        // Sync connection state after start
+        isMIDIConnected = midiInput.isConnected
+        midiDeviceName = midiInput.connectedDeviceName
+
+        if isMIDIConnected {
+            Self.logger.info(
+                "MIDI keyboard detected: \(self.midiDeviceName ?? "unknown")"
+            )
+        }
+
+        installMIDINoteCallback()
+        startMIDIConnectionMonitoring()
+    }
+
+    /// Install the two-phase MIDI note-on/note-off callback on the MIDI input.
+    ///
+    /// ADR-002 Phase 1 (CoreMIDI thread, lock-free):
+    /// - Diagnostic recording
+    /// - MIDINoteHighlightCoordinator.noteOn/noteOff (OSAllocatedUnfairLock)
+    ///
+    /// ADR-002 Phase 2 (MainActor Task):
+    /// - Scoring dispatch via handleNoteDetected / handleGuidedNoteDetected
+    private func installMIDINoteCallback() {
+        #if DEBUG
+            MIDIEventDiagnostics.shared.reset()
+            MIDIEventDiagnostics.shared.isEnabled = true
+        #endif
+
+        let coordinator = highlightCoordinator
+
+        // CC callback: sustain pedal (CC64) and other controllers.
+        // Runs on CoreMIDI's high-priority thread — no actor hop.
+        midiInput.onControlChangeEvent = { event in
+            guard event.isSustainPedal else { return }
+            if event.isSustainDown {
+                coordinator.sustainDown(channel: event.channel)
+            } else {
+                coordinator.sustainUp(channel: event.channel)
+            }
+        }
+
+        midiInput.onNoteEvent = { [weak self] event in
+            let midiNote = Int(event.noteNumber)
+
+            // Phase 1: CoreMIDI thread — lock-free highlight + diagnostic recording.
+            #if DEBUG
+                MIDIEventDiagnostics.shared.recordCoremidi(event: event)
+            #endif
+            if event.isNoteOn {
+                coordinator.noteOn(midiNote)
+            } else {
+                coordinator.noteOff(midiNote, channel: event.channel)
+            }
+
+            // Phase 2: MainActor — scoring only.
+            Task(priority: .high) { @MainActor [weak self] in
+                guard let self else { return }
+
+                #if DEBUG
+                    MIDIEventDiagnostics.shared.recordMainActor(event: event)
+                #endif
+
+                if event.isNoteOn {
+                    if self.playback.playbackState == .playing {
+                        self.handleNoteDetected(midiNote: midiNote)
+                    } else if self.playback.playbackState == .idle || self.playback.playbackState == .paused {
+                        self.handleGuidedNoteDetected(midiNote: midiNote)
+                    }
+                }
+            }
+        }
+    }
+
+    /// Start monitoring MIDI keyboard connect/disconnect events.
+    private func startMIDIConnectionMonitoring() {
+        midiConnectionTask = Task { [weak self] in
+            guard let self else { return }
+            for await connected in self.midiInput.connectionStateStream {
+                guard !Task.isCancelled else { return }
+                self.isMIDIConnected = connected
+                self.midiDeviceName = connected ? self.midiInput.connectedDeviceName : nil
+                Self.logger.info(
+                    "MIDI connection changed: \(connected ? "connected" : "disconnected", privacy: .public)"
+                )
+            }
         }
     }
 
