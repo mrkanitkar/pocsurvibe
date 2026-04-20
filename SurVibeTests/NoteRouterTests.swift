@@ -4,6 +4,7 @@ import SVAudio
 import SVCore
 import SVLearning
 import Testing
+
 @testable import SurVibe
 
 /// Unit tests for `NoteRouter` (SP-3d).
@@ -72,7 +73,8 @@ struct NoteRouterTests {
 
     /// A freshly-created router reports no MIDI connection, no pitch, no
     /// detected notes, guided-play waiting state, and no expected note.
-    @Test func initialStateHasNoConnectionAndNoCurrentPitch() {
+    @Test
+    func initialStateHasNoConnectionAndNoCurrentPitch() {
         let router = makeRouter()
         #expect(router.isMIDIConnected == false)
         #expect(router.midiDeviceName == nil)
@@ -84,7 +86,8 @@ struct NoteRouterTests {
     }
 
     /// `handleKeyboardNoteOn` inserts the note number into `detectedMidiNotes`.
-    @Test func handleKeyboardNoteOnInsertsIntoDetectedSet() {
+    @Test
+    func handleKeyboardNoteOnInsertsIntoDetectedSet() {
         let router = makeRouter()
         router.handleKeyboardNoteOn(midiNote: 60)
         #expect(router.detectedMidiNotes.contains(60))
@@ -92,7 +95,8 @@ struct NoteRouterTests {
 
     /// `handleKeyboardNoteOff` removes a previously-inserted note from
     /// `detectedMidiNotes` so the sheet view un-highlights the key.
-    @Test func handleKeyboardNoteOffRemovesFromDetectedSet() {
+    @Test
+    func handleKeyboardNoteOffRemovesFromDetectedSet() {
         let router = makeRouter()
         router.handleKeyboardNoteOn(midiNote: 60)
         router.handleKeyboardNoteOff(midiNote: 60)
@@ -102,7 +106,8 @@ struct NoteRouterTests {
     /// `skipGuidedNote` records a missed score (not a hit), advances
     /// `currentNoteIndex` to the next note, and resets guided-play state
     /// to `.waitingForNote`.
-    @Test func skipGuidedNoteAdvancesIndexAndRecordsMissed() {
+    @Test
+    func skipGuidedNoteAdvancesIndexAndRecordsMissed() {
         let scoring = ScoringCoordinator()
         let playback = makePlayback(scoring: scoring)
         playback.installNoteEventsForTesting([
@@ -125,7 +130,8 @@ struct NoteRouterTests {
 
     /// Setting `latencyPreset` persists the raw value to UserDefaults under the
     /// expected key so the choice survives app launches.
-    @Test func latencyPresetSetterPersistsToUserDefaults() {
+    @Test
+    func latencyPresetSetterPersistsToUserDefaults() {
         let key = "com.survibe.playAlong.latencyPreset"
         UserDefaults.standard.removeObject(forKey: key)
         let router = makeRouter()
@@ -142,7 +148,8 @@ struct NoteRouterTests {
 
     /// `NoteRouter` reads the persisted `LatencyPreset` from UserDefaults at
     /// construction time so the user's preferred buffer size is restored.
-    @Test func latencyPresetReadsFromUserDefaultsAtConstruction() {
+    @Test
+    func latencyPresetReadsFromUserDefaultsAtConstruction() {
         let key = "com.survibe.playAlong.latencyPreset"
         UserDefaults.standard.set(LatencyPreset.ultraFast.rawValue, forKey: key)
         // .ultraFast is a non-default case (default is .fast); verifies round-trip from UserDefaults.
@@ -157,11 +164,12 @@ struct NoteRouterTests {
     /// `updateExpectedMidiNote` reads the MIDI note number from the event at
     /// `currentNoteIndex` and publishes it to `expectedMidiNote` so the sheet
     /// view can highlight the target key.
-    @Test func updateExpectedMidiNoteSetsExpectedFromCurrentEvent() {
+    @Test
+    func updateExpectedMidiNoteSetsExpectedFromCurrentEvent() {
         let scoring = ScoringCoordinator()
         let playback = makePlayback(scoring: scoring)
         playback.installNoteEventsForTesting([
-            NoteEventFactory.make(swarName: "Sa", midiNote: 60),
+            NoteEventFactory.make(swarName: "Sa", midiNote: 60)
         ])
         playback.currentNoteIndex = 0
         let router = makeRouter(
@@ -177,7 +185,8 @@ struct NoteRouterTests {
 
     /// `stopInputDetection` cancels all in-flight tasks and removes MIDI / mic
     /// callbacks so no spurious events are delivered after teardown.
-    @Test func stopInputDetectionCancelsTasksAndClearsCallbacks() {
+    @Test
+    func stopInputDetectionCancelsTasksAndClearsCallbacks() {
         let midi = MockMIDIInputProvider()
         let scoring = ScoringCoordinator()
         let playback = makePlayback(scoring: scoring)

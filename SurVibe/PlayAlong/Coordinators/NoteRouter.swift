@@ -205,7 +205,8 @@ final class NoteRouter {
 
     func skipGuidedNote() {
         guard let index = playback.currentNoteIndex,
-              index < playback.noteEvents.count else { return }
+            index < playback.noteEvents.count
+        else { return }
         playback.noteStates[playback.noteEvents[index].id] = .missed
         scoring.record(NoteScoreCalculator.missedNote(expectedNote: playback.noteEvents[index].swarName))
         scoring.updateStreak(grade: .miss)
@@ -224,7 +225,8 @@ final class NoteRouter {
 
     func updateExpectedMidiNote() {
         guard let index = playback.currentNoteIndex,
-              index < playback.noteEvents.count else {
+            index < playback.noteEvents.count
+        else {
             expectedMidiNote = nil
             return
         }
