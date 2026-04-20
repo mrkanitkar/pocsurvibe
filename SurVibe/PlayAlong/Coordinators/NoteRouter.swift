@@ -231,6 +231,17 @@ final class NoteRouter {
         expectedMidiNote = Int(playback.noteEvents[index].midiNote)
     }
 
+    /// Reset guided-play state and restart the patience timer.
+    ///
+    /// Called by the facade when entering guided free-play mode
+    /// (e.g. after `loadSong` or `pauseSession`) so the UI displays the
+    /// neutral waiting state and the stuck hint re-arms from scratch.
+    func resetGuidedPlay() {
+        guidedPlayState = .waitingForNote
+        isStuck = false
+        startPatienceTimer()
+    }
+
     func configureRagaContext(ragaName: String) {
         guard !ragaName.isEmpty else {
             ragaScoringContext = nil
