@@ -18,7 +18,10 @@
 | **SP-3 umbrella** VM ≤ 200 lines + `file_length` disclaimer deleted | ✅ shipped | `sp-3-vm-split-complete` @ `1089026` | `91ae34a` | — |
 | **SP-4a** Accessibility + Settings — core (narrow scope) | ✅ shipped | `sp-4-accessibility` @ `d916fa2` | `b6d340e` | 8 |
 | **SP-4b** Accessibility remainder (P2-6 arrow-key card nav, P2-12 detents audit, P2-13 tab-switch haptics) | ✅ shipped | `sp-4b-accessibility-remainder` @ `ce695b9` | `8770217` | 11 |
-| **SP-4c** Live Activity + Pencil + focus-ring polish (P1-2, P1-4 + SP-4b deferrals) | ⬜ pending | — | — | — |
+| **SP-4c** Accessibility finale (Phase A polish shipped; Phase B audit infra shipped, per-screen iteration parked) | ✅ shipped | `sp-4c-accessibility-finale` @ `8d5178d` | `ea2b60b` | 11 |
+| **SP-4d** Live Activity / Dynamic Island (P1-2) | ⬜ pending | — | — | — |
+| **SP-4e** Apple Pencil annotation on notation (P1-4) | ⬜ pending | — | — | — |
+| **SP-4f** Accessibility audit iteration + Dynamic Type refactor (Phase B per-screen fixes) | ⬜ pending | — | — | — |
 | **SP-5** Gen-AI harness | ⬜ pending | — | — | — |
 | **SP-6** Mac destination | ⬜ pending | — | — | — |
 
@@ -150,6 +153,32 @@ Zero coordinator changes; zero latency-gate interaction. All narrow regression s
 - AD-3: 2-column compile-time assumption for Songs grid math. Dynamic column count (GeometryReader) deferred to SP-4c.
 
 **Deferred to SP-4c per spec §6:** focus-ring custom styling, escape-to-clear-focus, HomeTab DoorCard focus, ProfileTab row focus, GeometryReader dynamic column count.
+
+### SP-4c landed (2026-04-20)
+
+**SP-4c Phase A shipped (4 polish deferrals + dynamic cols, 11 commits on feat branch):**
+- FocusRingModifier reusable ViewModifier (3pt accent stroke on focused item; used by library cards, HomeTab DoorCards, ProfileTab rows).
+- Escape-to-clear-focus on LessonLibraryView + SongLibraryView.
+- HomeTab DoorCard @FocusState — `HomeDoorID` enum (5 cases), HomeDoorNavModifier consolidating .focused + ring + Return + arrow + escape.
+- ProfileTab rows @FocusState — `ProfileRowID` enum (5 cases), ProfileRowNavModifier covering the 5 hoverEffect rows.
+- GeometryReader-driven dynamic column count for Songs grid — `SongLibraryView.columnCount(for:)` (2/3/4 at <700 / 700-1000 / ≥1000pt boundaries); grid layout + focus math share the same count.
+- 13 new unit tests: HomeTabFocusTests (4), ProfileTabFocusTests (4), SongGridColumnCountTests (5).
+
+**SP-4c Phase B shipped (infrastructure, per-screen iteration parked):**
+- `SurVibeUITests/AccessibilityAuditTests.swift` scaffold with 8 screen-targeted audit methods using Apple's documented `performAccessibilityAudit(for:)`.
+- iOS-correct 5-category audit set: `.elementDetection`, `.contrast`, `.hitRegion`, `.sufficientElementDescription`, `.trait`. Dropped `.parentChild` / `.action` (macOS-only per `XCUIAccessibilityAuditTypes.h`). Dropped `.textClipped` (subsumed by `.dynamicType`).
+- Dynamic Type audit deferred: 30+ `.font(.system(size:))` call sites in SurVibe are music-layout-critical (piano keys, sargam rows, XP numerals, chord brackets). Proper fix = `@ScaledMetric` + clamped-scale refactor. Parked as `testDynamicTypeAuditPendingRefactor` (XCTSkip with rationale).
+- iOS 26 floating tab bar navigation pattern: `app.buttons[label].firstMatch` (not `.tabBars.buttons[label]`) — floating tab bar items present as nested `_UIFloatingTabBarItemCell`.
+- Scheme: flipped `SurVibeUITests` skipped=YES→NO so audit suite actually runs.
+- DoorCard icon font: `.system(size: 32)` → `.largeTitle` (one concrete fix landed while investigating Dynamic Type).
+
+**Per-screen audit iteration parked to SP-4f** per spec §8 escape hatch. Initial runs surfaced Contrast + other per-screen issues requiring Accessibility Inspector analysis; budget exceeded narrow SP-4c scope.
+
+**Tests:** SVCore 93/93 green; narrow SurVibeTests 26/26 green (LibraryFocusNavigator 8, HomeTabFocus 4, ProfileTabFocus 4, SongGridColumnCount 5, LatencyContract 3 p95 delta 0.0 ms, SongLibraryViewFocus 2); AccessibilityAuditTests 9/9 skipped (green).
+
+**Zero banned-pattern introductions.** Pre-commit SwiftLint + swift-format passed on every feat commit.
+
+**Routes pending work:** SP-4d (Live Activity), SP-4e (Pencil), SP-4f (audit iteration + Dynamic Type refactor).
 
 ### SP-4b / SP-4c outstanding (not shipped this session)
 
