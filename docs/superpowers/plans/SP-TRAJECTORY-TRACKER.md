@@ -17,8 +17,8 @@
 | **SP-3d** NoteRouter (phase 4 of 4, HIGH risk) | ✅ shipped | `sp-3d-note-router` @ `1089026` | `91ae34a` | 14 |
 | **SP-3 umbrella** VM ≤ 200 lines + `file_length` disclaimer deleted | ✅ shipped | `sp-3-vm-split-complete` @ `1089026` | `91ae34a` | — |
 | **SP-4a** Accessibility + Settings — core (narrow scope) | ✅ shipped | `sp-4-accessibility` @ `d916fa2` | `b6d340e` | 8 |
-| **SP-4b** Accessibility remainder (P2-6 arrow-key card nav, P2-12 detents audit, P2-13 tab-switch haptics) | ⬜ pending | — | — | — |
-| **SP-4c** Live Activity + Pencil (P1-2, P1-4 — both L-effort, may split to dedicated sub-projects) | ⬜ pending | — | — | — |
+| **SP-4b** Accessibility remainder (P2-6 arrow-key card nav, P2-12 detents audit, P2-13 tab-switch haptics) — spec landed 2026-04-20 | 🟡 spec | — | — | — |
+| **SP-4c** Live Activity + Pencil + focus-ring polish (P1-2, P1-4 + SP-4b deferrals) | ⬜ pending | — | — | — |
 | **SP-5** Gen-AI harness | ⬜ pending | — | — | — |
 | **SP-6** Mac destination | ⬜ pending | — | — | — |
 
@@ -140,6 +140,9 @@ SP-4b (S/M effort — can batch with SP-4a-style velocity):
 SP-4c (L effort — may warrant dedicated sub-projects):
 - P1-2 Live Activity / Dynamic Island (new Widget extension target)
 - P1-4 Apple Pencil annotation on notation (PKCanvasView overlay + CloudKit sync)
+- **Focus-ring polish** (deferred from SP-4b §6): custom focus-ring styling on library cards using `themeManager.resolved.accentColor`; escape-to-clear-focus on library cards.
+- **Home + Profile card focus** (deferred from SP-4b §6): `@FocusState` + arrow-key + Return on `HomeTab` DoorCards and `ProfileTab` rows. Out of audit P2-6 scope but opportunistic to ship alongside the focus-ring polish work.
+- **Dynamic grid columns** (deferred from SP-4b §6, AD-3): `GeometryReader`-driven column count for Songs grid arrow-key math on wide iPad; replaces the compile-time 2-col assumption.
 
 Next recommended: SP-4b, then SP-5 Gen-AI harness, then SP-6 Mac destination. SP-4c can interleave with SP-5/6 if timing allows.
 
