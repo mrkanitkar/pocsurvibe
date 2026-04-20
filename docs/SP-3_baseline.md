@@ -43,3 +43,20 @@ Captured 2026-04-19 pre-SP-3a on `feat/sp-3a-scoring-coordinator` branched from 
 - `PlayAlongChromeState.swift` ≈ 150 lines.
 - Both `featureFlagToggleDoesNotRestartEngine` + `rotationDoesNotRestartAudioEngine` GREEN.
 - All 8 PlayAlong suites GREEN. `PlayAlongChromeTests` is the regression guard.
+
+## SP-3d pre-task snapshot (captured on `feat/sp-3d-note-router`)
+- `PlayAlongViewModel.swift`: **1,381 lines** (post-SP-3c baseline).
+- `PlayAlongChromeState.swift`: 145 lines.
+- `PlaybackCoordinator.swift`: 597 lines.
+- `ScoringCoordinator.swift`: 124 lines.
+- LatencyContractTests: 3/3 PASS.
+
+## Gate for SP-3d merge (umbrella close-out)
+- `PlayAlongViewModel.swift` ≤ **200 lines** (target: ~880 LOC peeled into NoteRouter + chrome cleanup).
+- `NoteRouter.swift` ≈ 700-900 lines (largest coordinator).
+- `PlayAlongChromeState.swift` grows by ~10 lines for `autoHideOverrideSeconds` API (D-SP3d-4).
+- `// swiftlint:disable file_length` on VM line 1 DELETED.
+- `// swiftlint:disable:next type_body_length` on VM line 38 DELETED.
+- Both latency contract tests + all 8 PlayAlong suites GREEN.
+- ADR-002 Phase 1/Phase 2 invariants preserved.
+- Tags pushed: `sp-3d-note-router` + `sp-3-vm-split-complete` (umbrella).
