@@ -73,22 +73,23 @@ struct InteractivePianoView: View {
 
     /// Color used to highlight right-hand MIDI notes (from `highlightState?.rhNotes`).
     ///
-    /// Defaults to system blue — matches the existing detection highlight color
-    /// so call sites that don't populate `rhNotes` see no visual change.
+    /// Defaults to the Rang right-hand semantic token (P1-5) — colorblind-aware
+    /// and WCAG AA compliant on white piano keys. Overridden by the active theme
+    /// via `PlayAlongChromeState.updateTheme` in production flows.
     /// Passed as `let` to preserve the latency contract — no environment reads.
-    var rhColor: Color = .blue
+    var rhColor: Color = Color.rangRightHand
 
     /// Color used to highlight left-hand MIDI notes (from `highlightState?.lhNotes`).
     ///
-    /// Defaults to system red.
-    var lhColor: Color = .red
+    /// Defaults to the Rang left-hand semantic token (P1-5).
+    var lhColor: Color = Color.rangLeftHand
 
     /// Color used to highlight chord / both-hands MIDI notes
     /// (from `highlightState?.chordNotes`, or notes present in both
     /// `rhNotes` and `lhNotes`).
     ///
-    /// Defaults to system purple.
-    var chordColor: Color = .purple
+    /// Defaults to the Rang both-hands semantic token (P1-5).
+    var chordColor: Color = Color.rangBothHands
 
     // MARK: - Internal State
 
