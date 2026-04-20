@@ -120,33 +120,61 @@ final class PlayAlongViewModel {
         set { playback.isSoundEnabled = newValue }
     }
 
-    /// Visual display mode (falling notes vs scrolling sheet).
-    var viewMode: PlayAlongViewMode = .fallingNotes
+    /// Visual display mode — delegates to `chrome.viewMode` (read+write).
+    var viewMode: PlayAlongViewMode {
+        get { chrome.viewMode }
+        set { chrome.viewMode = newValue }
+    }
 
-    /// Notation label display mode (Sargam, Western, dual, etc.).
-    var notationMode: NotationDisplayMode = .sargam
+    /// Notation label display mode — delegates to `chrome.notationMode` (read+write).
+    var notationMode: NotationDisplayMode {
+        get { chrome.notationMode }
+        set { chrome.notationMode = newValue }
+    }
 
-    // MARK: - Resolved Theme Colors (v2)
+    // MARK: - Resolved Theme Colors (v2) — delegates to chrome coordinator (SP-3c)
 
-    /// Right-hand accent color — set once at `.task` from theme.
-    ///
-    /// `@ObservationIgnored` prevents assignments from triggering SwiftUI
-    /// re-renders. Views receive these as `let` parameters at construction time.
-    @ObservationIgnored
-    var rhColor: Color = .blue
+    /// Right-hand accent color — delegates to `chrome.rhColor` (read+write).
+    var rhColor: Color {
+        get { chrome.rhColor }
+        set { chrome.rhColor = newValue }
+    }
 
-    @ObservationIgnored
-    var lhColor: Color = .red
-    @ObservationIgnored
-    var chordColor: Color = .purple
-    @ObservationIgnored
-    var notationLineColor: Color = .black
-    @ObservationIgnored
-    var notationSecondaryColor: Color = .gray
-    @ObservationIgnored
-    var cardBackgroundColor: Color = .white.opacity(0.9)
-    @ObservationIgnored
-    var karaokeBackgroundColor: Color = .black.opacity(0.55)
+    /// Left-hand accent color — delegates to `chrome.lhColor` (read+write).
+    var lhColor: Color {
+        get { chrome.lhColor }
+        set { chrome.lhColor = newValue }
+    }
+
+    /// Chord accent color — delegates to `chrome.chordColor` (read+write).
+    var chordColor: Color {
+        get { chrome.chordColor }
+        set { chrome.chordColor = newValue }
+    }
+
+    /// Notation primary line color — delegates to `chrome.notationLineColor` (read+write).
+    var notationLineColor: Color {
+        get { chrome.notationLineColor }
+        set { chrome.notationLineColor = newValue }
+    }
+
+    /// Notation secondary color — delegates to `chrome.notationSecondaryColor` (read+write).
+    var notationSecondaryColor: Color {
+        get { chrome.notationSecondaryColor }
+        set { chrome.notationSecondaryColor = newValue }
+    }
+
+    /// Card background color — delegates to `chrome.cardBackgroundColor` (read+write).
+    var cardBackgroundColor: Color {
+        get { chrome.cardBackgroundColor }
+        set { chrome.cardBackgroundColor = newValue }
+    }
+
+    /// Karaoke background color — delegates to `chrome.karaokeBackgroundColor` (read+write).
+    var karaokeBackgroundColor: Color {
+        get { chrome.karaokeBackgroundColor }
+        set { chrome.karaokeBackgroundColor = newValue }
+    }
 
     /// Latency preset for mic pitch detection (controls FFT buffer size for chord detection).
     ///
@@ -228,39 +256,35 @@ final class PlayAlongViewModel {
     /// Human-readable name of the connected MIDI device, if any.
     private(set) var midiDeviceName: String?
 
-    // MARK: - Chrome Visibility (v2)
+    // MARK: - Chrome Visibility (v2) — delegates to chrome coordinator (SP-3c)
 
-    /// Whether the PlayAlong toolbar/summoned chrome is visible.
-    ///
-    /// `.summoned`: toolbar slide-down is visible.
-    /// `.hidden`: only persistent chrome (pause dot, mic pill, tanpura pill)
-    /// is on screen — notation dominates the view.
-    enum ChromeVisibility: Sendable {
-        case hidden
-        case summoned
-    }
-
-    /// Current chrome state. Starts `.summoned` so users see controls on
-    /// first open; transitions to `.hidden` after `chromeAutoHideSeconds`
-    /// of inactivity.
-    private(set) var chromeVisibility: ChromeVisibility = .summoned
+    /// Chrome visibility — delegates to `chrome.chromeVisibility`.
+    var chromeVisibility: PlayAlongChromeState.ChromeVisibility { chrome.chromeVisibility }
 
     /// Seconds of inactivity before chrome auto-hides. `0` disables auto-hide.
+    ///
+    /// The VM-level timer is used so callers can override the duration at
+    /// runtime (e.g. tests set `0` to disable auto-hide). The coordinator
+    /// owns the visibility state; the VM-level task calls `chrome.hideChrome()`
+    /// when the countdown expires.
     var chromeAutoHideSeconds: Double = 6.0
 
-    /// Outstanding auto-hide timer. Cancel when user interacts.
+    /// Outstanding VM-level auto-hide timer. Cancel when user interacts.
     @ObservationIgnored
     private var chromeAutoHideTask: Task<Void, Never>?
 
-    // MARK: - Chrome Actions (v2)
+    // MARK: - Chrome Actions (v2) — delegates to chrome coordinator
 
     /// Show the chrome and start/restart the auto-hide countdown.
     func summonChrome() {
-        chromeVisibility = .summoned
+        chrome.summonChrome()
         resetAutoHide()
     }
 
     /// Reset the auto-hide countdown (user interaction with a control).
+    ///
+    /// Uses `chromeAutoHideSeconds` so callers can override the duration.
+    /// Calls `chrome.hideChrome()` when the countdown expires.
     func resetAutoHide() {
         chromeAutoHideTask?.cancel()
         guard chromeAutoHideSeconds > 0 else { return }
@@ -268,13 +292,13 @@ final class PlayAlongViewModel {
         chromeAutoHideTask = Task { @MainActor [weak self] in
             try? await Task.sleep(for: .seconds(seconds))
             guard !Task.isCancelled else { return }
-            self?.chromeVisibility = .hidden
+            self?.chrome.hideChrome()
         }
     }
 
     /// Hide chrome immediately. Cancels any pending auto-hide timer.
     func hideChrome() {
-        chromeVisibility = .hidden
+        chrome.hideChrome()
         chromeAutoHideTask?.cancel()
         chromeAutoHideTask = nil
     }
@@ -419,6 +443,10 @@ final class PlayAlongViewModel {
     /// Playback coordinator — owns transport state, scheduling, session
     /// completion, and persistence. SP-3b extraction.
     let playback: PlaybackCoordinator
+
+    /// Chrome state coordinator — owns visibility + view modes + resolved
+    /// theme colors. SP-3c extraction.
+    let chrome = PlayAlongChromeState()
 
     // MARK: - Initialization
 
