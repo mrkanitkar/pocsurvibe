@@ -17,8 +17,8 @@
 | **SP-3d** NoteRouter (phase 4 of 4, HIGH risk) | ✅ shipped | `sp-3d-note-router` @ `1089026` | `91ae34a` | 14 |
 | **SP-3 umbrella** VM ≤ 200 lines + `file_length` disclaimer deleted | ✅ shipped | `sp-3-vm-split-complete` @ `1089026` | `91ae34a` | — |
 | **SP-4a** Accessibility + Settings — core (narrow scope) | ✅ shipped | `sp-4-accessibility` @ `d916fa2` | `b6d340e` | 8 |
-| **SP-4b** Accessibility remainder (P2-6 arrow-key card nav, P2-12 detents audit, P2-13 tab-switch haptics) | ⬜ pending | — | — | — |
-| **SP-4c** Live Activity + Pencil (P1-2, P1-4 — both L-effort, may split to dedicated sub-projects) | ⬜ pending | — | — | — |
+| **SP-4b** Accessibility remainder (P2-6 arrow-key card nav, P2-12 detents audit, P2-13 tab-switch haptics) | ✅ shipped (pending merge) | `sp-4b-accessibility-remainder` (tag-pending) | pending | 9 |
+| **SP-4c** Live Activity + Pencil + focus-ring polish (P1-2, P1-4 + SP-4b deferrals) | ⬜ pending | — | — | — |
 | **SP-5** Gen-AI harness | ⬜ pending | — | — | — |
 | **SP-6** Mac destination | ⬜ pending | — | — | — |
 
@@ -130,6 +130,27 @@ Next: SP-4 Accessibility polish + iOS in-app Settings navigation.
 
 Zero coordinator changes; zero latency-gate interaction. All narrow regression suites + SVCore 93/93 green. 6 exit-signal greps pass. Tag: `sp-4-accessibility @ d916fa2`, merge `b6d340e`.
 
+### SP-4b landed (2026-04-20)
+
+**SP-4b shipped (3 audit items, 9 commits):**
+- P2-6 arrow-key card nav (Lessons up/down; Songs up/down/left/right via pure `LibraryFocusNavigator` helper)
+- P2-12 sheet detent audit (5 sheets: song detail `[.medium, .large]`+grabber; import/edit compose `[.large]` no grabber; 2 nested warnings `[.medium]`+grabber)
+- P2-13 `.sensoryFeedback(.selection, trigger: selectedTab)` on ContentView TabView (overrides audit's `.impact` per spec AD-1)
+
+**New files:** `SurVibe/Navigation/LibraryFocusNavigator.swift` (~55 lines pure helper), `SurVibeTests/LibraryFocusNavigatorTests.swift` (8 Swift Testing cases covering row/col/edge math).
+
+**Modified:** `LessonLibraryView.swift` (+35 lines), `SongLibraryView.swift` (+53 lines incl. detail-sheet detents), `SongImportSheet.swift` (+3), `SongEditView.swift` (+3), `ContentView.swift` (+1), `Localizable.xcstrings` (Xcode re-extraction chore).
+
+**Tests:** 8/8 `LibraryFocusNavigatorTests` pass; 3/3 `LatencyContractTests` pass (p95 delta 0.0 ms); 2/2 `SongLibraryViewFocusTests` pass (no regression); SVCore 93/93 pass. Total 106 tests green.
+
+**Zero banned-pattern introductions.** Pre-commit SwiftLint + swift-format passed on every feature commit. Build clean on iPad Air 13-inch (M3) / iOS 26.3.
+
+**Architectural deviations applied (per spec §4):**
+- AD-1: `.selection` haptic over audit's `.impact(.medium)` — HIG-aligned for state-toggle picker semantics.
+- AD-3: 2-column compile-time assumption for Songs grid math. Dynamic column count (GeometryReader) deferred to SP-4c.
+
+**Deferred to SP-4c per spec §6:** focus-ring custom styling, escape-to-clear-focus, HomeTab DoorCard focus, ProfileTab row focus, GeometryReader dynamic column count.
+
 ### SP-4b / SP-4c outstanding (not shipped this session)
 
 SP-4b (S/M effort — can batch with SP-4a-style velocity):
@@ -140,6 +161,9 @@ SP-4b (S/M effort — can batch with SP-4a-style velocity):
 SP-4c (L effort — may warrant dedicated sub-projects):
 - P1-2 Live Activity / Dynamic Island (new Widget extension target)
 - P1-4 Apple Pencil annotation on notation (PKCanvasView overlay + CloudKit sync)
+- **Focus-ring polish** (deferred from SP-4b §6): custom focus-ring styling on library cards using `themeManager.resolved.accentColor`; escape-to-clear-focus on library cards.
+- **Home + Profile card focus** (deferred from SP-4b §6): `@FocusState` + arrow-key + Return on `HomeTab` DoorCards and `ProfileTab` rows. Out of audit P2-6 scope but opportunistic to ship alongside the focus-ring polish work.
+- **Dynamic grid columns** (deferred from SP-4b §6, AD-3): `GeometryReader`-driven column count for Songs grid arrow-key math on wide iPad; replaces the compile-time 2-col assumption.
 
 Next recommended: SP-4b, then SP-5 Gen-AI harness, then SP-6 Mac destination. SP-4c can interleave with SP-5/6 if timing allows.
 
