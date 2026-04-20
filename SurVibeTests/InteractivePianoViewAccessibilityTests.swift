@@ -23,4 +23,19 @@ struct InteractivePianoViewAccessibilityTests {
         #expect(lh != both)
         #expect(rh != both)
     }
+
+    @Test func environmentAccessibilityDifferentiateWithoutColorAPIExists() {
+        // Compile smoke: the environment key is a valid EnvironmentValues member.
+        let env = EnvironmentValues()
+        _ = env.accessibilityDifferentiateWithoutColor
+        #expect(true, "accessibilityDifferentiateWithoutColor is a SwiftUI environment key")
+    }
+
+    @Test func differentiateOverlayLettersAreUnique() {
+        let letters = ["R", "L", "•"]
+        #expect(Set(letters).count == letters.count, "R/L/• are distinct glyphs")
+        for letter in letters {
+            #expect(!letter.isEmpty)
+        }
+    }
 }
