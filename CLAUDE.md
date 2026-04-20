@@ -65,7 +65,7 @@ SurVibeApp (top-level, imports all 7)
 - Use Swift structured concurrency (`async/await`, `TaskGroup`).
 - NEVER use completion handlers for new code — use async/await.
 - Avoid `@unchecked Sendable` — prefer `Mutex<State>` or `@MainActor`. **Allowed:** NSObject delegates (e.g., `MusicXMLParserDelegate`), CoreMIDI interop, test doubles.
-- Mark all managers, singletons, and view models as `@MainActor`. **Exception:** `MIDIInputManager` uses `NSLock` instead of `@MainActor` because CoreMIDI callbacks arrive on arbitrary threads.
+- Mark all managers, singletons, and view models as `@MainActor`. **Exception:** `MIDIInputManager` uses `OSAllocatedUnfairLock (per AUD-033)` instead of `@MainActor` because CoreMIDI callbacks arrive on arbitrary threads.
 - Use `nonisolated private static func` for pure computation (DSP, math, pitch detection).
 - Use `nonisolated(unsafe)` ONLY with external synchronization (NSLock/Mutex). ALWAYS add a `///` comment explaining the safety invariant. Prefer consolidating mutable state into `Mutex<State>` structs to reduce `nonisolated(unsafe)` count.
 - NotificationCenter closures: extract `Sendable` values from `Notification.userInfo` BEFORE entering `Task { @MainActor in }` (Notification is not Sendable).
