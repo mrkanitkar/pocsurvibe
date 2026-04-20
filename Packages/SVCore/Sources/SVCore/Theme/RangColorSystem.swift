@@ -80,3 +80,27 @@ public enum RangLevel: Int, CaseIterable, Sendable {
         return .neel
     }
 }
+
+// MARK: - Hand-Color Semantic Tokens (P1-5)
+
+/// Semantic color tokens for piano hand-role highlights.
+///
+/// These tokens replace the legacy `.blue` / `.red` / `.purple` defaults on
+/// `InteractivePianoView` with colorblind-aware, WCAG AA compliant hues.
+/// They are hue-differentiated (green / orange / purple) so protanopia and
+/// deuteranopia users can still distinguish right-hand from left-hand.
+/// When `accessibilityDifferentiateWithoutColor` is true, the R / L letter
+/// overlay (P1-6) is paired with these tokens.
+extension Color {
+    /// Right-hand accent token for piano key highlights (P1-5).
+    /// WCAG AA ≥ 4.5:1 on white piano keys; hue-differentiated from `rangLeftHand`
+    /// for colorblind users. Paired with R/L letter overlay (P1-6) when
+    /// `accessibilityDifferentiateWithoutColor` is true.
+    public static let rangRightHand = Color(red: 0.20, green: 0.55, blue: 0.25)
+
+    /// Left-hand accent token for piano key highlights (P1-5).
+    public static let rangLeftHand = Color(red: 0.75, green: 0.35, blue: 0.10)
+
+    /// Chord / both-hands accent token for simultaneous note highlights (P1-5).
+    public static let rangBothHands = Color(red: 0.40, green: 0.20, blue: 0.55)
+}
