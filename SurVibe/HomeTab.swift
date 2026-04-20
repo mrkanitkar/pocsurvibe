@@ -38,6 +38,44 @@ struct HomeTab: View {
     /// Logger for Home tab events.
     private static let logger = Logger.survibe(category: "HomeTab")
 
+    /// Tracks which door has hardware-keyboard focus.
+    @FocusState
+    private var focusedDoorID: HomeDoorID?
+
+    /// Home grid is effectively 2 columns (adaptive minimum 160pt on all
+    /// supported widths packs the 5 doors into 2-col grid on iPhone +
+    /// iPad portrait). Wide-iPad landscape may render 3+ columns; arrow-
+    /// key math stays 2-col (graceful linear degradation).
+    private static let homeGridColumns = 2
+
+    /// Moves keyboard focus to the next door in the given direction.
+    private func moveFocus(_ direction: LibraryFocusNavigator.FocusDirection, from currentID: HomeDoorID) {
+        let doors = HomeDoorID.allCases
+        guard let currentIndex = doors.firstIndex(of: currentID) else { return }
+        guard
+            let nextIndex = LibraryFocusNavigator.nextIndex(
+                for: direction,
+                currentIndex: currentIndex,
+                count: doors.count,
+                columns: Self.homeGridColumns
+            )
+        else { return }
+        focusedDoorID = doors[nextIndex]
+    }
+
+    /// Builds the focus + keyboard + ring modifier chain for a DoorCard.
+    /// Consolidates the 4-modifier chain so each DoorCard site stays scannable.
+    private func homeDoorNav(for doorID: HomeDoorID, action: @escaping () -> Void) -> HomeDoorNavModifier {
+        HomeDoorNavModifier(
+            doorID: doorID,
+            focusedID: focusedDoorID,
+            focusBinding: $focusedDoorID,
+            accent: themeManager.resolved.accentColor,
+            onReturn: action,
+            onMove: { direction, id in moveFocus(direction, from: id) }
+        )
+    }
+
     // MARK: - Body
 
     var body: some View {
@@ -66,6 +104,11 @@ struct HomeTab: View {
                 doorIcon: door.icon,
                 doorDescription: door.sheetDescription
             )
+        }
+        .onAppear {
+            if focusedDoorID == nil {
+                focusedDoorID = .songs
+            }
         }
         .accessibilityLabel(AccessibilityHelper.tabLabel(for: "Home"))
     }
@@ -110,6 +153,9 @@ struct HomeTab: View {
                     Self.logger.debug("Door tapped: Songs")
                     router.switchTab(to: .songs)
                 }
+                .modifier(homeDoorNav(for: .songs) {
+                    router.switchTab(to: .songs)
+                })
 
                 // Learn — enabled
                 DoorCard(
@@ -125,6 +171,9 @@ struct HomeTab: View {
                     Self.logger.debug("Door tapped: Learn")
                     router.switchTab(to: .learn)
                 }
+                .modifier(homeDoorNav(for: .learn) {
+                    router.switchTab(to: .learn)
+                })
 
                 // Moods — disabled (coming soon)
                 DoorCard(
@@ -139,6 +188,9 @@ struct HomeTab: View {
                 ) {
                     showComingSoon = .moods
                 }
+                .modifier(homeDoorNav(for: .moods) {
+                    showComingSoon = .moods
+                })
 
                 // Events — disabled (coming soon)
                 DoorCard(
@@ -153,6 +205,9 @@ struct HomeTab: View {
                 ) {
                     showComingSoon = .events
                 }
+                .modifier(homeDoorNav(for: .events) {
+                    showComingSoon = .events
+                })
 
                 // Ragas — disabled (coming soon)
                 DoorCard(
@@ -167,9 +222,63 @@ struct HomeTab: View {
                 ) {
                     showComingSoon = .ragas
                 }
+                .modifier(homeDoorNav(for: .ragas) {
+                    showComingSoon = .ragas
+                })
             }
         }
     }
+}
+
+// MARK: - HomeDoorNavModifier
+
+/// Attaches `@FocusState` binding + focus ring + Return + arrow-key nav to a DoorCard.
+/// Centralises the 4-modifier chain so each HomeTab DoorCard call site is concise.
+struct HomeDoorNavModifier: ViewModifier {
+    let doorID: HomeDoorID
+    let focusedID: HomeDoorID?
+    let focusBinding: FocusState<HomeDoorID?>.Binding
+    let accent: Color
+    let onReturn: () -> Void
+    let onMove: (LibraryFocusNavigator.FocusDirection, HomeDoorID) -> Void
+
+    func body(content: Content) -> some View {
+        content
+            .focused(focusBinding, equals: doorID)
+            .focusRing(itemID: doorID, focusedID: focusedID, accent: accent)
+            .onKeyPress(.return) {
+                onReturn()
+                return .handled
+            }
+            .onKeyPress(keys: [.upArrow, .downArrow, .leftArrow, .rightArrow]) { press in
+                let direction: LibraryFocusNavigator.FocusDirection
+                switch press.key {
+                case .upArrow: direction = .up
+                case .downArrow: direction = .down
+                case .leftArrow: direction = .left
+                case .rightArrow: direction = .right
+                default: return .ignored
+                }
+                onMove(direction, doorID)
+                return .handled
+            }
+            .onKeyPress(.escape) {
+                // Escape-to-clear handled at the tab container level; no-op here.
+                .ignored
+            }
+    }
+}
+
+// MARK: - HomeDoorID
+
+/// Stable identity for the 5 Home DoorCards, used for hardware-keyboard focus.
+/// Order matches the rendered grid (row-major, 2 cols assumed).
+enum HomeDoorID: String, Hashable, CaseIterable {
+    case songs
+    case learn
+    case moods
+    case events
+    case ragas
 }
 
 // MARK: - ComingSoonDoor
