@@ -16,7 +16,9 @@
 | **SP-3c** View-chrome extraction (phase 3 of 4) | ✅ shipped | `sp-3c-view-chrome` @ `357f366` | `8bd63bd` | 6 |
 | **SP-3d** NoteRouter (phase 4 of 4, HIGH risk) | ✅ shipped | `sp-3d-note-router` @ `1089026` | `91ae34a` | 14 |
 | **SP-3 umbrella** VM ≤ 200 lines + `file_length` disclaimer deleted | ✅ shipped | `sp-3-vm-split-complete` @ `1089026` | `91ae34a` | — |
-| **SP-4** Accessibility polish + iOS Settings nav | ✅ shipped | `sp-4-accessibility` @ `d916fa2` | `b6d340e` | 8 |
+| **SP-4a** Accessibility + Settings — core (narrow scope) | ✅ shipped | `sp-4-accessibility` @ `d916fa2` | `b6d340e` | 8 |
+| **SP-4b** Accessibility remainder (P2-6 arrow-key card nav, P2-12 detents audit, P2-13 tab-switch haptics) | ⬜ pending | — | — | — |
+| **SP-4c** Live Activity + Pencil (P1-2, P1-4 — both L-effort, may split to dedicated sub-projects) | ⬜ pending | — | — | — |
 | **SP-5** Gen-AI harness | ⬜ pending | — | — | — |
 | **SP-6** Mac destination | ⬜ pending | — | — | — |
 
@@ -110,17 +112,36 @@ PlayAlongViewModel (god-object 1,828 → facade 446 lines, -1,382 net).
 
 Next: SP-4 Accessibility polish + iOS in-app Settings navigation.
 
-### SP-4 landed (2026-04-20)
+### SP-4a landed (2026-04-20) — CORE / NARROW scope only
 
-- Shipped 6 outstanding items: P1-5 Rang hand-color tokens, P1-6 differentiate-without-color R/L overlay on piano keys, P1-8 pinch-zoom + double-tap reset on ScrollingSheetView, P1-10 MicPermissionPrePrompt component + wiring, SP-0 F5 SettingsView Appearance section → AppearanceSettingsView, P2-2 `.sensoryFeedback` on achievement/lesson/correct-note.
-- New: `SurVibe/Components/MicPermissionPrePrompt.swift`, `SurVibeTests/InteractivePianoViewAccessibilityTests.swift`, `SurVibeTests/MicPermissionPrePromptTests.swift`, `SurVibeTests/SettingsViewAppearanceTests.swift`.
-- Modified: `RangColorSystem.swift` (3 new tokens), `InteractivePianoView.swift` (defaults + R/L overlay), `ScrollingSheetView.swift` (pinch-zoom), `SettingsView.swift` (Appearance link), `SongPlayAlongView.swift` (pre-prompt sheet + haptics), `AchievementUnlockToast.swift` + `LessonCompletionView.swift` (haptics).
-- Zero coordinator changes; zero latency-gate interaction.
-- All narrow regression suites + SVCore 93/93 green.
-- 6 exit-signal greps pass.
-- Tag: `sp-4-accessibility`.
+**Important:** SP-4a covers the narrow 6-item scope shipped this session. The original audit-defined "SP-4 Accessibility polish + iOS Settings" also includes broader items (P2-6, P2-12, P2-13 in SP-4b; P1-2, P1-4 in SP-4c). See rows 20-21 of the §Status table for pending remainders.
 
-Next: **SP-5 Gen-AI harness** (fresh session per post-SP-3 context-budget analysis).
+**SP-4a shipped (6 items):**
+- P1-5 Rang hand-color tokens (rangRightHand / rangLeftHand / rangBothHands)
+- P1-6 differentiate-without-color R/L overlay on piano keys
+- P1-8 pinch-zoom + double-tap reset on ScrollingSheetView
+- P1-10 MicPermissionPrePrompt component + SongPlayAlongView sheet wiring
+- SP-0 F5 SettingsView Appearance section → AppearanceSettingsView
+- P2-2 `.sensoryFeedback` on achievement unlock / lesson completion / per-correct-note
+
+**New files:** `SurVibe/Components/MicPermissionPrePrompt.swift`, `SurVibeTests/InteractivePianoViewAccessibilityTests.swift`, `SurVibeTests/MicPermissionPrePromptTests.swift`, `SurVibeTests/SettingsViewAppearanceTests.swift`.
+
+**Modified:** `RangColorSystem.swift` (3 tokens), `InteractivePianoView.swift` (defaults + overlay), `ScrollingSheetView.swift` (pinch-zoom), `SettingsView.swift` (Appearance link), `SongPlayAlongView.swift` (pre-prompt + haptics), `AchievementUnlockToast.swift` + `LessonCompletionView.swift` (haptics).
+
+Zero coordinator changes; zero latency-gate interaction. All narrow regression suites + SVCore 93/93 green. 6 exit-signal greps pass. Tag: `sp-4-accessibility @ d916fa2`, merge `b6d340e`.
+
+### SP-4b / SP-4c outstanding (not shipped this session)
+
+SP-4b (S/M effort — can batch with SP-4a-style velocity):
+- P2-6 `@FocusState` arrow-key card navigation (partial Enter landed in SP-2; arrow-key pending)
+- P2-12 Presentation detents audit across sheets
+- P2-13 `.sensoryFeedback(.impact, trigger: selectedTab)` on root TabView
+
+SP-4c (L effort — may warrant dedicated sub-projects):
+- P1-2 Live Activity / Dynamic Island (new Widget extension target)
+- P1-4 Apple Pencil annotation on notation (PKCanvasView overlay + CloudKit sync)
+
+Next recommended: SP-4b, then SP-5 Gen-AI harness, then SP-6 Mac destination. SP-4c can interleave with SP-5/6 if timing allows.
 
 ## Post-SP-3 pending-items audit (2026-04-20)
 
