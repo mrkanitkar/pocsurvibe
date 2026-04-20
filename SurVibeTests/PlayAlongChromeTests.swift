@@ -26,7 +26,7 @@ struct PlayAlongChromeTests {
 
     @Test @MainActor func autoHideWithZeroSecondsDoesNotHide() async throws {
         let vm = PlayAlongViewModel()
-        vm.chromeAutoHideSeconds = 0
+        vm.chrome.autoHideOverrideSeconds = 0
         vm.summonChrome()
         try await Task.sleep(for: .milliseconds(200))
         // With 0 seconds, the timer does not schedule — should remain summoned
@@ -35,7 +35,7 @@ struct PlayAlongChromeTests {
 
     @Test @MainActor func autoHideAfterInterval() async throws {
         let vm = PlayAlongViewModel()
-        vm.chromeAutoHideSeconds = 0.15  // 150ms for test speed
+        vm.chrome.autoHideOverrideSeconds = 0.15  // 150ms for test speed
         vm.summonChrome()
         #expect(vm.chromeVisibility == .summoned)
         // 600ms gives the auto-hide timer (150ms) ample margin under load —
@@ -46,7 +46,7 @@ struct PlayAlongChromeTests {
 
     @Test @MainActor func resetAutoHideRestartsTimer() async throws {
         let vm = PlayAlongViewModel()
-        vm.chromeAutoHideSeconds = 0.2
+        vm.chrome.autoHideOverrideSeconds = 0.2
         vm.summonChrome()
         try await Task.sleep(for: .milliseconds(100))
         vm.resetAutoHide()  // restart timer
