@@ -611,4 +611,150 @@ final class NoteRouter {
             return pitch
         }
     }
+
+    // MARK: - Private Methods — Note Input Processing
+
+    /// Process a note input (from either keyboard touch or pitch detection).
+    ///
+    /// Scoring arithmetic runs on `NoteMatchingActor` (off `@MainActor`) so it never
+    /// competes with SwiftUI's falling-notes render pass. Only the resulting
+    /// `ScoringDiff` hops back to update `@Observable` state on `@MainActor`.
+    ///
+    /// Wait-mode evaluation via `PlayAlongWaitController` still happens here on
+    /// `@MainActor` (the controller is `@MainActor`-isolated) — the boolean result
+    /// is then passed as a `Sendable` value to the actor.
+    ///
+    /// - Parameter midiNote: MIDI note number of the input.
+    private func processNoteInput(midiNote: Int) async {
+        guard let index = playback.currentNoteIndex,
+            index < playback.noteEvents.count
+        else { return }
+
+        let expectedEvent = playback.noteEvents[index]
+
+        // Evaluate wait-mode match here on @MainActor (PlayAlongWaitController is
+        // @MainActor-isolated). Pass the Bool result to the actor as a Sendable value.
+        let waitModeMatch: Bool?
+        if playback.isWaitModeEnabled, let waitCtrl = waitController {
+            let detectedSwarName = Self.swarNameFromMIDI(UInt8(clamping: midiNote))
+            waitModeMatch = waitCtrl.evaluateAttempt(detectedNoteName: detectedSwarName)
+        } else {
+            waitModeMatch = nil
+        }
+
+        // Snapshot Sendable values before crossing actor boundary.
+        let pitch = currentPitch
+        let ragaContext = ragaScoringContext
+
+        // Compute timing deviation: difference between actual onset and expected onset.
+        // In wait mode, timing is not scored (defaults to 0 via evaluateWaitMode).
+        let onsetDeviation = abs(playback.currentTime - expectedEvent.timestamp)
+
+        // Duration deviation requires note-off tracking (not yet implemented).
+        // Pass 0 until note-off timestamps are captured in a future task.
+        let durDeviation = 0.0
+
+        var diff = await noteMatchingActor.evaluate(
+            midiNote: midiNote,
+            expectedEvent: expectedEvent,
+            currentPitch: pitch,
+            ragaScoringContext: ragaContext,
+            waitModeMatch: waitModeMatch,
+            timingDeviationSeconds: onsetDeviation,
+            durationDeviation: durDeviation
+        )
+
+        // MAJ-2: if the expected event belongs to a chord group AND a fresh
+        // chord analysis is available from the mic stream, attach a completeness
+        // score and blend it into the per-note accuracy. Single-note events
+        // skip this path entirely (chordCompleteness stays nil).
+        if let chordGroup = findChordGroup(for: expectedEvent),
+            let chord = latestChordResult
+        {
+            let expectedSet = Set(chordGroup.map { Int($0.midiNote) })
+            let detectedSet = chord.activeMidiNotes
+            let completeness = await noteMatchingActor.evaluateChord(
+                expectedChordNotes: expectedSet,
+                detectedNotes: detectedSet
+            )
+            diff.chordCompleteness = completeness
+            if let baseScore = diff.score {
+                diff = applyChordCompleteness(
+                    completeness,
+                    to: diff,
+                    baseScore: baseScore
+                )
+            }
+        }
+
+        // Apply the diff back on @MainActor — only three writes, no re-render
+        // of the full note list.
+        playback.noteStates[diff.noteEventID] = diff.newState
+        if let score = diff.score {
+            scoring.record(score)
+        }
+        switch diff.streakOutcome {
+        case .hit(let grade):
+            scoring.updateStreak(grade: grade)
+        case .miss:
+            scoring.updateStreak(grade: .miss)
+        case .noChange:
+            break
+        }
+    }
+
+    /// Group `NoteEvent`s that share the given event's onset within the
+    /// `chordGroupingWindow` (10 ms) into a single chord group.
+    ///
+    /// The returned group includes the input event itself. Returns `nil` when
+    /// the event has no neighbours inside the window — i.e. it is a single
+    /// melodic note, not part of a chord.
+    ///
+    /// - Parameter event: The expected event currently under evaluation.
+    /// - Returns: All `NoteEvent`s within ±`chordGroupingWindow` of `event`'s
+    ///   timestamp, or `nil` when no other event qualifies.
+    private func findChordGroup(for event: NoteEvent) -> [NoteEvent]? {
+        let window = Self.chordGroupingWindow
+        let group = playback.noteEvents.filter { abs($0.timestamp - event.timestamp) <= window }
+        return group.count >= 2 ? group : nil
+    }
+
+    /// Blend a chord-completeness factor into an existing per-note `NoteScore`.
+    ///
+    /// Returns a `ScoringDiff` with `score.accuracy` multiplied by the
+    /// completeness fraction (so missing chord notes pull the per-note accuracy
+    /// down). The `chordCompleteness` field is preserved on the returned diff.
+    ///
+    /// - Parameters:
+    ///   - completeness: Chord completeness fraction in `0.0...1.0`.
+    ///   - diff: The existing scoring diff with `chordCompleteness` already set.
+    ///   - baseScore: The non-blended `NoteScore` produced by `NoteMatchingActor`.
+    /// - Returns: A new diff carrying a blended-accuracy score.
+    private func applyChordCompleteness(
+        _ completeness: Double,
+        to diff: ScoringDiff,
+        baseScore: NoteScore
+    ) -> ScoringDiff {
+        let blended = NoteScore(
+            id: baseScore.id,
+            grade: baseScore.grade,
+            accuracy: baseScore.accuracy * completeness,
+            pitchDeviationCents: baseScore.pitchDeviationCents,
+            timingDeviationSeconds: baseScore.timingDeviationSeconds,
+            durationDeviation: baseScore.durationDeviation,
+            expectedNote: baseScore.expectedNote,
+            detectedNote: baseScore.detectedNote,
+            isOutOfRaga: baseScore.isOutOfRaga,
+            expressionResult: baseScore.expressionResult,
+            timestamp: baseScore.timestamp
+        )
+        return ScoringDiff(
+            noteEventID: diff.noteEventID,
+            newState: diff.newState,
+            score: blended,
+            streakOutcome: diff.streakOutcome,
+            probeToken: diff.probeToken,
+            chordCompleteness: completeness
+        )
+    }
 }
