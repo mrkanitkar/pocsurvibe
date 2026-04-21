@@ -136,34 +136,45 @@ struct InteractivePianoView: View {
 
     var body: some View {
         GeometryReader { proxy in
-            let (loMidi, hiMidi) = Self.adaptiveMidiRange(
-                forWidth: proxy.size.width,
-                whiteKeyStride: whiteKeyStride
-            )
-            let range = Pitch(Int8(loMidi))...Pitch(Int8(hiMidi))
-            let keyCount = hiMidi - loMidi + 1
-            Keyboard(
-                layout: .piano(pitchRange: range),
-                latching: isLatchingEnabled,
-                noteOn: handleNoteOn,
-                noteOff: handleNoteOff
-            ) { pitch, isActivated in
-                keyContent(pitch: pitch, isActivated: isActivated)
-            }
-            .environment(\.layoutDirection, .leftToRight)
-            .overlay {
-                Color.clear
-                    .preference(
-                        key: KeyPositionPreference.self,
-                        value: Self.computeKeyPositions(
-                            width: proxy.size.width,
-                            startMIDI: loMidi,
-                            endMIDI: hiMidi
+            if ProcessInfo.processInfo.isiOSAppOnMac {
+                // SP-6 workaround: Tonic 2.1.0 + AudioKit/Keyboard 1.4.1 have a
+                // Swift generic-metadata infinite-recursion in BitSet2x.forEach
+                // (BitSet.swift:134/135) when rendered under Mac's IOSSupport
+                // Swift runtime. Stalls 98%+ CPU forever; app hangs. Bug is
+                // reproducible at every pitch-range size, not just wide layouts.
+                // Render a placeholder on Mac until Tonic ships a fix. Remove
+                // this guard when upstream Tonic supports iOS-on-Mac.
+                macPianoPlaceholder
+            } else {
+                let (loMidi, hiMidi) = Self.adaptiveMidiRange(
+                    forWidth: proxy.size.width,
+                    whiteKeyStride: whiteKeyStride
+                )
+                let range = Pitch(Int8(loMidi))...Pitch(Int8(hiMidi))
+                let keyCount = hiMidi - loMidi + 1
+                Keyboard(
+                    layout: .piano(pitchRange: range),
+                    latching: isLatchingEnabled,
+                    noteOn: handleNoteOn,
+                    noteOff: handleNoteOff
+                ) { pitch, isActivated in
+                    keyContent(pitch: pitch, isActivated: isActivated)
+                }
+                .environment(\.layoutDirection, .leftToRight)
+                .overlay {
+                    Color.clear
+                        .preference(
+                            key: KeyPositionPreference.self,
+                            value: Self.computeKeyPositions(
+                                width: proxy.size.width,
+                                startMIDI: loMidi,
+                                endMIDI: hiMidi
+                            )
                         )
-                    )
+                }
+                .accessibilityElement(children: .contain)
+                .accessibilityLabel("Interactive piano keyboard, \(keyCount) keys")
             }
-            .accessibilityElement(children: .contain)
-            .accessibilityLabel("Interactive piano keyboard, \(keyCount) keys")
         }
         .frame(height: 160)
         .task {
@@ -171,6 +182,25 @@ struct InteractivePianoView: View {
                 await loadSoundFontIfNeeded()
             }
         }
+    }
+
+    /// Mac-only placeholder shown instead of Tonic's `Keyboard` view.
+    /// See `body` comment for the Tonic bug this works around.
+    private var macPianoPlaceholder: some View {
+        RoundedRectangle(cornerRadius: 8)
+            .fill(.tertiary.opacity(0.5))
+            .overlay {
+                VStack(spacing: 8) {
+                    Image(systemName: "pianokeys")
+                        .font(.largeTitle)
+                        .foregroundStyle(.secondary)
+                    Text("Interactive piano not yet available on Mac")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+            }
+            .accessibilityElement()
+            .accessibilityLabel("Interactive piano (not available on Mac in this build)")
     }
 
     /// Maps available view width to a playable pitch range.

@@ -60,22 +60,36 @@ struct IsomorphicSargamView: View {
     // MARK: - Body
 
     var body: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            Keyboard(
-                layout: .isomorphic(pitchRange: Pitch(36) ... Pitch(96)),
-                latching: isLatchingEnabled,
-                noteOn: handleNoteOn,
-                noteOff: handleNoteOff
-            ) { pitch, isActivated in
-                keyContent(pitch: pitch, isActivated: isActivated)
+        if ProcessInfo.processInfo.isiOSAppOnMac {
+            // SP-6 Mac workaround — see InteractivePianoView.body for the
+            // Tonic BitSet2x.forEach infinite-recursion bug on IOSSupport.
+            RoundedRectangle(cornerRadius: 8)
+                .fill(.tertiary.opacity(0.5))
+                .frame(height: 80)
+                .overlay {
+                    Text("Sargam keyboard not yet available on Mac")
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                }
+                .accessibilityLabel("Sargam keyboard (not available on Mac in this build)")
+        } else {
+            ScrollView(.horizontal, showsIndicators: false) {
+                Keyboard(
+                    layout: .isomorphic(pitchRange: Pitch(36) ... Pitch(96)),
+                    latching: isLatchingEnabled,
+                    noteOn: handleNoteOn,
+                    noteOff: handleNoteOff
+                ) { pitch, isActivated in
+                    keyContent(pitch: pitch, isActivated: isActivated)
+                }
             }
-        }
-        .environment(\.layoutDirection, .leftToRight)
-        .frame(height: 80)
-        .accessibilityElement(children: .contain)
-        .accessibilityLabel("Isomorphic sargam keyboard, 61 keys")
-        .task {
-            await loadSoundFontIfNeeded()
+            .environment(\.layoutDirection, .leftToRight)
+            .frame(height: 80)
+            .accessibilityElement(children: .contain)
+            .accessibilityLabel("Isomorphic sargam keyboard, 61 keys")
+            .task {
+                await loadSoundFontIfNeeded()
+            }
         }
     }
 
