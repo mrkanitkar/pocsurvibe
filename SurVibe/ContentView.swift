@@ -103,13 +103,27 @@ struct ContentView: View {
                 }
             },
             content: {
+                // Explicitly re-pass all environment @Observables. On Mac
+                // (Designed for iPad) iOS 26's modal presentation doesn't
+                // always inherit the parent scene's environment reliably;
+                // re-binding here guarantees OnboardingContainerView's
+                // @Environment(AppThemeManager.self) / AuthManager /
+                // GamificationService lookups succeed on every platform.
                 OnboardingContainerView()
                     .environment(onboardingManager)
+                    .environment(themeManager)
+                    .environment(AuthManager.shared)
+                    .environment(gamificationService)
+                    .environment(router)
             }
         )
         .sheet(isPresented: $showPostOnboarding) {
+            // Same explicit re-pass for the post-onboarding welcome sheet.
             PostOnboardingWelcomeView()
                 .environment(onboardingManager)
+                .environment(themeManager)
+                .environment(AuthManager.shared)
+                .environment(gamificationService)
                 .environment(router)
         }
         .overlay(alignment: .top) {
