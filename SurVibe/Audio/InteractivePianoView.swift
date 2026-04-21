@@ -176,10 +176,13 @@ struct InteractivePianoView: View {
     /// Maps available view width to a playable pitch range.
     ///
     /// Breakpoints target ≥ `whiteKeyStride` per white key. 36/45 white keys
-    /// are the natural breakpoints for 61/73/88-key pianos:
+    /// are the natural breakpoints for 61/73-key pianos:
     /// - 61 keys = 36 white → ~792pt @ 22pt stride (default)
-    /// - 73 keys = 45 white → ~990pt @ 22pt stride (iPad landscape portrait)
-    /// - 88 keys = 52 white → ~1144pt @ 22pt stride (iPad landscape / Mac)
+    /// - 73 keys = 45 white → ~990pt @ 22pt stride (iPad landscape / Mac)
+    ///
+    /// Note: The 88-key range (A0–C8) is currently capped at 73 keys due to a
+    /// Swift generic-metadata stall in AudioKit/Keyboard 1.4.1 + Tonic 2.1.0
+    /// that blocks the main thread and triggers a watchdog kill on wide layouts.
     ///
     /// - Parameters:
     ///   - width: Available view width in points.
@@ -209,9 +212,13 @@ struct InteractivePianoView: View {
         let width61 = stride * 36
         let width73 = stride * 45
         switch width {
-        case ..<width61: return (36, 96)  // 61 keys — C2..C7
+        case ..<width61: return (36, 96)   // 61 keys — C2..C7
         case width61..<width73: return (36, 108)  // 73 keys — C2..C8
-        default: return (21, 108)  // 88 keys — A0..C8
+        // Capped at 73 keys: AudioKit/Keyboard 1.4.1 + Tonic 2.1.0 trigger a
+        // Swift generic-metadata instantiation stall in PianoSpacer.whiteKeys
+        // when the range exceeds ~73 keys, blocking the main thread long enough
+        // for the watchdog to kill the app (0x8BADF00D). Cap until upstream fix.
+        default: return (36, 108)  // 73 keys — C2..C8 (capped, was A0..C8)
         }
     }
 
