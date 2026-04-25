@@ -619,6 +619,16 @@ private struct AuditionSongPlaybackSection: View {
             Text(verbatim: "Toggle A↔B above mid-playback to compare banks. Both play through the same MIDI-endpoint route — only the SF2 swaps.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+            if selectedSong.multiInstrument {
+                Text(verbatim: """
+                    ⚠ MIDI is single-preset — all 15 channels of this multi-instrument \
+                    song render through the active bank's GM 0 voice. True \
+                    multi-instrument is a separate iteration.
+                    """)
+                    .font(.caption)
+                    .foregroundStyle(.orange)
+                    .accessibilityLabel("Warning: multi-instrument MIDI plays as single instrument")
+            }
             if let mp3LoadError {
                 Text(verbatim: mp3LoadError)
                     .font(.caption)
