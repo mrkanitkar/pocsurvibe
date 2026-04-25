@@ -567,6 +567,10 @@ private struct AuditionSongPlaybackSection: View {
     @State private var playState: PlaybackPhase = .stopped
     @State private var songLoadError: String?
     @State private var selectedSong: BundledSong = AuditionSongPlaybackSection.songs[0]
+    @State private var mp3Player: AVAudioPlayerNode?
+    @State private var mp3File: AVAudioFile?
+    @State private var mp3PlayState: PlaybackPhase = .stopped
+    @State private var mp3LoadError: String?
 
     var body: some View {
         Section("Song playback") {
@@ -615,9 +619,110 @@ private struct AuditionSongPlaybackSection: View {
             Text(verbatim: "Toggle A↔B above mid-playback to compare banks. Both play through the same MIDI-endpoint route — only the SF2 swaps.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
+            if let mp3LoadError {
+                Text(verbatim: mp3LoadError)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .accessibilityLabel("MP3 error: \(mp3LoadError)")
+            }
+            HStack(spacing: 16) {
+                Button {
+                    playMP3()
+                } label: {
+                    Label("Play MP3", systemImage: "play.fill")
+                }
+                .disabled(mp3Player == nil || mp3PlayState == .playing)
+                .accessibilityLabel("Play original MP3 recording")
+
+                Button {
+                    pauseMP3()
+                } label: {
+                    Label("Pause", systemImage: "pause.fill")
+                }
+                .disabled(mp3PlayState != .playing)
+                .accessibilityLabel("Pause MP3")
+
+                Button {
+                    stopMP3()
+                } label: {
+                    Label("Stop", systemImage: "stop.fill")
+                }
+                .disabled(mp3PlayState == .stopped)
+                .accessibilityLabel("Stop MP3")
+            }
+            Text(verbatim: "Original recording — no SF2 routing, direct audio playback. Independent of A↔B.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
         .task { applySongSelection(selectedSong) }
-        .onDisappear { teardownSequencer() }
+        .onDisappear {
+            teardownSequencer()
+            teardownMP3()
+        }
+    }
+
+    /// Load the chosen song's MP3 if bundled, attach an `AVAudioPlayerNode`
+    /// to the shared engine, and prepare it for playback. If the song has
+    /// no MP3 (`hasMP3 == false`) or the file is missing, leaves the
+    /// player nil so MP3 controls stay disabled.
+    private func loadMP3For(_ song: BundledSong) {
+        teardownMP3()
+        guard song.hasMP3 else { return }
+        guard let url = Bundle.main.url(
+            forResource: song.id, withExtension: "mp3"
+        ) else {
+            mp3LoadError = "MP3 not bundled for '\(song.displayName)'"
+            return
+        }
+        let engine = AudioEngineManager.shared.engine
+        do {
+            let file = try AVAudioFile(forReading: url)
+            let player = AVAudioPlayerNode()
+            engine.attach(player)
+            engine.connect(player, to: engine.mainMixerNode, format: file.processingFormat)
+            mp3File = file
+            mp3Player = player
+            mp3LoadError = nil
+        } catch {
+            mp3LoadError = "MP3 load failed: \(error.localizedDescription)"
+        }
+    }
+
+    /// Stop, detach, and discard the MP3 player and file.
+    private func teardownMP3() {
+        mp3Player?.stop()
+        if let player = mp3Player {
+            AudioEngineManager.shared.engine.detach(player)
+        }
+        mp3Player = nil
+        mp3File = nil
+        mp3PlayState = .stopped
+    }
+
+    /// Start MP3 playback from the beginning, or resume if paused.
+    /// `AVAudioPlayerNode.pause()` preserves render state, so resuming
+    /// from `.paused` only requires `play()`. From `.stopped` we must
+    /// `scheduleFile` again because `stop()` clears the schedule.
+    private func playMP3() {
+        guard let mp3Player, let mp3File else { return }
+        if mp3PlayState == .paused {
+            mp3Player.play()
+            mp3PlayState = .playing
+            return
+        }
+        mp3Player.scheduleFile(mp3File, at: nil) { /* completion ignored */ }
+        mp3Player.play()
+        mp3PlayState = .playing
+    }
+
+    private func pauseMP3() {
+        mp3Player?.pause()
+        mp3PlayState = .paused
+    }
+
+    private func stopMP3() {
+        mp3Player?.stop()
+        mp3PlayState = .stopped
     }
 
     /// Load the chosen song's MIDI and route every track to the parent's
@@ -651,10 +756,10 @@ private struct AuditionSongPlaybackSection: View {
         }
     }
 
-    /// Apply the song selection to the MIDI path. Extended in the next
-    /// task to also drive the MP3 path.
+    /// Apply the song selection to both playback paths.
     private func applySongSelection(_ song: BundledSong) {
         loadMIDIFor(song)
+        loadMP3For(song)
     }
 
     private func teardownSequencer() {
