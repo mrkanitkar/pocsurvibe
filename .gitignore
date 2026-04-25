@@ -84,3 +84,8 @@ fastlane/test_output
 iOSInjectionProject/
 .idea/
 *.moved-aside
+
+# Audition tool DEBUG-only SoundFonts — too large for git
+# (>100 MB GitHub limit). Engineers re-download into AuditionAssets/
+# per docs/superpowers/specs/2026-04-25-audition-song-playback-design.md
+SurVibe/Diagnostics/AuditionAssets/*.sf2
