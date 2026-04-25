@@ -1,4 +1,5 @@
 #if DEBUG
+import AudioKit
 import AVFoundation
 import AudioToolbox
 import SVAudio
@@ -146,8 +147,17 @@ struct SoundFontAuditionView: View {
 
     // MARK: - State
 
-    @State private var samplerA: AVAudioUnitSampler?
-    @State private var samplerB: AVAudioUnitSampler?
+    /// Single shared sampler used by all paths in this view: keyboard taps,
+    /// "Play Sa-Re-Ga…" sequence, and bundled song playback. Routed via
+    /// `destinationMIDIEndpoint` (CoreMIDI) for sequencer playback so SF2
+    /// modulator-driven dynamics render correctly. The A/B segmented
+    /// control reloads the corresponding bank's SF2 into this single
+    /// sampler (a few-hundred-millisecond reload) — same routing, only
+    /// the bank file swaps.
+    @State private var sampler: MIDISampler?
+    /// Which bank's SF2 is currently loaded into `sampler`, for the
+    /// active-slot reload skip and the diagnostic display.
+    @State private var loadedSlot: Slot?
     @State private var urlA: URL?
     @State private var urlB: URL?
     @State private var fileNameA: String?
@@ -178,7 +188,7 @@ struct SoundFontAuditionView: View {
                     }
                 }
                 .pickerStyle(.segmented)
-                .onChange(of: activeSlot) { _, _ in updateActiveVolumes() }
+                .onChange(of: activeSlot) { _, newValue in applySelectedBank(newValue) }
                 .accessibilityLabel("Active sampler bank")
             }
             Section("Voice (GM Program — all 128)") {
@@ -209,10 +219,10 @@ struct SoundFontAuditionView: View {
                         systemImage: isPlayingSequence ? "stop.circle" : "play.circle.fill"
                     )
                 }
-                .disabled(isPlayingSequence || (samplerA == nil && samplerB == nil))
+                .disabled(isPlayingSequence || sampler == nil)
                 .accessibilityLabel("Play the Sa-Re-Ga-Ma scale through the active bank")
             }
-            AuditionSongPlaybackSection(samplerA: samplerA, samplerB: samplerB)
+            AuditionSongPlaybackSection(sampler: sampler)
         }
         .navigationTitle("SoundFont A/B Audition")
         .fileImporter(
@@ -307,24 +317,16 @@ struct SoundFontAuditionView: View {
     /// Attach two fresh samplers (A and B) to the shared engine and connect
     /// them to the main mixer. Idempotent — bails out if they already exist.
     private func attachSamplersIfNeeded() {
+        guard sampler == nil else { return }
         let engine = AudioEngineManager.shared.engine
         let mixer = engine.mainMixerNode
         let format = mixer.outputFormat(forBus: 0)
 
-        if samplerA == nil {
-            let sampler = AVAudioUnitSampler()
-            engine.attach(sampler)
-            engine.connect(sampler, to: mixer, format: format)
-            sampler.volume = activeSlot == .a ? 1.0 : 0.0
-            samplerA = sampler
-        }
-        if samplerB == nil {
-            let sampler = AVAudioUnitSampler()
-            engine.attach(sampler)
-            engine.connect(sampler, to: mixer, format: format)
-            sampler.volume = activeSlot == .b ? 1.0 : 0.0
-            samplerB = sampler
-        }
+        let midiSampler = MIDISampler(name: "AuditionShared")
+        engine.attach(midiSampler.avAudioNode)
+        engine.connect(midiSampler.avAudioNode, to: mixer, format: format)
+        midiSampler.volume = 1.0  // single sampler, always audible
+        sampler = midiSampler
     }
 
     /// Detach both audition samplers from the shared engine when the view
@@ -333,14 +335,11 @@ struct SoundFontAuditionView: View {
         let engine = AudioEngineManager.shared.engine
         for note in heldNotes { stopNote(note) }
         heldNotes.removeAll()
-        if let sampler = samplerA {
-            engine.detach(sampler)
-            samplerA = nil
+        if let sampler {
+            engine.detach(sampler.avAudioNode)
         }
-        if let sampler = samplerB {
-            engine.detach(sampler)
-            samplerB = nil
-        }
+        sampler = nil
+        loadedSlot = nil
         urlA = nil
         urlB = nil
     }
@@ -381,40 +380,78 @@ struct SoundFontAuditionView: View {
     /// Load an SF2 into the given slot's sampler at the currently-selected
     /// GM program. Acquires a security-scoped resource for files outside the
     /// app's container (iCloud Drive, On My iPad, etc.).
+    /// Store the URL for the slot (so the A/B picker can recall it),
+    /// and — if `slot` is currently active — load it into the shared
+    /// sampler immediately. Bank picks for the inactive slot are deferred
+    /// until the user toggles to that slot.
     private func loadSoundFont(at url: URL, into slot: Slot) {
-        let needsAccess = url.startAccessingSecurityScopedResource()
-        defer { if needsAccess { url.stopAccessingSecurityScopedResource() } }
-
-        let sampler: AVAudioUnitSampler?
         switch slot {
-        case .a: sampler = samplerA
-        case .b: sampler = samplerB
+        case .a:
+            fileNameA = url.lastPathComponent
+            urlA = url
+            loadErrorA = nil
+        case .b:
+            fileNameB = url.lastPathComponent
+            urlB = url
+            loadErrorB = nil
         }
+        if slot == activeSlot {
+            performBankReload(url: url, slot: slot, program: selectedProgram.program)
+        }
+    }
+
+    /// Actual SF2 reload into the shared sampler. Acquires security-scoped
+    /// resource access if needed (URLs from the file picker require it;
+    /// bundle URLs do not).
+    ///
+    /// **Engine pause/restart wrap (fix P):** `loadSoundBankInstrument` is
+    /// synchronous and reallocates AU render resources. Calling it while
+    /// the engine is rendering and the sequencer is dispatching MIDI to
+    /// the AU's `scheduleMIDIEventBlock` is undocumented behavior and the
+    /// likely cause of the "sudden loss" we saw on Bank B. We pause the
+    /// engine, reload, restart — Apple's recommended pattern for AU
+    /// state changes during a session.
+    private func performBankReload(url: URL, slot: Slot, program: UInt8) {
         guard let sampler else {
             setError("Sampler not attached", for: slot)
             return
         }
+        let engine = AudioEngineManager.shared.engine
+        let wasRunning = engine.isRunning
+        if wasRunning { engine.pause() }
 
+        let needsAccess = url.startAccessingSecurityScopedResource()
+        defer { if needsAccess { url.stopAccessingSecurityScopedResource() } }
         do {
-            try sampler.loadSoundBankInstrument(
-                at: url,
-                program: selectedProgram.program,
-                bankMSB: UInt8(kAUSampler_DefaultMelodicBankMSB),
-                bankLSB: 0
-            )
+            try sampler.loadMelodicSoundFont(url: url, preset: Int(program))
+            loadedSlot = slot
             switch slot {
-            case .a:
-                fileNameA = url.lastPathComponent
-                urlA = url
-                loadErrorA = nil
-            case .b:
-                fileNameB = url.lastPathComponent
-                urlB = url
-                loadErrorB = nil
+            case .a: loadErrorA = nil
+            case .b: loadErrorB = nil
             }
         } catch {
             setError("Load failed: \(error.localizedDescription)", for: slot)
         }
+
+        if wasRunning {
+            do {
+                try engine.start()
+            } catch {
+                setError(
+                    "Engine restart after reload failed: \(error.localizedDescription)",
+                    for: slot
+                )
+            }
+        }
+    }
+
+    /// Switch the sampler's loaded bank to whichever slot is now active.
+    /// Called from the A/B segmented control's `onChange`.
+    private func applySelectedBank(_ slot: Slot) {
+        let url: URL? = (slot == .a) ? urlA : urlB
+        guard let url else { return }
+        guard slot != loadedSlot else { return }
+        performBankReload(url: url, slot: slot, program: selectedProgram.program)
     }
 
     /// Reload the new GM program on every loaded sampler so the user can
@@ -426,59 +463,24 @@ struct SoundFontAuditionView: View {
     /// requires re-calling `loadSoundBankInstrument` with the new program.
     /// (For multi-timbral playback you'd use `AUMIDISynth` instead, but
     /// this audition tool stays on the same AU SurVibe ships in production.)
+    /// Re-load the active slot's SF2 with the new GM program. Same
+    /// reload-on-change pattern we use for A↔B bank switching.
     private func reloadProgramOnAllLoadedSamplers(_ program: UInt8) {
         for note in heldNotes { stopNote(note) }
         heldNotes.removeAll()
-        if let urlA, let samplerA {
-            reloadSampler(samplerA, url: urlA, program: program, slot: .a)
-        }
-        if let urlB, let samplerB {
-            reloadSampler(samplerB, url: urlB, program: program, slot: .b)
-        }
-    }
-
-    private func reloadSampler(
-        _ sampler: AVAudioUnitSampler,
-        url: URL,
-        program: UInt8,
-        slot: Slot
-    ) {
-        let needsAccess = url.startAccessingSecurityScopedResource()
-        defer { if needsAccess { url.stopAccessingSecurityScopedResource() } }
-        do {
-            try sampler.loadSoundBankInstrument(
-                at: url,
-                program: program,
-                bankMSB: UInt8(kAUSampler_DefaultMelodicBankMSB),
-                bankLSB: 0
-            )
-            switch slot {
-            case .a: loadErrorA = nil
-            case .b: loadErrorB = nil
-            }
-        } catch {
-            setError("Program switch failed: \(error.localizedDescription)", for: slot)
-        }
+        let url: URL? = (activeSlot == .a) ? urlA : urlB
+        guard let url else { return }
+        performBankReload(url: url, slot: activeSlot, program: program)
     }
 
     // MARK: - Playback
 
-    private func updateActiveVolumes() {
-        samplerA?.volume = activeSlot == .a ? 1.0 : 0.0
-        samplerB?.volume = activeSlot == .b ? 1.0 : 0.0
-    }
-
     private func playNote(_ midi: UInt8) {
-        // Send to BOTH samplers so the inactive one stays "armed" and the
-        // toggle is instant — the inactive sampler's volume is 0 so it's
-        // silent regardless.
-        samplerA?.startNote(midi, withVelocity: 100, onChannel: 0)
-        samplerB?.startNote(midi, withVelocity: 100, onChannel: 0)
+        sampler?.play(noteNumber: midi, velocity: 100, channel: 0)
     }
 
     private func stopNote(_ midi: UInt8) {
-        samplerA?.stopNote(midi, onChannel: 0)
-        samplerB?.stopNote(midi, onChannel: 0)
+        sampler?.stop(noteNumber: midi, channel: 0)
     }
 
     private func playTestSequence() async {
@@ -521,49 +523,64 @@ struct SoundFontAuditionView: View {
 
 // MARK: - AuditionSongPlaybackSection
 
-/// Bundled-MIDI playback section of the audition view, factored into a
-/// child View struct so the parent struct stays under SwiftLint's
-/// `type_body_length` limit. Owns the two `AVAudioSequencer` instances
-/// and the song-playback state machine; the parent retains the two
-/// `AVAudioUnitSampler` nodes (the destinations) and the A↔B selection.
-///
-/// The audible bank is selected by sampler volume in the parent view's
-/// `updateActiveVolumes` — both sequencers play in lockstep regardless,
-/// and the inactive sampler renders to silence. Toggling A↔B mid-playback
-/// is therefore a glitch-free volume swap.
+/// Bundled-MIDI playback section. Plays `Sukhkarta_Dukhharta.mid` through
+/// the parent's shared `MIDISampler` via `AVMusicTrack.destinationMIDIEndpoint`
+/// (CoreMIDI), the routing path that preserves SF2 modulator-driven dynamics
+/// on Apple's `AVAudioUnitSampler`. The parent's A↔B segmented control
+/// reloads the corresponding SF2 into the shared sampler — A and B both
+/// audition through this same MIDI-endpoint route.
 @MainActor
 private struct AuditionSongPlaybackSection: View {
 
-    /// Phases of song playback through the bundled MIDI sequencer pair.
     enum PlaybackPhase: String {
         case stopped, playing, paused
     }
 
-    /// Resource name (without extension) of the bundled audition song MIDI
-    /// inside `AuditionAssets/`.
-    private static let bundledSongResource = "Sukhkarta_Dukhharta"
+    /// One bundled song's resource metadata.
+    /// `id` is the resource base name shared by `.mid`, `.mxl`, and `.mp3`.
+    struct BundledSong: Identifiable, Hashable {
+        let id: String
+        let displayName: String
+        let hasMP3: Bool
+        let multiInstrument: Bool
+    }
 
-    /// Position-display refresh rate while the song is playing (Hz).
-    /// 30 Hz keeps `Slider` and time labels visually fluid without burning
-    /// significant main-thread budget on a diagnostic view.
-    private static let positionUpdateRate: Double = 30.0
+    /// All audition songs. Add an entry here to make a new song selectable.
+    private static let songs: [BundledSong] = [
+        BundledSong(
+            id: "Sukhkarta_Dukhharta",
+            displayName: "Sukhkarta Dukhharta",
+            hasMP3: false,
+            multiInstrument: false
+        ),
+        BundledSong(
+            id: "james-bond-theme",
+            displayName: "James Bond Theme",
+            hasMP3: true,
+            multiInstrument: true
+        ),
+    ]
 
-    /// Two destination samplers owned by the parent view. May be `nil`
-    /// briefly during view setup; `loadSongIfBundled` waits until both are
-    /// non-`nil` before instantiating sequencers.
-    let samplerA: AVAudioUnitSampler?
-    let samplerB: AVAudioUnitSampler?
+    let sampler: MIDISampler?
 
-    @State private var sequencerA: AVAudioSequencer?
-    @State private var sequencerB: AVAudioSequencer?
+    @State private var sequencer: AVAudioSequencer?
     @State private var playState: PlaybackPhase = .stopped
-    @State private var currentPosition: TimeInterval = 0
-    @State private var duration: TimeInterval = 0
-    @State private var tempoMultiplier: Double = 1.0
     @State private var songLoadError: String?
+    @State private var selectedSong: BundledSong = AuditionSongPlaybackSection.songs[0]
 
     var body: some View {
-        Section("Song A/B (Sukhkarta Dukhharta)") {
+        Section("Song playback") {
+            Picker("Song", selection: $selectedSong) {
+                ForEach(Self.songs) { song in
+                    Text(song.displayName).tag(song)
+                }
+            }
+            .pickerStyle(.segmented)
+            .onChange(of: selectedSong) { _, newValue in
+                applySongSelection(newValue)
+            }
+            .accessibilityLabel("Choose audition song")
+
             if let songLoadError {
                 Text(verbatim: songLoadError)
                     .font(.caption)
@@ -574,10 +591,10 @@ private struct AuditionSongPlaybackSection: View {
                 Button {
                     playSong()
                 } label: {
-                    Label("Play", systemImage: "play.fill")
+                    Label("Play MIDI", systemImage: "play.fill")
                 }
-                .disabled(playState == .playing || sequencerA == nil)
-                .accessibilityLabel("Play song through active bank")
+                .disabled(playState == .playing || sequencer == nil)
+                .accessibilityLabel("Play MIDI through active bank")
 
                 Button {
                     pauseSong()
@@ -585,76 +602,71 @@ private struct AuditionSongPlaybackSection: View {
                     Label("Pause", systemImage: "pause.fill")
                 }
                 .disabled(playState != .playing)
-                .accessibilityLabel("Pause song")
+                .accessibilityLabel("Pause MIDI")
 
                 Button {
                     stopSong()
                 } label: {
                     Label("Stop", systemImage: "stop.fill")
                 }
-                .disabled(playState == .stopped && currentPosition == 0)
-                .accessibilityLabel("Stop song and reset to start")
+                .disabled(playState == .stopped)
+                .accessibilityLabel("Stop MIDI and reset to start")
             }
+            Text(verbatim: "Toggle A↔B above mid-playback to compare banks. Both play through the same MIDI-endpoint route — only the SF2 swaps.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
-        .task { loadSongIfBundled() }
-        .onDisappear { teardownSequencers() }
+        .task { applySongSelection(selectedSong) }
+        .onDisappear { teardownSequencer() }
     }
 
-    /// Load the bundled MIDI song into two `AVAudioSequencer` instances
-    /// and route each to its corresponding audition sampler. Idempotent.
-    private func loadSongIfBundled() {
-        guard sequencerA == nil, sequencerB == nil else { return }
+    /// Load the chosen song's MIDI and route every track to the parent's
+    /// shared `MIDISampler` via `destinationMIDIEndpoint` (CoreMIDI).
+    /// Stops and discards the previous sequencer if any.
+    private func loadMIDIFor(_ song: BundledSong) {
+        sequencer?.stop()
+        sequencer = nil
+        playState = .stopped
         guard let url = Bundle.main.url(
-            forResource: Self.bundledSongResource, withExtension: "mid"
+            forResource: song.id, withExtension: "mid"
         ) else {
-            songLoadError = "Bundled song MIDI not found"
+            songLoadError = "MIDI not found for '\(song.displayName)'"
             return
         }
-        guard let samplerA, let samplerB else {
-            songLoadError = "Samplers not attached"
+        guard let sampler else {
+            songLoadError = "Shared sampler not attached"
             return
         }
         let engine = AudioEngineManager.shared.engine
         do {
-            let seqA = AVAudioSequencer(audioEngine: engine)
-            try seqA.load(from: url, options: [])
-            for track in seqA.tracks {
-                track.destinationAudioUnit = samplerA
+            let seq = AVAudioSequencer(audioEngine: engine)
+            try seq.load(from: url, options: [])
+            for track in seq.tracks {
+                track.destinationMIDIEndpoint = sampler.midiIn
             }
-            let seqB = AVAudioSequencer(audioEngine: engine)
-            try seqB.load(from: url, options: [])
-            for track in seqB.tracks {
-                track.destinationAudioUnit = samplerB
-            }
-            let maxLen = max(
-                seqA.tracks.map(\.lengthInSeconds).max() ?? 0,
-                seqB.tracks.map(\.lengthInSeconds).max() ?? 0
-            )
-            sequencerA = seqA
-            sequencerB = seqB
-            duration = maxLen
+            sequencer = seq
             songLoadError = nil
         } catch {
             songLoadError = "Song load failed: \(error.localizedDescription)"
         }
     }
 
-    private func teardownSequencers() {
-        sequencerA?.stop()
-        sequencerB?.stop()
-        sequencerA = nil
-        sequencerB = nil
-        playState = .stopped
-        currentPosition = 0
+    /// Apply the song selection to the MIDI path. Extended in the next
+    /// task to also drive the MP3 path.
+    private func applySongSelection(_ song: BundledSong) {
+        loadMIDIFor(song)
     }
 
-    /// Start both sequencers simultaneously. The active sampler's volume
-    /// determines what the user hears.
+    private func teardownSequencer() {
+        sequencer?.stop()
+        sequencer = nil
+        playState = .stopped
+    }
+
     private func playSong() {
-        guard let sequencerA, let sequencerB else { return }
+        guard let sequencer else { return }
         do {
-            try sequencerA.start()
-            try sequencerB.start()
+            try sequencer.start()
             playState = .playing
         } catch {
             songLoadError = "Sequencer start failed: \(error.localizedDescription)"
@@ -662,20 +674,14 @@ private struct AuditionSongPlaybackSection: View {
         }
     }
 
-    /// Pause both sequencers. `currentPositionInSeconds` is preserved.
     private func pauseSong() {
-        sequencerA?.stop()
-        sequencerB?.stop()
+        sequencer?.stop()
         playState = .paused
     }
 
-    /// Stop both sequencers and seek back to 0.
     private func stopSong() {
-        sequencerA?.stop()
-        sequencerB?.stop()
-        sequencerA?.currentPositionInSeconds = 0
-        sequencerB?.currentPositionInSeconds = 0
-        currentPosition = 0
+        sequencer?.stop()
+        sequencer?.currentPositionInSeconds = 0
         playState = .stopped
     }
 }
