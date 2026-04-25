@@ -44,6 +44,11 @@ struct SoundFontAuditionView: View {
         var id: UInt8 { program }
     }
 
+    /// Phases of song playback through the bundled MIDI sequencer pair.
+    enum PlaybackPhase: String {
+        case stopped, playing, paused
+    }
+
     // MARK: - Constants
 
     /// One General MIDI Level 1 family — 8 consecutive programs sharing a
@@ -136,6 +141,15 @@ struct SoundFontAuditionView: View {
         }
     }
 
+    /// Resource name (without extension) of the bundled audition song MIDI
+    /// inside `AuditionAssets/`. Both `.mid` and `.mxl` use this base name.
+    private static let bundledSongResource = "Sukhkarta_Dukhharta"
+
+    /// Position-display refresh rate while the song is playing (Hz).
+    /// 30 Hz keeps `Slider` and time labels visually fluid without burning
+    /// significant main-thread budget on a diagnostic view.
+    private static let positionUpdateRate: Double = 30.0
+
     /// One-octave chromatic keyboard from C4 (MIDI 60) to C5 (MIDI 72).
     /// Reasonable lap-friendly size on iPad without a ScrollView.
     private static let keyboardRange: ClosedRange<UInt8> = 60...72
@@ -160,6 +174,14 @@ struct SoundFontAuditionView: View {
     @State private var isFileImporterPresented = false
     @State private var heldNotes: Set<UInt8> = []
     @State private var isPlayingSequence = false
+
+    @State private var sequencerA: AVAudioSequencer?
+    @State private var sequencerB: AVAudioSequencer?
+    @State private var playState: PlaybackPhase = .stopped
+    @State private var currentPosition: TimeInterval = 0
+    @State private var duration: TimeInterval = 0
+    @State private var tempoMultiplier: Double = 1.0
+    @State private var songLoadError: String?
 
     // MARK: - Body
 
@@ -224,8 +246,10 @@ struct SoundFontAuditionView: View {
             await ensureEngineRunning()
             attachSamplersIfNeeded()
             autoLoadBundledBanksIfPresent()
+            loadSongIfBundled()
         }
         .onDisappear {
+            teardownSequencers()
             detachSamplers()
         }
     }
@@ -361,6 +385,61 @@ struct SoundFontAuditionView: View {
            let url = bundle.url(forResource: "GeneralUser-GS", withExtension: "sf2") {
             loadSoundFont(at: url, into: .b)
         }
+    }
+
+    /// Load the bundled MIDI song into two `AVAudioSequencer` instances
+    /// and route each to its corresponding audition sampler. Switching
+    /// banks during playback is handled by sampler volume, not by
+    /// re-routing destinations mid-playback (see spec §Architecture).
+    ///
+    /// Idempotent: returns immediately if either sequencer already exists.
+    private func loadSongIfBundled() {
+        guard sequencerA == nil, sequencerB == nil else { return }
+        guard let url = Bundle.main.url(
+            forResource: Self.bundledSongResource, withExtension: "mid"
+        ) else {
+            songLoadError = "Bundled song MIDI not found"
+            return
+        }
+        guard let samplerA, let samplerB else {
+            songLoadError = "Samplers not attached"
+            return
+        }
+        let engine = AudioEngineManager.shared.engine
+        do {
+            let seqA = AVAudioSequencer(audioEngine: engine)
+            try seqA.load(from: url, options: [])
+            for track in seqA.tracks {
+                track.destinationAudioUnit = samplerA
+            }
+            let seqB = AVAudioSequencer(audioEngine: engine)
+            try seqB.load(from: url, options: [])
+            for track in seqB.tracks {
+                track.destinationAudioUnit = samplerB
+            }
+            let maxLen = max(
+                seqA.tracks.map(\.lengthInSeconds).max() ?? 0,
+                seqB.tracks.map(\.lengthInSeconds).max() ?? 0
+            )
+            sequencerA = seqA
+            sequencerB = seqB
+            duration = maxLen
+            songLoadError = nil
+        } catch {
+            songLoadError = "Song load failed: \(error.localizedDescription)"
+        }
+    }
+
+    /// Stop both sequencers, release them, and reset playback state.
+    /// Called from `onDisappear` so the production audio graph is left
+    /// in its baseline state when the audition view is dismissed.
+    private func teardownSequencers() {
+        sequencerA?.stop()
+        sequencerB?.stop()
+        sequencerA = nil
+        sequencerB = nil
+        playState = .stopped
+        currentPosition = 0
     }
 
     private func handleFileImport(_ result: Result<URL, Error>) {
