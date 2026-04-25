@@ -55,6 +55,9 @@ struct ProfileTab: View {
                 authSection
                 settingsSection
                 appearanceSection
+                #if DEBUG
+                    audioDiagnosticsSection
+                #endif
             }
             .navigationTitle("Profile")
             .navigationDestination(for: String.self) { destination in
@@ -71,6 +74,11 @@ struct ProfileTab: View {
                         AchievementGalleryView(achievementManager: am)
                     }
                 }
+                #if DEBUG
+                    if destination == "sfAudition" {
+                        SoundFontAuditionView()
+                    }
+                #endif
             }
             .sheet(item: $signInTrigger) { trigger in
                 SignInPromptView(trigger: trigger)
@@ -355,6 +363,23 @@ struct ProfileTab: View {
             .modifier(profileRowNav(for: .display) { .ignored })
         }
     }
+
+    // MARK: - Debug Section
+
+    #if DEBUG
+        /// Debug-only section providing access to the SoundFont A/B audition tool.
+        /// Used to compare GM banks (MuseScore_General vs GeneralUser-GS) on a real
+        /// device before locking in the production bank choice.
+        private var audioDiagnosticsSection: some View {
+            Section(header: Text("Audio Diagnostics (DEBUG)")) {
+                NavigationLink(value: "sfAudition") {
+                    Label("SoundFont A/B Audition", systemImage: "waveform.badge.magnifyingglass")
+                }
+                .accessibilityLabel("SoundFont A/B Audition")
+                .accessibilityHint("Compare two GM SoundFont banks on this device")
+            }
+        }
+    #endif
 
     // MARK: - Computed Data
 

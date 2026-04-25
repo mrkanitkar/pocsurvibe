@@ -23,6 +23,13 @@ struct SettingsView: View {
             }
             #if DEBUG
                 FeatureFlagsSection()
+                Section("Audio Diagnostics") {
+                    NavigationLink {
+                        SoundFontAuditionView()
+                    } label: {
+                        Label("SoundFont A/B Audition", systemImage: "waveform.badge.magnifyingglass")
+                    }
+                }
             #endif
         }
         .navigationTitle("Settings")
