@@ -28,6 +28,16 @@ struct AuditionPipelineSection: View {
     @State private var bouncer: RealtimeTapBouncer?
     @State private var isBouncing = false
 
+    /// Fix C2 (review 2026-04-26): if the user toggles A/B during a bounce we
+    /// skip the immediate `loadBank` (which would pause the engine and corrupt
+    /// the m4a) and stash the requested slot here. The `bounce()` defer block
+    /// flushes the pending slot once the capture completes.
+    @State private var deferredSlot: SoundFontAuditionView.Slot?
+
+    /// Tracks which slot was actually loaded into the samplers, so the
+    /// deferred-flush can decide whether a re-apply is needed.
+    @State private var loadedSlot: SoundFontAuditionView.Slot?
+
     /// Default per-track GM presets, indexed by track index.
     /// Track 0=melody, 1=bass, 2=brass, 3=strings, 4=organ, 5=lead,
     /// 6=pad, then GM 0 (acoustic grand) for tracks 7-15.
@@ -69,6 +79,13 @@ struct AuditionPipelineSection: View {
         }
         .onChange(of: activeSlot) { _, newValue in
             Task { await applyActiveBank(newValue) }
+        }
+        // Fix I4 (review 2026-04-26): tear down the pipeline when the parent
+        // view disappears. Without this the samplers stay attached to the
+        // shared engine indefinitely after the user navigates away, and any
+        // in-flight bounce keeps writing to disk in the background.
+        .onDisappear {
+            disablePipeline()
         }
     }
 
@@ -164,8 +181,22 @@ struct AuditionPipelineSection: View {
             let renderedMIDI = try bridge.render(musicXML: xml)
             self.rendered = renderedMIDI
 
-            let trackCount = min(renderedMIDI.trackCount, MultiTrackSamplerGraph.maxTracks)
-            let g = try MultiTrackSamplerGraph(trackCount: trackCount)
+            // Fix C1 (review 2026-04-26): VerovioBridge.summarize counts every
+            // MTrk chunk in the SMF, including the conductor track 0
+            // (tempo/time-sig metadata, no notes) that Verovio emits as a Type
+            // 1 SMF. AVAudioSequencer.tracks excludes the conductor track
+            // (Apple exposes it separately as `tempoTrack`), so probing a
+            // throwaway sequencer gives us the true AVF-visible part count.
+            // Sizing the graph off `renderedMIDI.trackCount` instead would
+            // create one extra (silent) sampler at index 0 and shift every
+            // subsequent part by one. Chose the temporary-sequencer probe over
+            // adding a `partCount` field to RenderedMIDI to keep the SVAudio
+            // type pure (no AVFoundation timing coupling).
+            let probeSeq = AVAudioSequencer(audioEngine: AudioEngineManager.shared.engine)
+            try probeSeq.load(from: renderedMIDI.data, options: [])
+            let partCount = min(probeSeq.tracks.count, MultiTrackSamplerGraph.maxTracks)
+
+            let g = try MultiTrackSamplerGraph(trackCount: partCount)
             try g.loadMIDI(renderedMIDI)
             self.graph = g
 
@@ -173,7 +204,7 @@ struct AuditionPipelineSection: View {
             await applyActiveBank(activeSlot)
 
             let chList = renderedMIDI.channels.map { String($0) }.joined(separator: ", ")
-            statusText = "✓ \(trackCount) tracks · channels [\(chList)]"
+            statusText = "✓ \(partCount) parts · channels [\(chList)]"
         } catch let pipelineError as PipelineError {
             loadError = pipelineError.localizedDescription
             disablePipeline()
@@ -184,6 +215,18 @@ struct AuditionPipelineSection: View {
     }
 
     private func disablePipeline() {
+        // Fix I4 (review 2026-04-26): if a bounce is mid-flight when the user
+        // disables the pipeline (or navigates away), abort it so the tap is
+        // removed from the sub-mixer before we tear that node down. Resetting
+        // `isBouncing` here unblocks the `bounce()` task body, which observes
+        // `g == nil` and short-circuits.
+        if isBouncing {
+            bouncer?.abort()
+        }
+        bouncer = nil
+        isBouncing = false
+        deferredSlot = nil
+        loadedSlot = nil
         graph?.stop()
         graph?.teardown()
         graph = nil
@@ -193,11 +236,27 @@ struct AuditionPipelineSection: View {
 
     private func applyActiveBank(_ slot: SoundFontAuditionView.Slot) async {
         guard let g = graph else { return }
+        // Fix C2 (review 2026-04-26): a bank swap pauses the engine for
+        // ~N×300 ms (Mode 2 sequential reload) — running this mid-bounce
+        // silences the tap and leaves the m4a write head out of position,
+        // producing a corrupt file. Defer the slot and surface a transient
+        // status so the user sees why the swap didn't take immediately; the
+        // bounce()'s defer block flushes the pending slot once it ends.
+        guard !isBouncing else {
+            deferredSlot = slot
+            loadError = "Bank swap deferred until bounce completes"
+            return
+        }
         let url: URL? = (slot == .a) ? bankA : bankB
         guard let url else { return }
         let presets = Array(Self.defaultPresets.prefix(g.samplers.count))
         do {
             try g.loadBank(at: url, presets: presets)
+            loadedSlot = slot
+            // Clear the deferred-bounce hint once a real swap lands.
+            if loadError == "Bank swap deferred until bounce completes" {
+                loadError = nil
+            }
         } catch {
             loadError = "Bank load failed: \(error.localizedDescription)"
         }
@@ -206,7 +265,20 @@ struct AuditionPipelineSection: View {
     private func bounce(slot: SoundFontAuditionView.Slot) async {
         guard let g = graph else { return }
         isBouncing = true
-        defer { isBouncing = false }
+        // Fix C2 (review 2026-04-26): when the bounce ends — success, throw,
+        // or task cancellation — flush any A/B slot the user requested while
+        // the bounce was running, but only if it actually differs from what's
+        // currently loaded. Re-applying the same slot would needlessly pause
+        // the engine again.
+        defer {
+            isBouncing = false
+            if let pending = deferredSlot {
+                deferredSlot = nil
+                if pending != loadedSlot {
+                    Task { await applyActiveBank(pending) }
+                }
+            }
+        }
 
         let filename = "audition_bond_\(slot.rawValue).m4a"
         let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
@@ -223,6 +295,13 @@ struct AuditionPipelineSection: View {
             while g.isPlaying {
                 try await Task.sleep(nanoseconds: 200_000_000)
             }
+            // Fix I5 (review 2026-04-26): AVAudioUnitTimePitch carries
+            // ~50–100 ms of overlap-add buffering and SF2 voices can have
+            // release/reverb tails that are still rendering when the
+            // sequencer flips `isPlaying` to false. Without this pause the
+            // m4a ends abruptly mid-decay. 300 ms is generous for both the
+            // TimePitch latency and a typical SF2 release tail.
+            try? await Task.sleep(nanoseconds: 300_000_000)
             b.stop()
             switch slot {
             case .a: bounceURLA = url

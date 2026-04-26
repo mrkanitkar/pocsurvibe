@@ -59,6 +59,16 @@ public final class RealtimeTapBouncer {
         }
         self.file = openedFile
 
+        // Fix C3 (review 2026-04-26): defensively remove any pre-existing tap
+        // before installing. AVAudioNode.installTap traps with
+        // "required condition is false: nullptr == Tap()" if a tap is already
+        // attached. The `isTapping` guard above only protects within a single
+        // bouncer instance — callers that construct a fresh bouncer per bounce
+        // (e.g. AuditionPipelineSection.bounce) can race past the section's
+        // `isBouncing` flag and attempt to install two taps on the same node.
+        // `removeTap` is a no-op when no tap exists, so this is always safe.
+        source.removeTap(onBus: 0)
+
         // Capture the AVAudioFile by value into the tap closure. The closure
         // runs on a high-priority audio thread; it never touches `self` or
         // any MainActor state. AVAudioFile.write(from:) is thread-safe when
