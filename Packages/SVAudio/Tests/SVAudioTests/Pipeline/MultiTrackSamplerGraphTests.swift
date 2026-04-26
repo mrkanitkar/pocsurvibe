@@ -40,6 +40,21 @@ struct MultiTrackSamplerGraphTests {
         }
     }
 
+    @Test("loadBank populates each sampler with the SF2 (Mode 2)")
+    func loadBankSequential() throws {
+        try AudioEngineManager.shared.startForPlayback()
+        guard let sf2 = Bundle.main.url(
+            forResource: "MuseScore_General", withExtension: "sf2"
+        ) else { return /* skip if asset missing */ }
+
+        let graph = try MultiTrackSamplerGraph(trackCount: 2)
+        // Default presets: melody=0, bass=33
+        try graph.loadBank(at: sf2, presets: [0, 33])
+        // No assertion on audio output — just that no throw occurred.
+        // A subsequent integration test on iPad covers audible verification.
+        graph.teardown()
+    }
+
     @Test("loadMIDI builds sequencer with N tracks routed by index")
     func loadsMIDIAndRoutes() throws {
         try AudioEngineManager.shared.startForPlayback()

@@ -107,6 +107,62 @@ public final class MultiTrackSamplerGraph {
         )
     }
 
+    /// Sequentially load `bankURL` into each sampler with the matching
+    /// preset from `presets`. Pauses the engine, loads, restarts. Mode 2
+    /// reload — single bank resident at a time, swap latency ~N × 300 ms.
+    ///
+    /// - Parameters:
+    ///   - bankURL: SF2 file URL.
+    ///   - presets: GM program numbers, one per sampler. Length must equal
+    ///              `samplers.count`.
+    /// - Throws: `PipelineError.engineNotRunning` or rethrows the underlying
+    ///           AudioKit `loadMelodicSoundFont` failure.
+    public func loadBank(at bankURL: URL, presets: [UInt8]) throws {
+        precondition(presets.count == samplers.count,
+                     "presets.count (\(presets.count)) must match samplers.count (\(samplers.count))")
+        guard AudioEngineManager.shared.isRunning else {
+            throw PipelineError.engineNotRunning
+        }
+
+        let needsAccess = bankURL.startAccessingSecurityScopedResource()
+        defer { if needsAccess { bankURL.stopAccessingSecurityScopedResource() } }
+
+        let wasRunning = engine.isRunning
+        if wasRunning { engine.pause() }
+
+        var loadError: Error?
+        for (i, sampler) in samplers.enumerated() {
+            do {
+                try sampler.loadMelodicSoundFont(url: bankURL, preset: Int(presets[i]))
+            } catch {
+                loadError = error
+                let msg = error.localizedDescription
+                graphLogger.error(
+                    """
+                    Sampler \(i, privacy: .public) loadMelodicSoundFont \
+                    failed: \(msg, privacy: .public)
+                    """
+                )
+                break
+            }
+        }
+
+        if wasRunning {
+            do {
+                try engine.start()
+            } catch {
+                graphLogger.error(
+                    "Engine restart after bank load failed: \(error.localizedDescription, privacy: .public)"
+                )
+                throw error
+            }
+        }
+
+        if let loadError {
+            throw loadError
+        }
+    }
+
     /// Detach all pipeline nodes from the shared engine. Idempotent.
     public func teardown() {
         engine.disconnectNodeOutput(timePitch)
