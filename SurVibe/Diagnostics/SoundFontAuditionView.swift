@@ -223,6 +223,11 @@ struct SoundFontAuditionView: View {
                 .accessibilityLabel("Play the Sa-Re-Ga-Ma scale through the active bank")
             }
             AuditionSongPlaybackSection(sampler: sampler)
+            AuditionPipelineSection(
+                bankA: urlA,
+                bankB: urlB,
+                activeSlot: activeSlot
+            )
         }
         .navigationTitle("SoundFont A/B Audition")
         .fileImporter(
