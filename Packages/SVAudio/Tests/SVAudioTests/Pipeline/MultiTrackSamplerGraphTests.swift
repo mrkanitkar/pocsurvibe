@@ -74,6 +74,48 @@ struct MultiTrackSamplerGraphTests {
         graph.teardown()
     }
 
+    @Test("setTempo clamps to 0.5–1.5 range")
+    func tempoClamps() throws {
+        try AudioEngineManager.shared.startForPlayback()
+        let graph = try MultiTrackSamplerGraph(trackCount: 1)
+
+        graph.setTempo(rate: 0.25)
+        #expect(graph.timePitch.rate == 0.5)
+
+        graph.setTempo(rate: 5.0)
+        #expect(graph.timePitch.rate == 1.5)
+
+        graph.setTempo(rate: 1.0)
+        #expect(graph.timePitch.rate == 1.0)
+
+        graph.teardown()
+    }
+
+    @Test("play/pause/stop round-trips without throwing")
+    func transportRoundTrip() throws {
+        try AudioEngineManager.shared.startForPlayback()
+        guard let mxlURL = Bundle.main.url(forResource: "james-bond-theme", withExtension: "mxl")
+        else { return }
+        let xml = try MXLLoader.loadMusicXML(from: try Data(contentsOf: mxlURL))
+        let bridge = VerovioBridge()
+        let rendered = try bridge.render(musicXML: xml)
+
+        let graph = try MultiTrackSamplerGraph(trackCount: min(rendered.trackCount, 4))
+        try graph.loadMIDI(rendered)
+
+        try graph.play()
+        #expect(graph.isPlaying == true)
+
+        graph.pause()
+        #expect(graph.isPlaying == false)
+
+        graph.stop()
+        #expect(graph.isPlaying == false)
+        #expect(graph.sequencer?.currentPositionInSeconds == 0)
+
+        graph.teardown()
+    }
+
     private func countAttachedNodes(in engine: AVAudioEngine) -> Int {
         // AVAudioEngine doesn't expose node count directly; use the
         // attachedNodes count via the private `attachedNodes` set is

@@ -25,6 +25,12 @@ public final class MultiTrackSamplerGraph {
     /// exceed this and require sub-mixing (out of POC scope).
     public static let maxTracks = 16
 
+    /// Tempo rate clamp: 0.5× to 1.5×. AVAudioUnitTimePitch supports a
+    /// much wider range (1/32 to 32) but anything outside this window is
+    /// not useful for practice/audition.
+    public static let minRate: Float = 0.5
+    public static let maxRate: Float = 1.5
+
     public let samplers: [MIDISampler]
     public let subMixer: AVAudioMixerNode
     public let timePitch: AVAudioUnitTimePitch
@@ -161,6 +167,36 @@ public final class MultiTrackSamplerGraph {
         if let loadError {
             throw loadError
         }
+    }
+
+    /// Whether the sequencer is currently playing.
+    public var isPlaying: Bool { sequencer?.isPlaying ?? false }
+
+    /// Set playback tempo as a rate multiplier. Clamped to `[minRate, maxRate]`.
+    /// Pitch is preserved (TimePitch overlap-add adds ~50–100 ms latency).
+    public func setTempo(rate: Float) {
+        let clamped = max(Self.minRate, min(Self.maxRate, rate))
+        timePitch.rate = clamped
+        graphLogger.info("setTempo rate=\(clamped, privacy: .public)")
+    }
+
+    /// Start sequencer playback. Throws underlying `AVAudioSequencer` error.
+    public func play() throws {
+        guard let sequencer else {
+            throw PipelineError.engineNotRunning
+        }
+        try sequencer.start()
+    }
+
+    /// Pause without resetting position.
+    public func pause() {
+        sequencer?.stop()
+    }
+
+    /// Stop and reset to start.
+    public func stop() {
+        sequencer?.stop()
+        sequencer?.currentPositionInSeconds = 0
     }
 
     /// Detach all pipeline nodes from the shared engine. Idempotent.
