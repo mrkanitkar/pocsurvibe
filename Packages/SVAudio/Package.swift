@@ -43,7 +43,10 @@ let package = Package(
         ),
         .testTarget(
             name: "SVAudioTests",
-            dependencies: ["SVAudio"]
+            dependencies: [
+                "SVAudio",
+                .product(name: "ZIPFoundation", package: "ZIPFoundation"),
+            ]
         ),
     ]
 )
