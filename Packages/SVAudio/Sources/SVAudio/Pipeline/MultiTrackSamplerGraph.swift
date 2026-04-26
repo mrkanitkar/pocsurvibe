@@ -29,6 +29,9 @@ public final class MultiTrackSamplerGraph {
     public let subMixer: AVAudioMixerNode
     public let timePitch: AVAudioUnitTimePitch
 
+    /// The sequencer that drives the samplers. nil until `loadMIDI(_:)` is called.
+    public private(set) var sequencer: AVAudioSequencer?
+
     private let engine: AVAudioEngine
 
     /// Build the graph and attach it to `AudioEngineManager.shared.engine`.
@@ -71,6 +74,37 @@ public final class MultiTrackSamplerGraph {
         engine.connect(timePitch, to: engine.mainMixerNode, format: format)
 
         graphLogger.info("Attached \(trackCount, privacy: .public) samplers + sub-mixer + TimePitch")
+    }
+
+    /// Load `RenderedMIDI` into a fresh `AVAudioSequencer` and route each
+    /// track to the matching sampler by **track index** (not by MIDI channel,
+    /// because `destinationMIDIEndpoint` does not channel-filter — all events
+    /// on a track flow to the assigned destination regardless of channel byte).
+    ///
+    /// - Parameter rendered: Output of `VerovioBridge.render(...)`.
+    /// - Throws: `PipelineError.engineNotRunning` if the shared engine stopped.
+    ///           Underlying `AVAudioSequencer` errors on malformed MIDI bytes.
+    public func loadMIDI(_ rendered: RenderedMIDI) throws {
+        guard AudioEngineManager.shared.isRunning else {
+            throw PipelineError.engineNotRunning
+        }
+        let seq = AVAudioSequencer(audioEngine: engine)
+        try seq.load(from: rendered.data, options: [])
+
+        let trackCount = min(seq.tracks.count, samplers.count)
+        for i in 0..<trackCount {
+            seq.tracks[i].destinationMIDIEndpoint = samplers[i].midiIn
+        }
+        self.sequencer = seq
+        let seqTracks = seq.tracks.count
+        let samplerCount = self.samplers.count
+        graphLogger.info(
+            """
+            Loaded MIDI: seq tracks=\(seqTracks, privacy: .public) \
+            samplers=\(samplerCount, privacy: .public) \
+            routed=\(trackCount, privacy: .public)
+            """
+        )
     }
 
     /// Detach all pipeline nodes from the shared engine. Idempotent.

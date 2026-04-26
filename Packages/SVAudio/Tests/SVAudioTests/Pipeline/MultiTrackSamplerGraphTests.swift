@@ -1,5 +1,6 @@
 import AVFoundation
 import AudioKit
+import Foundation
 import Testing
 
 @testable import SVAudio
@@ -39,10 +40,55 @@ struct MultiTrackSamplerGraphTests {
         }
     }
 
+    @Test("loadMIDI builds sequencer with N tracks routed by index")
+    func loadsMIDIAndRoutes() throws {
+        try AudioEngineManager.shared.startForPlayback()
+
+        // Trivial 2-track MIDI rendered by Verovio so the fixture is
+        // always in sync with what real Verovio output looks like:
+        //   Part 1: 1 quarter note (C4)
+        //   Part 2: 1 quarter note (E4)
+        let midi = try Data(contentsOf: Self.fixtureMIDI())
+
+        let graph = try MultiTrackSamplerGraph(trackCount: 2)
+        try graph.loadMIDI(RenderedMIDI(data: midi, trackCount: 2, channels: [0, 1]))
+
+        #expect(graph.sequencer != nil)
+        #expect(graph.sequencer?.tracks.count == 2)
+
+        graph.teardown()
+    }
+
     private func countAttachedNodes(in engine: AVAudioEngine) -> Int {
         // AVAudioEngine doesn't expose node count directly; use the
         // attachedNodes count via the private `attachedNodes` set is
         // not stable. Use mainMixer's input-bus count as a proxy.
         engine.mainMixerNode.numberOfInputs
+    }
+
+    /// Use Verovio to render a 2-part trivial score so the fixture is
+    /// always in sync with what real Verovio output looks like.
+    @MainActor
+    private static func fixtureMIDI() throws -> URL {
+        let xml = """
+            <?xml version="1.0"?>
+            <score-partwise version="3.1">
+              <part-list>
+                <score-part id="P1"/><score-part id="P2"/>
+              </part-list>
+              <part id="P1"><measure number="1">
+                <attributes><divisions>1</divisions><time><beats>4</beats><beat-type>4</beat-type></time></attributes>
+                <note><pitch><step>C</step><octave>4</octave></pitch><duration>1</duration><type>quarter</type></note>
+              </measure></part>
+              <part id="P2"><measure number="1">
+                <note><pitch><step>E</step><octave>4</octave></pitch><duration>1</duration><type>quarter</type></note>
+              </measure></part>
+            </score-partwise>
+            """
+        let bridge = VerovioBridge()
+        let rendered = try bridge.render(musicXML: xml)
+        let url = FileManager.default.temporaryDirectory.appendingPathComponent("fixture.mid")
+        try rendered.data.write(to: url)
+        return url
     }
 }
