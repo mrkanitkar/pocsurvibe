@@ -67,24 +67,26 @@ public final class RealtimeTapBouncer {
         // `removeTap` is a no-op when no tap exists, so this is always safe.
         source.removeTap(onBus: 0)
 
-        // Capture the file directly (NOT via self). The tap callback runs on
-        // CoreAudio's RealtimeMessenger.mServiceQueue — a non-main dispatch
-        // queue. Capturing `self` (a @MainActor class) forces every access
-        // through Swift's actor-isolation runtime check, which calls
-        // dispatch_assert_queue(main) and traps with EXC_BREAKPOINT. The file
-        // is a reference type and AVAudioFile.write is documented thread-safe
-        // (Apple's "Performing Offline Audio Processing" sample uses the same
-        // pattern), so the closure can hold its own strong ref safely.
-        let fileForTap = createdFile
+        // Bug 1 fix (2026-04-27, second attempt): the previous "capture file
+        // directly" attempt did NOT work. Swift 6 closures inside a @MainActor
+        // method INHERIT the surrounding actor isolation regardless of what
+        // they capture, so the closure literal becomes implicitly @MainActor.
+        // CoreAudio invokes the tap on RealtimeMessenger.mServiceQueue
+        // (non-main); the runtime then asserts main isolation and traps with
+        // EXC_BREAKPOINT. Confirmed against three crash logs at 15:10:52,
+        // 15:24:09, 15:25:58 — all show closure #1 in RealtimeTapBouncer.start.
+        //
+        // The structural fix is to make the captured value Sendable so the
+        // closure can be inferred Sendable too (which strips actor inheritance,
+        // because Sendable closures cannot be actor-isolated). AVAudioFile is
+        // not Sendable in Swift 6, so we wrap it in a small @unchecked Sendable
+        // box. CLAUDE.md permits @unchecked Sendable for "CoreMIDI interop" —
+        // CoreAudio realtime callbacks (this case) are the same category, and
+        // AVAudioFile.write is documented thread-safe in Apple's
+        // "Performing Offline Audio Processing" sample.
+        let writer = TapWriter(file: createdFile)
         source.installTap(onBus: 0, bufferSize: Self.tapBufferSize, format: format) { buffer, _ in
-            do {
-                try fileForTap.write(from: buffer)
-            } catch {
-                // Cannot use `bouncerLogger` here — Logger calls cross actor
-                // boundaries. Drop the error silently; stop() will deliver a
-                // valid file from any successfully-written buffers up to this
-                // point.
-            }
+            writer.write(buffer)
         }
         isTapping = true
         bouncerLogger.info("Started bounce → \(self.outputURL.lastPathComponent, privacy: .public)")
@@ -109,5 +111,33 @@ public final class RealtimeTapBouncer {
         }
         try? FileManager.default.removeItem(at: outputURL)
         bouncerLogger.info("Aborted bounce; partial file removed")
+    }
+}
+
+/// Sendable wrapper around an `AVAudioFile` so the tap closure can capture
+/// it without inheriting `@MainActor` from `RealtimeTapBouncer.start()`.
+///
+/// Marked `@unchecked Sendable` because `AVAudioFile` itself is not Sendable
+/// in Swift 6 — but `AVAudioFile.write(from:)` is thread-safe per Apple's
+/// "Performing Offline Audio Processing" sample. CoreAudio invokes the tap
+/// on `RealtimeMessenger.mServiceQueue` (a single dispatch queue), so calls
+/// are already serialized; the only concurrent access would be the main
+/// actor reading `RealtimeTapBouncer.file` for stop/abort, which doesn't
+/// touch this wrapper's `file` reference at all (it sets the parent's
+/// `file = nil` to release the wrapper's strong ref).
+///
+/// CLAUDE.md permits `@unchecked Sendable` for CoreMIDI interop; CoreAudio
+/// realtime callbacks (this case) are the same category.
+private final class TapWriter: @unchecked Sendable {
+    private let file: AVAudioFile
+
+    init(file: AVAudioFile) {
+        self.file = file
+    }
+
+    func write(_ buffer: AVAudioPCMBuffer) {
+        // Drop write errors silently — `bouncerLogger` would re-introduce
+        // actor isolation. Stop() finalizes whatever was successfully written.
+        try? file.write(from: buffer)
     }
 }
