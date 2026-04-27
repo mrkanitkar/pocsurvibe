@@ -117,34 +117,46 @@ struct AuditionPipelineSection: View {
     }
 
     private var transportControls: some View {
+        // CRITICAL: every Button needs `.buttonStyle(.borderless)`. Without
+        // it, multiple Buttons inside the same Form-row HStack share the
+        // row's tap gesture — tapping any one fires ALL of them. Confirmed
+        // by pipeline_log.txt 2026-04-27: every Play tap was followed by
+        // pause+stop within the same millisecond.
         HStack(spacing: 16) {
             Button {
                 do { try graph?.play() } catch { loadError = error.localizedDescription }
             } label: { Label("Play", systemImage: "play.fill") }
+                .buttonStyle(.borderless)
                 .accessibilityLabel("Play pipeline")
                 .disabled(graph?.sequencer == nil)
             Button {
                 graph?.pause()
             } label: { Label("Pause", systemImage: "pause.fill") }
+                .buttonStyle(.borderless)
                 .accessibilityLabel("Pause pipeline")
             Button {
                 graph?.stop()
             } label: { Label("Stop", systemImage: "stop.fill") }
+                .buttonStyle(.borderless)
                 .accessibilityLabel("Stop pipeline and reset")
         }
     }
 
     private var bounceControls: some View {
         VStack(alignment: .leading, spacing: 8) {
+            // Same .buttonStyle(.borderless) requirement as transportControls
+            // — without it, both Bounce buttons fire on a single tap.
             HStack(spacing: 16) {
                 Button {
                     Task { await bounce(slot: .a) }
                 } label: { Label("Bounce A → m4a", systemImage: "arrow.down.circle") }
+                    .buttonStyle(.borderless)
                     .accessibilityLabel("Bounce bank A to m4a file")
                     .disabled(isBouncing || bankA == nil)
                 Button {
                     Task { await bounce(slot: .b) }
                 } label: { Label("Bounce B → m4a", systemImage: "arrow.down.circle") }
+                    .buttonStyle(.borderless)
                     .accessibilityLabel("Bounce bank B to m4a file")
                     .disabled(isBouncing || bankB == nil)
             }
