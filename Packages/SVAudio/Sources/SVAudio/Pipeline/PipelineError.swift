@@ -49,16 +49,43 @@ public enum PipelineError: Error, LocalizedError, Equatable {
 
 /// Output of `VerovioBridge.render(...)` — raw MIDI bytes plus a
 /// pre-parsed summary so callers don't need to re-parse to learn
-/// track / channel counts.
+/// track / channel counts and per-track instrument programs.
 public struct RenderedMIDI: Equatable, Sendable {
     public let data: Data
     public let trackCount: Int
     /// Distinct MIDI channels seen across all tracks (0-indexed; 9 = percussion).
     public let channels: [UInt8]
+    /// Per-music-track metadata in source order. The conductor track
+    /// (which has no notes / channel-voice events) is excluded so this
+    /// array indexes the same way as `AVAudioSequencer.tracks`.
+    public let trackInfo: [TrackInfo]
 
-    public init(data: Data, trackCount: Int, channels: [UInt8]) {
+    public init(
+        data: Data, trackCount: Int, channels: [UInt8], trackInfo: [TrackInfo] = []
+    ) {
         self.data = data
         self.trackCount = trackCount
         self.channels = channels
+        self.trackInfo = trackInfo
+    }
+}
+
+/// Per-track MIDI metadata extracted by walking the SMF byte stream.
+public struct TrackInfo: Equatable, Sendable {
+    /// First MIDI channel observed on the track (0-indexed; 9 = percussion).
+    public let channel: UInt8
+    /// First Program Change event's program number, or `nil` if the track
+    /// emits notes without setting a program. Callers should fall back
+    /// to a sensible default preset when this is `nil`.
+    public let program: UInt8?
+    /// True if any event on this track uses MIDI channel 9 (the GM
+    /// percussion convention). Callers should load the SF2 percussion
+    /// bank for this sampler instead of a melodic preset.
+    public let isPercussion: Bool
+
+    public init(channel: UInt8, program: UInt8?, isPercussion: Bool) {
+        self.channel = channel
+        self.program = program
+        self.isPercussion = isPercussion
     }
 }

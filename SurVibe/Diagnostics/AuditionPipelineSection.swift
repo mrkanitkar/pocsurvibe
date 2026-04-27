@@ -293,7 +293,7 @@ struct AuditionPipelineSection: View {
             PipelineFileLog.shared.log("applyActiveBank(\(slot.rawValue)) ABORT: no URL for slot")
             return
         }
-        let presets = Array(Self.defaultPresets.prefix(g.samplers.count))
+        let presets = derivedPresets(samplerCount: g.samplers.count)
         let presetList = presets.map { String($0) }.joined(separator: ",")
         PipelineFileLog.shared.log(
             "applyActiveBank(\(slot.rawValue)) → \(url.lastPathComponent) presets=[\(presetList)]"
@@ -311,6 +311,30 @@ struct AuditionPipelineSection: View {
         }
     }
 
+    /// Derive per-sampler GM preset numbers from the rendered MIDI's
+    /// per-track Program Change events. Falls back to the static
+    /// `defaultPresets` table for tracks Verovio didn't write a program
+    /// change on (or where the track is percussion — channel 9 is
+    /// special-cased to GM "Standard Drum Kit" preset 0 here, since
+    /// `loadMelodicSoundFont` cannot address the percussion bank).
+    ///
+    /// **Caveat:** percussion played through a melodic preset 0 still
+    /// sounds wrong (it pitches drums by note number). Proper percussion
+    /// requires `loadSoundBankInstrument` with bankMSB=128, which is a
+    /// follow-up; flagged in the deferred items.
+    private func derivedPresets(samplerCount: Int) -> [UInt8] {
+        let trackInfo = rendered?.trackInfo ?? []
+        var result: [UInt8] = []
+        for i in 0..<samplerCount {
+            if i < trackInfo.count, let program = trackInfo[i].program {
+                result.append(program)
+            } else {
+                result.append(Self.defaultPresets[i])
+            }
+        }
+        return result
+    }
+
     private func bounce(slot: SoundFontAuditionView.Slot) async {
         guard let g = graph else { return }
 
@@ -323,7 +347,7 @@ struct AuditionPipelineSection: View {
         if loadedSlot != slot {
             let url: URL? = (slot == .a) ? bankA : bankB
             if let url {
-                let presets = Array(Self.defaultPresets.prefix(g.samplers.count))
+                let presets = derivedPresets(samplerCount: g.samplers.count)
                 let presetList = presets.map { String($0) }.joined(separator: ",")
                 PipelineFileLog.shared.log(
                     "bounce[\(slot.rawValue)]: pre-load bank \(url.lastPathComponent) presets=[\(presetList)]"
@@ -332,8 +356,9 @@ struct AuditionPipelineSection: View {
                     try g.loadBank(at: url, presets: presets)
                     loadedSlot = slot
                 } catch {
-                    loadError = "Bank load before bounce failed: \(error.localizedDescription)"
-                    PipelineFileLog.shared.log("bounce[\(slot.rawValue)]: pre-load FAILED: \(error.localizedDescription)")
+                    let msg = error.localizedDescription
+                    loadError = "Bank load before bounce failed: \(msg)"
+                    PipelineFileLog.shared.log("bounce[\(slot.rawValue)]: pre-load FAILED: \(msg)")
                     return
                 }
             }
