@@ -103,7 +103,13 @@ public final class RealtimeTapBouncer {
         }
         source.installTap(onBus: 0, bufferSize: Self.tapBufferSize, format: format, block: tapBlock)
         isTapping = true
-        bouncerLogger.info("Started bounce → \(self.outputURL.lastPathComponent, privacy: .public)")
+        let outName = self.outputURL.lastPathComponent
+        let fmtSR = format.sampleRate
+        let fmtCH = format.channelCount
+        bouncerLogger.info("Started bounce → \(outName, privacy: .public)")
+        PipelineFileLog.shared.log(
+            "RealtimeTapBouncer.start: → \(outName) sourceFormat=\(fmtSR)Hz/\(fmtCH)ch tapBuf=\(Self.tapBufferSize)"
+        )
     }
 
     /// Stop capturing and finalize the file. Safe to call multiple times.
@@ -113,6 +119,7 @@ public final class RealtimeTapBouncer {
         file = nil  // releases AVAudioFile, finalizing the .m4a
         isTapping = false
         bouncerLogger.info("Stopped bounce")
+        PipelineFileLog.shared.log("RealtimeTapBouncer.stop: file finalized")
     }
 
     /// Stop capturing AND delete the partial file. For interruption /
@@ -125,6 +132,7 @@ public final class RealtimeTapBouncer {
         }
         try? FileManager.default.removeItem(at: outputURL)
         bouncerLogger.info("Aborted bounce; partial file removed")
+        PipelineFileLog.shared.log("RealtimeTapBouncer.abort: partial file removed")
     }
 }
 

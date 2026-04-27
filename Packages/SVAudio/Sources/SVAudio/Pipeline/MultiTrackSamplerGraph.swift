@@ -79,7 +79,15 @@ public final class MultiTrackSamplerGraph {
         engine.connect(subMixer, to: timePitch, format: format)
         engine.connect(timePitch, to: engine.mainMixerNode, format: format)
 
+        let fmtSR = format.sampleRate
+        let fmtCH = format.channelCount
         graphLogger.info("Attached \(trackCount, privacy: .public) samplers + sub-mixer + TimePitch")
+        PipelineFileLog.shared.log(
+            """
+            MultiTrackSamplerGraph.init: trackCount=\(trackCount) \
+            format=\(fmtSR)Hz/\(fmtCH)ch attached samplers=\(samplers.count)
+            """
+        )
     }
 
     /// Load `RenderedMIDI` into a fresh `AVAudioSequencer` and route each
@@ -112,6 +120,9 @@ public final class MultiTrackSamplerGraph {
                 lenSec=\(lenSec, privacy: .public)
                 """
             )
+            PipelineFileLog.shared.log(
+                "  track[\(i)] lenBeats=\(lenBeats) lenSec=\(lenSec)"
+            )
         }
         self.sequencer = seq
         let seqTracks = seq.tracks.count
@@ -123,6 +134,12 @@ public final class MultiTrackSamplerGraph {
             samplers=\(samplerCount, privacy: .public) \
             routed=\(trackCount, privacy: .public) \
             tempoLen=\(tempoLen, privacy: .public)s
+            """
+        )
+        PipelineFileLog.shared.log(
+            """
+            MultiTrackSamplerGraph.loadMIDI: seq.tracks=\(seqTracks) \
+            samplers=\(samplerCount) routed=\(trackCount) tempoLen=\(tempoLen)s
             """
         )
     }
@@ -151,12 +168,16 @@ public final class MultiTrackSamplerGraph {
         if wasRunning { engine.pause() }
 
         let bankName = bankURL.lastPathComponent
+        let presetList = presets.map { String($0) }.joined(separator: ",")
         graphLogger.info(
             """
             loadBank: bank=\(bankName, privacy: .public) \
             samplers=\(self.samplers.count, privacy: .public) \
-            presets=\(presets.map { String($0) }.joined(separator: ","), privacy: .public)
+            presets=\(presetList, privacy: .public)
             """
+        )
+        PipelineFileLog.shared.log(
+            "MultiTrackSamplerGraph.loadBank: bank=\(bankName) presets=[\(presetList)]"
         )
         var loadError: Error?
         for (i, sampler) in samplers.enumerated() {
@@ -166,6 +187,7 @@ public final class MultiTrackSamplerGraph {
                 graphLogger.info(
                     "loadBank: sampler[\(i, privacy: .public)] preset=\(p, privacy: .public) OK"
                 )
+                PipelineFileLog.shared.log("  sampler[\(i)] preset=\(p) loaded OK")
             } catch {
                 loadError = error
                 let msg = error.localizedDescription
@@ -175,6 +197,7 @@ public final class MultiTrackSamplerGraph {
                     failed: \(msg, privacy: .public)
                     """
                 )
+                PipelineFileLog.shared.log("  sampler[\(i)] LOAD FAILED: \(msg)")
                 break
             }
         }
@@ -215,8 +238,12 @@ public final class MultiTrackSamplerGraph {
         try sequencer.start()
         let pos = sequencer.currentPositionInSeconds
         let playing = sequencer.isPlaying
+        let engineRunning = engine.isRunning
         graphLogger.info(
             "play: pos=\(pos, privacy: .public)s isPlaying=\(playing, privacy: .public)"
+        )
+        PipelineFileLog.shared.log(
+            "MultiTrackSamplerGraph.play: pos=\(pos)s isPlaying=\(playing) engineRunning=\(engineRunning)"
         )
     }
 
@@ -225,6 +252,7 @@ public final class MultiTrackSamplerGraph {
         let pos = sequencer?.currentPositionInSeconds ?? 0
         sequencer?.stop()
         graphLogger.info("pause at pos=\(pos, privacy: .public)s")
+        PipelineFileLog.shared.log("MultiTrackSamplerGraph.pause at pos=\(pos)s")
     }
 
     /// Stop and reset to start.
@@ -233,6 +261,7 @@ public final class MultiTrackSamplerGraph {
         sequencer?.stop()
         sequencer?.currentPositionInSeconds = 0
         graphLogger.info("stop from pos=\(pos, privacy: .public)s")
+        PipelineFileLog.shared.log("MultiTrackSamplerGraph.stop from pos=\(pos)s")
     }
 
     /// Detach all pipeline nodes from the shared engine. Idempotent.

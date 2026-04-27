@@ -33,9 +33,11 @@ public final class VerovioBridge {
         if let dataURL = VerovioResources.bundle.url(forResource: "data", withExtension: nil) {
             self.toolkit = VerovioToolkit(dataURL.path)
             verovioLogger.info("Initialized with data path: \(dataURL.path, privacy: .public)")
+            PipelineFileLog.shared.log("VerovioBridge.init: dataPath=\(dataURL.path)")
         } else {
             self.toolkit = VerovioToolkit()
             verovioLogger.warning("Initialized WITHOUT data path — Verovio resources not found in bundle")
+            PipelineFileLog.shared.log("VerovioBridge.init: NO DATA PATH (resources missing)")
         }
     }
 
@@ -56,8 +58,10 @@ public final class VerovioBridge {
     public func render(musicXML: String) throws -> RenderedMIDI {
         let xmlBytes = musicXML.utf8.count
         verovioLogger.info("render: input MusicXML \(xmlBytes, privacy: .public) bytes")
+        PipelineFileLog.shared.log("VerovioBridge.render: input MusicXML \(xmlBytes) bytes")
         guard toolkit.loadData(musicXML) else {
             verovioLogger.error("render: loadData rejected input")
+            PipelineFileLog.shared.log("VerovioBridge.render: ERROR loadData rejected input")
             throw PipelineError.verovioRenderFailed(reason: "Verovio loadData rejected input")
         }
         let base64 = toolkit.renderToMIDI()
@@ -65,10 +69,12 @@ public final class VerovioBridge {
         verovioLogger.info("render: renderToMIDI base64 length=\(b64Len, privacy: .public)")
         guard !base64.isEmpty else {
             verovioLogger.error("render: renderToMIDI returned empty string")
+            PipelineFileLog.shared.log("VerovioBridge.render: ERROR renderToMIDI returned empty")
             throw PipelineError.verovioRenderFailed(reason: "renderToMIDI returned empty string")
         }
         guard let midiData = Data(base64Encoded: base64) else {
             verovioLogger.error("render: base64 decode failed (length=\(b64Len, privacy: .public))")
+            PipelineFileLog.shared.log("VerovioBridge.render: ERROR base64 decode failed len=\(b64Len)")
             throw PipelineError.midiDecodeFailed
         }
         let midiBytes = midiData.count
@@ -81,6 +87,9 @@ public final class VerovioBridge {
             tracks=\(trackCount, privacy: .public) \
             channels=[\(chList, privacy: .public)]
             """
+        )
+        PipelineFileLog.shared.log(
+            "VerovioBridge.render: OK midi=\(midiBytes)B tracks=\(trackCount) channels=[\(chList)]"
         )
         return RenderedMIDI(
             data: midiData, trackCount: trackCount, channels: summary.channels

@@ -170,23 +170,29 @@ struct AuditionPipelineSection: View {
     // MARK: - Lifecycle
 
     private func enablePipeline() async {
+        PipelineFileLog.shared.start()  // truncate + open log file
+        PipelineFileLog.shared.log("=== enablePipeline START ===")
         statusText = "Loading bond.mxl..."
         loadError = nil
         do {
             try AudioEngineManager.shared.startForPlayback()
             sectionLogger.info("enablePipeline: engine started for playback")
+            PipelineFileLog.shared.log("AuditionPipelineSection.enablePipeline: engine startForPlayback OK")
 
             guard let mxlURL = Bundle.main.url(
                 forResource: "james-bond-theme", withExtension: "mxl"
             ) else {
+                PipelineFileLog.shared.log("ERROR: james-bond-theme.mxl missing from bundle")
                 throw PipelineError.resourceMissing(name: "james-bond-theme.mxl")
             }
             let mxlData = try Data(contentsOf: mxlURL)
             let mxlSize = mxlData.count
             sectionLogger.info("enablePipeline: mxl loaded, \(mxlSize, privacy: .public) bytes")
+            PipelineFileLog.shared.log("AuditionPipelineSection.enablePipeline: mxl loaded \(mxlSize)B")
             let xml = try MXLLoader.loadMusicXML(from: mxlData)
             let xmlSize = xml.utf8.count
             sectionLogger.info("enablePipeline: MusicXML extracted, \(xmlSize, privacy: .public) bytes")
+            PipelineFileLog.shared.log("AuditionPipelineSection.enablePipeline: MusicXML extracted \(xmlSize)B")
             let bridge = VerovioBridge()
             let renderedMIDI = try bridge.render(musicXML: xml)
             self.rendered = renderedMIDI
@@ -216,6 +222,7 @@ struct AuditionPipelineSection: View {
             // the SF2 is loaded, the route silently binds to a stale endpoint and
             // MIDI events never reach the sampler — playback is silent. Load the
             // SF2 first, then route.
+            PipelineFileLog.shared.log("AuditionPipelineSection.enablePipeline: graph created partCount=\(partCount)")
             await applyActiveBank(activeSlot)
 
             // Now route (CoreMIDI endpoints are live because samplers have programs loaded).
@@ -223,11 +230,14 @@ struct AuditionPipelineSection: View {
 
             let chList = renderedMIDI.channels.map { String($0) }.joined(separator: ", ")
             statusText = "✓ \(partCount) parts · channels [\(chList)]"
+            PipelineFileLog.shared.log("=== enablePipeline DONE — \(partCount) parts ready ===")
         } catch let pipelineError as PipelineError {
             loadError = pipelineError.localizedDescription
+            PipelineFileLog.shared.log("enablePipeline FAILED: \(pipelineError.localizedDescription)")
             disablePipeline()
         } catch {
             loadError = "Pipeline failed: \(error.localizedDescription)"
+            PipelineFileLog.shared.log("enablePipeline FAILED (other): \(error.localizedDescription)")
             disablePipeline()
         }
     }
@@ -263,20 +273,29 @@ struct AuditionPipelineSection: View {
         guard !isBouncing else {
             deferredSlot = slot
             loadError = "Bank swap deferred until bounce completes"
+            PipelineFileLog.shared.log("applyActiveBank(\(slot.rawValue)) DEFERRED (bouncing)")
             return
         }
         let url: URL? = (slot == .a) ? bankA : bankB
-        guard let url else { return }
+        guard let url else {
+            PipelineFileLog.shared.log("applyActiveBank(\(slot.rawValue)) ABORT: no URL for slot")
+            return
+        }
         let presets = Array(Self.defaultPresets.prefix(g.samplers.count))
+        let presetList = presets.map { String($0) }.joined(separator: ",")
+        PipelineFileLog.shared.log(
+            "applyActiveBank(\(slot.rawValue)) → \(url.lastPathComponent) presets=[\(presetList)]"
+        )
         do {
             try g.loadBank(at: url, presets: presets)
             loadedSlot = slot
-            // Clear the deferred-bounce hint once a real swap lands.
+            PipelineFileLog.shared.log("applyActiveBank(\(slot.rawValue)) DONE")
             if loadError == "Bank swap deferred until bounce completes" {
                 loadError = nil
             }
         } catch {
             loadError = "Bank load failed: \(error.localizedDescription)"
+            PipelineFileLog.shared.log("applyActiveBank(\(slot.rawValue)) FAILED: \(error.localizedDescription)")
         }
     }
 
@@ -328,7 +347,13 @@ struct AuditionPipelineSection: View {
             }
             let endPos = g.sequencer?.currentPositionInSeconds ?? -1
             sectionLogger.info(
-                "bounce[\(slot.rawValue, privacy: .public)] sequencer done pos=\(endPos, privacy: .public)s ticks=\(ticks, privacy: .public)"
+                """
+                bounce[\(slot.rawValue, privacy: .public)] sequencer done \
+                pos=\(endPos, privacy: .public)s ticks=\(ticks, privacy: .public)
+                """
+            )
+            PipelineFileLog.shared.log(
+                "bounce[\(slot.rawValue)] sequencer done pos=\(endPos)s ticks=\(ticks)"
             )
             // Fix I5 (review 2026-04-26): AVAudioUnitTimePitch carries
             // ~50–100 ms of overlap-add buffering and SF2 voices can have
