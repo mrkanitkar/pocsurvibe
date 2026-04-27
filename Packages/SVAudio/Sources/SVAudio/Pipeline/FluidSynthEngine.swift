@@ -28,6 +28,12 @@ public final class FluidSynthEngine: AuditionEngine {
     /// Whether the underlying `AVAudioSequencer` is currently producing audio.
     public var isPlaying: Bool { sequencer?.isPlaying ?? false }
 
+    /// Wall-clock duration of the loaded sequence (longest non-empty track).
+    public var sequenceDuration: TimeInterval {
+        guard let tracks = sequencer?.tracks, !tracks.isEmpty else { return 0 }
+        return tracks.map(\.lengthInSeconds).max() ?? 0
+    }
+
     private let subMixer = AVAudioMixerNode()
     private var sourceNode: AVAudioSourceNode?
     private var sequencer: AVAudioSequencer?

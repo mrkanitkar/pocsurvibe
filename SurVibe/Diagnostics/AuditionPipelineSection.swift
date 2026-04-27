@@ -373,26 +373,41 @@ struct AuditionPipelineSection: View {
             engine.stop()
             try b.start()
             try engine.play()
+            // QA finding 2026-04-27: AVAudioSequencer.isPlaying transitions to
+            // false when events have been dispatched, not when audio finishes
+            // rendering. Polling it truncated bounces to ~4–9 s on a 127 s
+            // song. Wait the explicit sequence duration instead.
+            let duration = engine.sequenceDuration
+            PipelineFileLog.shared.log(
+                "bounce[\(slot.rawValue)] waiting duration=\(String(format: "%.2f", duration))s"
+            )
+            let deadline = Date().addingTimeInterval(duration)
             var ticks = 0
-            while engine.isPlaying {
+            while Date() < deadline {
                 try await Task.sleep(nanoseconds: 200_000_000)
                 ticks += 1
-                if ticks % 5 == 0 {  // every ~1s
+                if ticks % 25 == 0 {  // every ~5s
+                    let remaining = max(0, deadline.timeIntervalSinceNow)
                     sectionLogger.info(
-                        "bounce[\(slot.rawValue, privacy: .public)] still playing ticks=\(ticks, privacy: .public)"
+                        """
+                        bounce[\(slot.rawValue, privacy: .public)] still playing \
+                        ticks=\(ticks, privacy: .public) \
+                        remaining=\(remaining, privacy: .public)s
+                        """
                     )
                 }
             }
             sectionLogger.info(
-                "bounce[\(slot.rawValue, privacy: .public)] sequencer done ticks=\(ticks, privacy: .public)"
+                "bounce[\(slot.rawValue, privacy: .public)] sequence elapsed ticks=\(ticks, privacy: .public)"
             )
             PipelineFileLog.shared.log(
-                "bounce[\(slot.rawValue)] sequencer done ticks=\(ticks)"
+                "bounce[\(slot.rawValue)] sequence elapsed ticks=\(ticks) duration=\(String(format: "%.2f", duration))s"
             )
             // Fix I5 (review 2026-04-26): drain TimePitch buffering + SF2
             // release tails before stopping the tap. 300 ms is generous for
             // both the TimePitch latency and a typical SF2 release tail.
             try? await Task.sleep(nanoseconds: 300_000_000)
+            engine.stop()
             b.stop()
             switch slot {
             case .a: bounceURLA = url

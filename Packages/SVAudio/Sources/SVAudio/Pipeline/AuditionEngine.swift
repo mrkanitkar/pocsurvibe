@@ -60,6 +60,13 @@ public protocol AuditionEngine: AnyObject {
     /// Whether the underlying sequencer is currently producing audio.
     var isPlaying: Bool { get }
 
+    /// Total wall-clock duration of the loaded sequence in seconds, taken from
+    /// the longest non-empty track. `0` until `setup(rendered:bankURL:)` runs.
+    /// Bounce uses this as a deadline because `AVAudioSequencer.isPlaying`
+    /// transitions to `false` when events have been dispatched, not when audio
+    /// has finished rendering — relying on it alone truncates bounces.
+    var sequenceDuration: TimeInterval { get }
+
     /// Allocate samplers/voices, load `bankURL`, route MIDI from `rendered`
     /// into the engine's internal MIDI dispatch, and attach `output`.
     func setup(rendered: RenderedMIDI, bankURL: URL) throws

@@ -22,6 +22,12 @@ public final class AppleAVSamplerEngine: AuditionEngine {
     /// Whether the underlying graph's sequencer is currently producing audio.
     public var isPlaying: Bool { graph?.isPlaying ?? false }
 
+    /// Wall-clock duration of the loaded sequence (longest non-empty track).
+    public var sequenceDuration: TimeInterval {
+        guard let tracks = graph?.sequencer?.tracks, !tracks.isEmpty else { return 0 }
+        return tracks.map(\.lengthInSeconds).max() ?? 0
+    }
+
     private var graph: MultiTrackSamplerGraph?
     private var rendered: RenderedMIDI?
     /// Returned from `output` before `setup` runs so SwiftUI bindings have
