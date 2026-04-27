@@ -98,7 +98,16 @@ public protocol AuditionEngine: AnyObject {
 }
 
 public extension AuditionEngine {
-    /// Default no-op so engines without a TimePitch don't have to override.
+    /// Default no-op `setTempo` so engines without an `AVAudioUnitTimePitch`
+    /// in their internal path don't have to override the requirement.
+    ///
+    /// Engines with a TimePitch (e.g. `AppleAVSamplerEngine`) override this
+    /// to delegate to the underlying graph; the pipeline coordinator calls
+    /// `engine.setTempo(rate:)` uniformly without knowing the concrete type.
+    /// FluidSynth Phase 1 has no TimePitch and intentionally inherits the
+    /// no-op — the tempo slider is non-functional when FluidSynth is selected.
+    ///
+    /// - Parameter rate: Playback rate (1.0 = normal). Ignored by this default.
     func setTempo(rate: Float) {}
 }
 

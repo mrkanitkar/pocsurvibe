@@ -354,7 +354,7 @@
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 			shellPath = /bin/bash;
-			shellScript = "# Strips FluidSynth.framework from Release builds (LGPL — DEBUG-only POC).\n# Inlined here (instead of pointing at an external .sh) so Xcode's user-script\n# sandbox doesn't block file-read-data on the script itself.\nset -euo pipefail\nif [ \"${CONFIGURATION}\" = \"Release\" ]; then\n    TARGET=\"${BUILT_PRODUCTS_DIR}/${FRAMEWORKS_FOLDER_PATH}/FluidSynth.framework\"\n    if [ -d \"$TARGET\" ]; then\n        echo \"Removing FluidSynth.framework from Release build at: $TARGET\"\n        rm -rf \"$TARGET\"\n    fi\nfi\n";
+			shellScript = "# Strips FluidSynth.framework from Release builds (LGPL — DEBUG-only POC).\n# Inlined here (instead of pointing at an external .sh) so Xcode's user-script\n# sandbox doesn't block file-read-data on the script itself.\nset -euo pipefail\nif [ \"${CONFIGURATION}\" = \"Release\" ]; then\n    TARGET=\"${BUILT_PRODUCTS_DIR}/${FRAMEWORKS_FOLDER_PATH}/FluidSynth.framework\"\n    if [ -d \"$TARGET\" ]; then\n        echo \"Removing FluidSynth.framework from Release build at: $TARGET\"\n        rm -rf \"$TARGET\"\n    else\n        # If SPM ever changes the embed path, a silent no-op would let the\n        # LGPL framework ship in Release. Surface a build warning so it's\n        # impossible to miss.\n        echo \"warning: FluidSynth.framework not found at $TARGET. Verify SPM embed path; the framework may now ship in Release.\"\n    fi\nfi\n";
 		};
 /* End PBXShellScriptBuildPhase section */
 

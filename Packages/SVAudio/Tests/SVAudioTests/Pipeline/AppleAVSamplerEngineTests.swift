@@ -14,7 +14,7 @@ struct AppleAVSamplerEngineTests {
         #expect(engine.isPlaying == false)
     }
 
-    @Test("output is a valid AVAudioNode after setup")
+    @Test("output is a valid AVAudioNode after setup; sequenceDuration is positive")
     func outputIsValidAfterSetup() throws {
         try AudioEngineManager.shared.startForPlayback()
 
@@ -31,11 +31,16 @@ struct AppleAVSamplerEngineTests {
         )
         guard let sf2URL = Bundle.main.url(
             forResource: "MuseScore_General", withExtension: "sf2"
-        ) else { return }  // skip if asset missing in test bundle
+        ) else {
+            Issue.record("MuseScore_General.sf2 missing from test bundle — skipping integration test")
+            return
+        }
 
         let engine = AppleAVSamplerEngine()
         try engine.setup(rendered: rendered, bankURL: sf2URL)
         #expect(engine.output.engine === AudioEngineManager.shared.engine)
+        // Code review C-2 invariant: bounce relies on this returning > 0.
+        #expect(engine.sequenceDuration > 0)
         engine.tearDown()
     }
 

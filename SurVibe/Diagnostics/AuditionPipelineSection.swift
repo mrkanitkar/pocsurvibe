@@ -378,6 +378,15 @@ struct AuditionPipelineSection: View {
             // rendering. Polling it truncated bounces to ~4–9 s on a 127 s
             // song. Wait the explicit sequence duration instead.
             let duration = engine.sequenceDuration
+            // Code review C-2 (2026-04-27): a zero duration would silently
+            // produce a near-empty m4a. Surface as an error instead.
+            guard duration > 0 else {
+                PipelineFileLog.shared.log("bounce[\(slot.rawValue)] ABORT: sequenceDuration=0")
+                loadError = "Bounce aborted: sequence duration is zero"
+                engine.stop()
+                b.abort()
+                return
+            }
             PipelineFileLog.shared.log(
                 "bounce[\(slot.rawValue)] waiting duration=\(String(format: "%.2f", duration))s"
             )

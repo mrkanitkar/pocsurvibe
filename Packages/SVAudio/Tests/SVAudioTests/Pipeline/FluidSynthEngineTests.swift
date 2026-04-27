@@ -14,12 +14,15 @@ struct FluidSynthEngineTests {
         #expect(engine.isPlaying == false)
     }
 
-    @Test("Setup attaches sub-mixer, teardown detaches")
+    @Test("Setup attaches sub-mixer, teardown detaches; sequenceDuration is positive after setup")
     func setupTeardownLifecycle() throws {
         try AudioEngineManager.shared.startForPlayback()
         guard let sf2URL = Bundle.main.url(
             forResource: "MuseScore_General", withExtension: "sf2"
-        ) else { return }
+        ) else {
+            Issue.record("MuseScore_General.sf2 missing from test bundle — skipping integration test")
+            return
+        }
         let rendered = RenderedMIDI(
             data: makeTrivialSMF(), trackCount: 2, channels: [0],
             trackInfo: [TrackInfo(channel: 0, program: 0, isPercussion: false)]
@@ -27,6 +30,8 @@ struct FluidSynthEngineTests {
         let engine = FluidSynthEngine()
         try engine.setup(rendered: rendered, bankURL: sf2URL)
         #expect(engine.output.engine === AudioEngineManager.shared.engine)
+        // Code review C-2 invariant: bounce relies on this returning > 0.
+        #expect(engine.sequenceDuration > 0)
 
         engine.tearDown()
         #expect(engine.output.engine == nil)
@@ -39,7 +44,10 @@ struct FluidSynthEngineTests {
             forResource: "MuseScore_General", withExtension: "sf2"
         ), let sf2B = Bundle.main.url(
             forResource: "GeneralUser-GS", withExtension: "sf2"
-        ) else { return }
+        ) else {
+            Issue.record("Required SF2 banks missing from test bundle — skipping integration test")
+            return
+        }
         let rendered = RenderedMIDI(
             data: makeTrivialSMF(), trackCount: 2, channels: [0],
             trackInfo: [TrackInfo(channel: 0, program: 0, isPercussion: false)]

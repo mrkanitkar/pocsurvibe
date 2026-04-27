@@ -49,10 +49,14 @@ public final class FluidSynthMIDIParser: @unchecked Sendable {
                     continue
                 }
                 if status >= 0xF1 && status <= 0xF7 {
-                    // System common — skip with payload
+                    // System common — skip with payload. A stray 0xF7 outside
+                    // a sysex block (or 0xF4/0xF5 undefined statuses) clears
+                    // running status to prevent it being reused after a
+                    // malformed sequence.
                     i += 1
                     if status == 0xF1 || status == 0xF3 { i += 1 }       // 1 data byte
                     else if status == 0xF2 { i += 2 }                     // 2 data bytes
+                    runningStatus = 0
                     continue
                 }
                 // Channel voice
@@ -93,16 +97,23 @@ public final class FluidSynthMIDIParser: @unchecked Sendable {
 
     /// CoreMIDI receive callback adapter — call this from your
     /// `MIDIDestinationCreate` callback after extracting `MIDIPacketList`.
+    ///
+    /// - Parameter packetList: The packet list delivered by CoreMIDI. The
+    ///   pointee is read on the calling thread and not retained.
     public func parsePacketList(_ packetList: UnsafePointer<MIDIPacketList>) {
-        let pkt = packetList.pointee
-        var packet = pkt.packet
-        for _ in 0..<pkt.numPackets {
+        let count = Int(packetList.pointee.numPackets)
+        var packet = packetList.pointee.packet
+        for i in 0..<count {
             withUnsafePointer(to: packet.data) { tuplePtr in
                 let bytePtr = UnsafeRawPointer(tuplePtr).assumingMemoryBound(to: UInt8.self)
                 let buffer = UnsafeBufferPointer(start: bytePtr, count: Int(packet.length))
                 parseRawBytes(Array(buffer), timestamp: packet.timeStamp)
             }
-            packet = MIDIPacketNext(&packet).pointee
+            // Advancing past the LAST packet would deref past the end of the
+            // packet-list buffer (UB). Only advance when more packets remain.
+            if i < count - 1 {
+                packet = MIDIPacketNext(&packet).pointee
+            }
         }
     }
 }

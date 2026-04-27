@@ -61,4 +61,24 @@ struct FluidSynthMIDIParserTests {
         #expect(evt?.status == 0x90)
         #expect(ring.dequeue() == nil)
     }
+
+    @Test("Stray 0xF7 outside sysex clears running status")
+    func strayF7ClearsRunningStatus() {
+        let ring = FluidSynthMIDIEventRing(capacity: 8)
+        let parser = FluidSynthMIDIParser(ring: ring)
+        // note-on (sets running status), stray 0xF7, then a bare data pair.
+        // Without the running-status clear, the bare data pair would be
+        // parsed as another note-on. With the clear, parsing bails when it
+        // hits the data pair without a fresh status byte.
+        parser.parseRawBytes([
+            0x90, 0x3C, 0x64,   // note-on ch0 60 100 — runningStatus = 0x90
+            0xF7,               // stray end-of-sysex; should clear running status
+            0x40, 0x50,         // bare data pair — must NOT be treated as note-on
+        ], timestamp: 0)
+        let first = ring.dequeue()
+        #expect(first?.status == 0x90)
+        #expect(first?.data1 == 60)
+        // No second event because running status was cleared.
+        #expect(ring.dequeue() == nil)
+    }
 }
