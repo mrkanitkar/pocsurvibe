@@ -67,27 +67,41 @@ public final class RealtimeTapBouncer {
         // `removeTap` is a no-op when no tap exists, so this is always safe.
         source.removeTap(onBus: 0)
 
-        // Bug 1 fix (2026-04-27, second attempt): the previous "capture file
-        // directly" attempt did NOT work. Swift 6 closures inside a @MainActor
-        // method INHERIT the surrounding actor isolation regardless of what
-        // they capture, so the closure literal becomes implicitly @MainActor.
-        // CoreAudio invokes the tap on RealtimeMessenger.mServiceQueue
-        // (non-main); the runtime then asserts main isolation and traps with
-        // EXC_BREAKPOINT. Confirmed against three crash logs at 15:10:52,
-        // 15:24:09, 15:25:58 — all show closure #1 in RealtimeTapBouncer.start.
+        // Bug 1 fix (2026-04-27, third attempt — the actual root cause).
         //
-        // The structural fix is to make the captured value Sendable so the
-        // closure can be inferred Sendable too (which strips actor inheritance,
-        // because Sendable closures cannot be actor-isolated). AVAudioFile is
-        // not Sendable in Swift 6, so we wrap it in a small @unchecked Sendable
-        // box. CLAUDE.md permits @unchecked Sendable for "CoreMIDI interop" —
-        // CoreAudio realtime callbacks (this case) are the same category, and
-        // AVAudioFile.write is documented thread-safe in Apple's
-        // "Performing Offline Audio Processing" sample.
+        // First two attempts (capture-fixing) did NOT work because the
+        // problem isn't the capture — it's the CLOSURE TYPE. Per Apple
+        // docs (verified 2026-04-27):
+        //   typealias AVAudioNodeTapBlock = (AVAudioPCMBuffer, AVAudioTime) -> Void
+        // is NOT @Sendable. installTap's `block:` parameter is also not
+        // @Sendable. So when we write a trailing closure inside @MainActor
+        // start(), Swift 6 strict mode INFERS the closure literal as
+        // @MainActor-isolated (the rule: a non-Sendable closure literal in
+        // an actor-isolated scope inherits that actor). At every CoreAudio
+        // invocation on RealtimeMessenger.mServiceQueue, the runtime calls
+        // dispatch_assert_queue(main) — fails — traps with EXC_BREAKPOINT.
+        // Confirmed across 4 crash logs (15:10:52, 15:24:09, 15:25:58,
+        // 15:30:09) all sharing identical signature.
+        //
+        // The fix mirrors the project's existing AudioEngineManager.installMicTap
+        // pattern: declare the block as @Sendable explicitly. The compiler
+        // accepts a @Sendable closure where a plain AVAudioNodeTapBlock is
+        // expected (subtyping). The @Sendable annotation forces the closure
+        // to NOT inherit @MainActor, which strips the runtime isolation
+        // check, which lets CoreAudio invoke the closure on its own queue
+        // without trapping.
+        //
+        // The TapWriter wrapper is still required: the @Sendable closure
+        // can only capture Sendable values, and AVAudioFile is not Sendable
+        // in Swift 6. CLAUDE.md / .claude/rules/audio.md permits
+        // @unchecked Sendable for CoreMIDI interop; CoreAudio realtime
+        // tap callbacks are the same category (audio.md notes
+        // MIDIInputManager uses OSAllocatedUnfairLock for the same reason).
         let writer = TapWriter(file: createdFile)
-        source.installTap(onBus: 0, bufferSize: Self.tapBufferSize, format: format) { buffer, _ in
+        let tapBlock: @Sendable (AVAudioPCMBuffer, AVAudioTime) -> Void = { buffer, _ in
             writer.write(buffer)
         }
+        source.installTap(onBus: 0, bufferSize: Self.tapBufferSize, format: format, block: tapBlock)
         isTapping = true
         bouncerLogger.info("Started bounce → \(self.outputURL.lastPathComponent, privacy: .public)")
     }
