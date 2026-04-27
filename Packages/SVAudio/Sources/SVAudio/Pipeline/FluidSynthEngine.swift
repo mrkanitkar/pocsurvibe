@@ -84,6 +84,7 @@ public final class FluidSynthEngine: AuditionEngine {
         avEngine.attach(node)
         avEngine.attach(subMixer)
         avEngine.connect(node, to: subMixer, format: format)
+        avEngine.connect(subMixer, to: avEngine.mainMixerNode, format: format)
         self.sourceNode = node
 
         // 4. Build CoreMIDI virtual destination + receive callback

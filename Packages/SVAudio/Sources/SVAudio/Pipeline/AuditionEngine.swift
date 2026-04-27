@@ -83,6 +83,16 @@ public protocol AuditionEngine: AnyObject {
     /// Single-line snapshot for `pipeline_log.txt`. Engines should include
     /// preset assignments, voice counts, render-block stats, etc.
     func diagnosticSummary() -> String
+
+    /// Set the playback rate (1.0 = normal). Engines that have an
+    /// `AVAudioUnitTimePitch` in their internal path apply the rate;
+    /// others (e.g. FluidSynth in Phase 1) treat this as a no-op.
+    func setTempo(rate: Float)
+}
+
+public extension AuditionEngine {
+    /// Default no-op so engines without a TimePitch don't have to override.
+    func setTempo(rate: Float) {}
 }
 
 /// Builds an `AuditionEngine` given a kind. Centralising construction here

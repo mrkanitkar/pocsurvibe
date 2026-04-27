@@ -80,6 +80,11 @@ public final class AppleAVSamplerEngine: AuditionEngine {
         PipelineFileLog.shared.log("AppleAVSamplerEngine.stop")
     }
 
+    /// Delegates the rate change to the graph's `AVAudioUnitTimePitch`.
+    public func setTempo(rate: Float) {
+        graph?.setTempo(rate: rate)
+    }
+
     /// Detaches the underlying graph from the shared engine. Idempotent.
     public func tearDown() {
         graph?.stop()

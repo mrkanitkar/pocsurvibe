@@ -23,7 +23,8 @@ struct AuditionPipelineSection: View {
     let activeSlot: SoundFontAuditionView.Slot
 
     @State private var pipelineEnabled = false
-    @State private var graph: MultiTrackSamplerGraph?
+    @State private var engine: AuditionEngine?
+    @State private var selectedEngine: EngineKind = .apple
     @State private var rendered: RenderedMIDI?
     @State private var statusText: String = ""
     @State private var loadError: String?
@@ -42,16 +43,6 @@ struct AuditionPipelineSection: View {
     /// Tracks which slot was actually loaded into the samplers, so the
     /// deferred-flush can decide whether a re-apply is needed.
     @State private var loadedSlot: SoundFontAuditionView.Slot?
-
-    /// Default per-track GM presets, indexed by track index.
-    /// Track 0=melody, 1=bass, 2=brass, 3=strings, 4=organ, 5=lead,
-    /// 6=pad, then GM 0 (acoustic grand) for tracks 7-15.
-    ///
-    /// **Known gap (deferred to follow-up):** the spec also asks for
-    /// honoring embedded `<midi-program>` Program Change events and
-    /// auto-overriding tracks on MIDI channel 9 to the SF2 percussion
-    /// bank. v1 of the POC ships these hardcoded defaults only.
-    private static let defaultPresets: [UInt8] = [0, 33, 61, 48, 18, 80, 88, 0, 0, 0, 0, 0, 0, 0, 0, 0]
 
     var body: some View {
         Section("Multi-instrument Pipeline") {
@@ -76,7 +67,18 @@ struct AuditionPipelineSection: View {
                     .foregroundStyle(.red)
                     .accessibilityLabel("Pipeline error: \(loadError)")
             }
-            if pipelineEnabled, graph != nil {
+            if pipelineEnabled, engine != nil {
+                Picker("Engine", selection: $selectedEngine) {
+                    ForEach(EngineKind.allCases) { kind in
+                        Text(kind.displayName).tag(kind)
+                    }
+                }
+                .pickerStyle(.segmented)
+                .accessibilityLabel("Audition synth engine")
+                .disabled(isBouncing)
+                .onChange(of: selectedEngine) { _, newKind in
+                    Task { await switchEngine(to: newKind) }
+                }
                 tempoControl
                 transportControls
                 bounceControls
@@ -112,7 +114,7 @@ struct AuditionPipelineSection: View {
             }
             .accessibilityLabel("Pipeline playback tempo")
             .accessibilityValue(String(format: "%.2f times", tempo))
-            .onChange(of: tempo) { _, newValue in graph?.setTempo(rate: newValue) }
+            .onChange(of: tempo) { _, newValue in engine?.setTempo(rate: newValue) }
         }
     }
 
@@ -124,18 +126,18 @@ struct AuditionPipelineSection: View {
         // pause+stop within the same millisecond.
         HStack(spacing: 16) {
             Button {
-                do { try graph?.play() } catch { loadError = error.localizedDescription }
+                do { try engine?.play() } catch { loadError = error.localizedDescription }
             } label: { Label("Play", systemImage: "play.fill") }
                 .buttonStyle(.borderless)
                 .accessibilityLabel("Play pipeline")
-                .disabled(graph?.sequencer == nil)
+                .disabled(engine == nil)
             Button {
-                graph?.pause()
+                engine?.pause()
             } label: { Label("Pause", systemImage: "pause.fill") }
                 .buttonStyle(.borderless)
                 .accessibilityLabel("Pause pipeline")
             Button {
-                graph?.stop()
+                engine?.stop()
             } label: { Label("Stop", systemImage: "stop.fill") }
                 .buttonStyle(.borderless)
                 .accessibilityLabel("Stop pipeline and reset")
@@ -161,10 +163,10 @@ struct AuditionPipelineSection: View {
                     .disabled(isBouncing || bankB == nil)
             }
             if let bounceURLA {
-                bounceResultRow(label: "audition_bond_A.m4a", url: bounceURLA)
+                bounceResultRow(label: bounceURLA.lastPathComponent, url: bounceURLA)
             }
             if let bounceURLB {
-                bounceResultRow(label: "audition_bond_B.m4a", url: bounceURLB)
+                bounceResultRow(label: bounceURLB.lastPathComponent, url: bounceURLB)
             }
         }
     }
@@ -183,7 +185,7 @@ struct AuditionPipelineSection: View {
 
     private func enablePipeline() async {
         PipelineFileLog.shared.start()  // truncate + open log file
-        PipelineFileLog.shared.log("=== enablePipeline START ===")
+        PipelineFileLog.shared.log("=== enablePipeline START engine=\(selectedEngine.rawValue) ===")
         statusText = "Loading bond.mxl..."
         loadError = nil
         do {
@@ -198,51 +200,25 @@ struct AuditionPipelineSection: View {
                 throw PipelineError.resourceMissing(name: "james-bond-theme.mxl")
             }
             let mxlData = try Data(contentsOf: mxlURL)
-            let mxlSize = mxlData.count
-            sectionLogger.info("enablePipeline: mxl loaded, \(mxlSize, privacy: .public) bytes")
-            PipelineFileLog.shared.log("AuditionPipelineSection.enablePipeline: mxl loaded \(mxlSize)B")
             let xml = try MXLLoader.loadMusicXML(from: mxlData)
-            let xmlSize = xml.utf8.count
-            sectionLogger.info("enablePipeline: MusicXML extracted, \(xmlSize, privacy: .public) bytes")
-            PipelineFileLog.shared.log("AuditionPipelineSection.enablePipeline: MusicXML extracted \(xmlSize)B")
             let bridge = VerovioBridge()
             let renderedMIDI = try bridge.render(musicXML: xml)
             self.rendered = renderedMIDI
 
-            // Fix C1 (review 2026-04-26): VerovioBridge.summarize counts every
-            // MTrk chunk in the SMF, including the conductor track 0
-            // (tempo/time-sig metadata, no notes) that Verovio emits as a Type
-            // 1 SMF. AVAudioSequencer.tracks excludes the conductor track
-            // (Apple exposes it separately as `tempoTrack`), so probing a
-            // throwaway sequencer gives us the true AVF-visible part count.
-            // Sizing the graph off `renderedMIDI.trackCount` instead would
-            // create one extra (silent) sampler at index 0 and shift every
-            // subsequent part by one. Chose the temporary-sequencer probe over
-            // adding a `partCount` field to RenderedMIDI to keep the SVAudio
-            // type pure (no AVFoundation timing coupling).
-            let probeSeq = AVAudioSequencer(audioEngine: AudioEngineManager.shared.engine)
-            try probeSeq.load(from: renderedMIDI.data, options: [])
-            let partCount = min(probeSeq.tracks.count, MultiTrackSamplerGraph.maxTracks)
-
-            let g = try MultiTrackSamplerGraph(trackCount: partCount)
-            self.graph = g
-
-            // Bug 2 fix (2026-04-27): load SF2 BEFORE MIDI routing. AudioKit's
-            // MIDISampler may not have a live CoreMIDI virtual destination until
-            // the underlying AVAudioUnitSampler has loaded a SoundFont program.
-            // If we set track.destinationMIDIEndpoint = samplers[i].midiIn before
-            // the SF2 is loaded, the route silently binds to a stale endpoint and
-            // MIDI events never reach the sampler — playback is silent. Load the
-            // SF2 first, then route.
-            PipelineFileLog.shared.log("AuditionPipelineSection.enablePipeline: graph created partCount=\(partCount)")
-            await applyActiveBank(activeSlot)
-
-            // Now route (CoreMIDI endpoints are live because samplers have programs loaded).
-            try g.loadMIDI(renderedMIDI)
+            guard let bankURL: URL = (activeSlot == .a) ? bankA : bankB else {
+                throw PipelineError.resourceMissing(name: "active SF2 bank")
+            }
+            let newEngine = AuditionEngineFactory.make(kind: selectedEngine)
+            try newEngine.setup(rendered: renderedMIDI, bankURL: bankURL)
+            self.engine = newEngine
+            self.loadedSlot = activeSlot
 
             let chList = renderedMIDI.channels.map { String($0) }.joined(separator: ", ")
-            statusText = "✓ \(partCount) parts · channels [\(chList)]"
-            PipelineFileLog.shared.log("=== enablePipeline DONE — \(partCount) parts ready ===")
+            let trackCount = renderedMIDI.trackInfo.count
+            statusText = "✓ \(selectedEngine.displayName) · \(trackCount) parts · channels [\(chList)]"
+            PipelineFileLog.shared.log(
+                "=== enablePipeline DONE engine=\(selectedEngine.rawValue) parts=\(trackCount) ==="
+            )
         } catch let pipelineError as PipelineError {
             loadError = pipelineError.localizedDescription
             PipelineFileLog.shared.log("enablePipeline FAILED: \(pipelineError.localizedDescription)")
@@ -259,7 +235,7 @@ struct AuditionPipelineSection: View {
         // disables the pipeline (or navigates away), abort it so the tap is
         // removed from the sub-mixer before we tear that node down. Resetting
         // `isBouncing` here unblocks the `bounce()` task body, which observes
-        // `g == nil` and short-circuits.
+        // `engine == nil` and short-circuits.
         if isBouncing {
             bouncer?.abort()
         }
@@ -267,15 +243,42 @@ struct AuditionPipelineSection: View {
         isBouncing = false
         deferredSlot = nil
         loadedSlot = nil
-        graph?.stop()
-        graph?.teardown()
-        graph = nil
+        engine?.stop()
+        engine?.tearDown()
+        engine = nil
         rendered = nil
         statusText = ""
     }
 
+    private func switchEngine(to newKind: EngineKind) async {
+        guard let oldEngine = engine, let rendered else { return }
+        statusText = "Switching to \(newKind.displayName)..."
+        PipelineFileLog.shared.log(
+            "switchEngine: \(oldEngine.displayName) → \(newKind.displayName)"
+        )
+        oldEngine.stop()
+        oldEngine.tearDown()
+        self.engine = nil
+
+        let url: URL? = (loadedSlot == .b) ? bankB : bankA
+        guard let url else {
+            loadError = "No active bank URL"
+            return
+        }
+        let newEngine = AuditionEngineFactory.make(kind: newKind)
+        do {
+            try newEngine.setup(rendered: rendered, bankURL: url)
+            self.engine = newEngine
+            statusText = "✓ \(newKind.displayName) · \(rendered.trackInfo.count) parts ready"
+            PipelineFileLog.shared.log("switchEngine DONE: \(newEngine.diagnosticSummary())")
+        } catch {
+            loadError = "Engine switch failed: \(error.localizedDescription)"
+            PipelineFileLog.shared.log("switchEngine FAILED: \(error.localizedDescription)")
+        }
+    }
+
     private func applyActiveBank(_ slot: SoundFontAuditionView.Slot) async {
-        guard let g = graph else { return }
+        guard let engine else { return }
         // Fix C2 (review 2026-04-26): a bank swap pauses the engine for
         // ~N×300 ms (Mode 2 sequential reload) — running this mid-bounce
         // silences the tap and leaves the m4a write head out of position,
@@ -293,15 +296,15 @@ struct AuditionPipelineSection: View {
             PipelineFileLog.shared.log("applyActiveBank(\(slot.rawValue)) ABORT: no URL for slot")
             return
         }
-        let presets = derivedPresets(samplerCount: g.samplers.count)
-        let presetList = presets.map { String($0) }.joined(separator: ",")
         PipelineFileLog.shared.log(
-            "applyActiveBank(\(slot.rawValue)) → \(url.lastPathComponent) presets=[\(presetList)]"
+            "applyActiveBank(\(slot.rawValue)) → \(url.lastPathComponent)"
         )
         do {
-            try g.loadBank(at: url, presets: presets)
+            try engine.loadBank(url)
             loadedSlot = slot
-            PipelineFileLog.shared.log("applyActiveBank(\(slot.rawValue)) DONE")
+            PipelineFileLog.shared.log(
+                "applyActiveBank(\(slot.rawValue)) DONE engine=\(selectedEngine.rawValue)"
+            )
             if loadError == "Bank swap deferred until bounce completes" {
                 loadError = nil
             }
@@ -311,49 +314,22 @@ struct AuditionPipelineSection: View {
         }
     }
 
-    /// Derive per-sampler GM preset numbers from the rendered MIDI's
-    /// per-track Program Change events. Falls back to the static
-    /// `defaultPresets` table for tracks Verovio didn't write a program
-    /// change on (or where the track is percussion — channel 9 is
-    /// special-cased to GM "Standard Drum Kit" preset 0 here, since
-    /// `loadMelodicSoundFont` cannot address the percussion bank).
-    ///
-    /// **Caveat:** percussion played through a melodic preset 0 still
-    /// sounds wrong (it pitches drums by note number). Proper percussion
-    /// requires `loadSoundBankInstrument` with bankMSB=128, which is a
-    /// follow-up; flagged in the deferred items.
-    private func derivedPresets(samplerCount: Int) -> [UInt8] {
-        let trackInfo = rendered?.trackInfo ?? []
-        var result: [UInt8] = []
-        for i in 0..<samplerCount {
-            if i < trackInfo.count, let program = trackInfo[i].program {
-                result.append(program)
-            } else {
-                result.append(Self.defaultPresets[i])
-            }
-        }
-        return result
-    }
-
     private func bounce(slot: SoundFontAuditionView.Slot) async {
-        guard let g = graph else { return }
+        guard let engine else { return }
 
         // Bug fix (2026-04-27): Bounce A/B button labels imply slot-specific
         // capture, but the previous implementation only used `slot` for the
         // output filename — both bounces actually used whichever SF2 was
-        // currently loaded. Confirmed by pipeline_log: A and B m4a files
-        // captured the same audio because no loadBank ran between them.
-        // Fix: explicitly load the requested slot's bank before bouncing.
+        // currently loaded. Fix: explicitly load the requested slot's bank
+        // before bouncing.
         if loadedSlot != slot {
             let url: URL? = (slot == .a) ? bankA : bankB
             if let url {
-                let presets = derivedPresets(samplerCount: g.samplers.count)
-                let presetList = presets.map { String($0) }.joined(separator: ",")
                 PipelineFileLog.shared.log(
-                    "bounce[\(slot.rawValue)]: pre-load bank \(url.lastPathComponent) presets=[\(presetList)]"
+                    "bounce[\(slot.rawValue)]: pre-load engine=\(selectedEngine.rawValue) bank=\(url.lastPathComponent)"
                 )
                 do {
-                    try g.loadBank(at: url, presets: presets)
+                    try engine.loadBank(url)
                     loadedSlot = slot
                 } catch {
                     let msg = error.localizedDescription
@@ -368,8 +344,7 @@ struct AuditionPipelineSection: View {
         // Fix C2 (review 2026-04-26): when the bounce ends — success, throw,
         // or task cancellation — flush any A/B slot the user requested while
         // the bounce was running, but only if it actually differs from what's
-        // currently loaded. Re-applying the same slot would needlessly pause
-        // the engine again.
+        // currently loaded.
         defer {
             isBouncing = false
             if let pending = deferredSlot {
@@ -380,50 +355,43 @@ struct AuditionPipelineSection: View {
             }
         }
 
-        let filename = "audition_bond_\(slot.rawValue).m4a"
+        let filename = "audition_bond_\(slot.rawValue)_\(selectedEngine.rawValue).m4a"
         let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         let url = docs.appendingPathComponent(filename)
         try? FileManager.default.removeItem(at: url)
 
-        let b = RealtimeTapBouncer(source: g.subMixer, outputURL: url)
+        let b = RealtimeTapBouncer(source: engine.output, outputURL: url)
         bouncer = b
         sectionLogger.info(
-            "bounce[\(slot.rawValue, privacy: .public)] start → \(url.lastPathComponent, privacy: .public)"
+            """
+            bounce[\(slot.rawValue, privacy: .public)] start \
+            engine=\(selectedEngine.rawValue, privacy: .public) \
+            → \(url.lastPathComponent, privacy: .public)
+            """
         )
         do {
-            g.stop()
+            engine.stop()
             try b.start()
-            try g.play()
-            // Wait until the sequencer reports it's no longer playing.
-            // Diagnostic: log every second so we can see if/when the
-            // sequencer goes inactive prematurely.
+            try engine.play()
             var ticks = 0
-            while g.isPlaying {
+            while engine.isPlaying {
                 try await Task.sleep(nanoseconds: 200_000_000)
                 ticks += 1
                 if ticks % 5 == 0 {  // every ~1s
-                    let pos = g.sequencer?.currentPositionInSeconds ?? -1
                     sectionLogger.info(
-                        "bounce[\(slot.rawValue, privacy: .public)] still playing pos=\(pos, privacy: .public)s"
+                        "bounce[\(slot.rawValue, privacy: .public)] still playing ticks=\(ticks, privacy: .public)"
                     )
                 }
             }
-            let endPos = g.sequencer?.currentPositionInSeconds ?? -1
             sectionLogger.info(
-                """
-                bounce[\(slot.rawValue, privacy: .public)] sequencer done \
-                pos=\(endPos, privacy: .public)s ticks=\(ticks, privacy: .public)
-                """
+                "bounce[\(slot.rawValue, privacy: .public)] sequencer done ticks=\(ticks, privacy: .public)"
             )
             PipelineFileLog.shared.log(
-                "bounce[\(slot.rawValue)] sequencer done pos=\(endPos)s ticks=\(ticks)"
+                "bounce[\(slot.rawValue)] sequencer done ticks=\(ticks)"
             )
-            // Fix I5 (review 2026-04-26): AVAudioUnitTimePitch carries
-            // ~50–100 ms of overlap-add buffering and SF2 voices can have
-            // release/reverb tails that are still rendering when the
-            // sequencer flips `isPlaying` to false. Without this pause the
-            // m4a ends abruptly mid-decay. 300 ms is generous for both the
-            // TimePitch latency and a typical SF2 release tail.
+            // Fix I5 (review 2026-04-26): drain TimePitch buffering + SF2
+            // release tails before stopping the tap. 300 ms is generous for
+            // both the TimePitch latency and a typical SF2 release tail.
             try? await Task.sleep(nanoseconds: 300_000_000)
             b.stop()
             switch slot {
