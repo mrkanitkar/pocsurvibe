@@ -100,15 +100,29 @@ public final class MultiTrackSamplerGraph {
         let trackCount = min(seq.tracks.count, samplers.count)
         for i in 0..<trackCount {
             seq.tracks[i].destinationMIDIEndpoint = samplers[i].midiIn
+            // Diagnostic: per-track length so we can see whether a track
+            // is empty/short and that's why playback stops early.
+            let t = seq.tracks[i]
+            let lenBeats = t.lengthInBeats
+            let lenSec = t.lengthInSeconds
+            graphLogger.info(
+                """
+                track[\(i, privacy: .public)] \
+                lenBeats=\(lenBeats, privacy: .public) \
+                lenSec=\(lenSec, privacy: .public)
+                """
+            )
         }
         self.sequencer = seq
         let seqTracks = seq.tracks.count
         let samplerCount = self.samplers.count
+        let tempoLen = seq.tempoTrack.lengthInSeconds
         graphLogger.info(
             """
             Loaded MIDI: seq tracks=\(seqTracks, privacy: .public) \
             samplers=\(samplerCount, privacy: .public) \
-            routed=\(trackCount, privacy: .public)
+            routed=\(trackCount, privacy: .public) \
+            tempoLen=\(tempoLen, privacy: .public)s
             """
         )
     }
@@ -136,10 +150,22 @@ public final class MultiTrackSamplerGraph {
         let wasRunning = engine.isRunning
         if wasRunning { engine.pause() }
 
+        let bankName = bankURL.lastPathComponent
+        graphLogger.info(
+            """
+            loadBank: bank=\(bankName, privacy: .public) \
+            samplers=\(self.samplers.count, privacy: .public) \
+            presets=\(presets.map { String($0) }.joined(separator: ","), privacy: .public)
+            """
+        )
         var loadError: Error?
         for (i, sampler) in samplers.enumerated() {
             do {
                 try sampler.loadMelodicSoundFont(url: bankURL, preset: Int(presets[i]))
+                let p = presets[i]
+                graphLogger.info(
+                    "loadBank: sampler[\(i, privacy: .public)] preset=\(p, privacy: .public) OK"
+                )
             } catch {
                 loadError = error
                 let msg = error.localizedDescription
@@ -185,18 +211,28 @@ public final class MultiTrackSamplerGraph {
         guard let sequencer else {
             throw PipelineError.engineNotRunning
         }
+        sequencer.prepareToPlay()
         try sequencer.start()
+        let pos = sequencer.currentPositionInSeconds
+        let playing = sequencer.isPlaying
+        graphLogger.info(
+            "play: pos=\(pos, privacy: .public)s isPlaying=\(playing, privacy: .public)"
+        )
     }
 
     /// Pause without resetting position.
     public func pause() {
+        let pos = sequencer?.currentPositionInSeconds ?? 0
         sequencer?.stop()
+        graphLogger.info("pause at pos=\(pos, privacy: .public)s")
     }
 
     /// Stop and reset to start.
     public func stop() {
+        let pos = sequencer?.currentPositionInSeconds ?? 0
         sequencer?.stop()
         sequencer?.currentPositionInSeconds = 0
+        graphLogger.info("stop from pos=\(pos, privacy: .public)s")
     }
 
     /// Detach all pipeline nodes from the shared engine. Idempotent.

@@ -1,6 +1,9 @@
 import AVFoundation
 import Foundation
 import VerovioToolkit
+import os
+
+private let verovioLogger = Logger.survibe(category: "VerovioBridge")
 
 /// Wraps Verovio's Swift toolkit so callers can hand it a MusicXML
 /// string and get MIDI `Data` plus a track/channel summary.
@@ -29,8 +32,10 @@ public final class VerovioBridge {
     public init() {
         if let dataURL = VerovioResources.bundle.url(forResource: "data", withExtension: nil) {
             self.toolkit = VerovioToolkit(dataURL.path)
+            verovioLogger.info("Initialized with data path: \(dataURL.path, privacy: .public)")
         } else {
             self.toolkit = VerovioToolkit()
+            verovioLogger.warning("Initialized WITHOUT data path — Verovio resources not found in bundle")
         }
     }
 
@@ -49,19 +54,36 @@ public final class VerovioBridge {
     ///           the input or returns empty output.
     ///           `PipelineError.midiDecodeFailed` if base64 decode fails.
     public func render(musicXML: String) throws -> RenderedMIDI {
+        let xmlBytes = musicXML.utf8.count
+        verovioLogger.info("render: input MusicXML \(xmlBytes, privacy: .public) bytes")
         guard toolkit.loadData(musicXML) else {
+            verovioLogger.error("render: loadData rejected input")
             throw PipelineError.verovioRenderFailed(reason: "Verovio loadData rejected input")
         }
         let base64 = toolkit.renderToMIDI()
+        let b64Len = base64.count
+        verovioLogger.info("render: renderToMIDI base64 length=\(b64Len, privacy: .public)")
         guard !base64.isEmpty else {
+            verovioLogger.error("render: renderToMIDI returned empty string")
             throw PipelineError.verovioRenderFailed(reason: "renderToMIDI returned empty string")
         }
         guard let midiData = Data(base64Encoded: base64) else {
+            verovioLogger.error("render: base64 decode failed (length=\(b64Len, privacy: .public))")
             throw PipelineError.midiDecodeFailed
         }
+        let midiBytes = midiData.count
         let summary = try Self.summarize(midi: midiData)
+        let chList = summary.channels.map { String($0) }.joined(separator: ",")
+        let trackCount = summary.trackCount
+        verovioLogger.info(
+            """
+            render: ok midi=\(midiBytes, privacy: .public)B \
+            tracks=\(trackCount, privacy: .public) \
+            channels=[\(chList, privacy: .public)]
+            """
+        )
         return RenderedMIDI(
-            data: midiData, trackCount: summary.trackCount, channels: summary.channels
+            data: midiData, trackCount: trackCount, channels: summary.channels
         )
     }
 

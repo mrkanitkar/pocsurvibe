@@ -3,6 +3,11 @@ import AVFoundation
 import AudioKit
 import SVAudio
 import SwiftUI
+import os
+
+private let sectionLogger = Logger(
+    subsystem: "com.survibe", category: "AuditionPipelineSection"
+)
 
 /// DEBUG-only section embedded inside `SoundFontAuditionView`.
 /// Owns the multi-channel pipeline lifecycle (graph + bouncer) and
@@ -169,6 +174,7 @@ struct AuditionPipelineSection: View {
         loadError = nil
         do {
             try AudioEngineManager.shared.startForPlayback()
+            sectionLogger.info("enablePipeline: engine started for playback")
 
             guard let mxlURL = Bundle.main.url(
                 forResource: "james-bond-theme", withExtension: "mxl"
@@ -176,7 +182,11 @@ struct AuditionPipelineSection: View {
                 throw PipelineError.resourceMissing(name: "james-bond-theme.mxl")
             }
             let mxlData = try Data(contentsOf: mxlURL)
+            let mxlSize = mxlData.count
+            sectionLogger.info("enablePipeline: mxl loaded, \(mxlSize, privacy: .public) bytes")
             let xml = try MXLLoader.loadMusicXML(from: mxlData)
+            let xmlSize = xml.utf8.count
+            sectionLogger.info("enablePipeline: MusicXML extracted, \(xmlSize, privacy: .public) bytes")
             let bridge = VerovioBridge()
             let renderedMIDI = try bridge.render(musicXML: xml)
             self.rendered = renderedMIDI
@@ -295,14 +305,31 @@ struct AuditionPipelineSection: View {
 
         let b = RealtimeTapBouncer(source: g.subMixer, outputURL: url)
         bouncer = b
+        sectionLogger.info(
+            "bounce[\(slot.rawValue, privacy: .public)] start → \(url.lastPathComponent, privacy: .public)"
+        )
         do {
             g.stop()
             try b.start()
             try g.play()
             // Wait until the sequencer reports it's no longer playing.
+            // Diagnostic: log every second so we can see if/when the
+            // sequencer goes inactive prematurely.
+            var ticks = 0
             while g.isPlaying {
                 try await Task.sleep(nanoseconds: 200_000_000)
+                ticks += 1
+                if ticks % 5 == 0 {  // every ~1s
+                    let pos = g.sequencer?.currentPositionInSeconds ?? -1
+                    sectionLogger.info(
+                        "bounce[\(slot.rawValue, privacy: .public)] still playing pos=\(pos, privacy: .public)s"
+                    )
+                }
             }
+            let endPos = g.sequencer?.currentPositionInSeconds ?? -1
+            sectionLogger.info(
+                "bounce[\(slot.rawValue, privacy: .public)] sequencer done pos=\(endPos, privacy: .public)s ticks=\(ticks, privacy: .public)"
+            )
             // Fix I5 (review 2026-04-26): AVAudioUnitTimePitch carries
             // ~50–100 ms of overlap-add buffering and SF2 voices can have
             // release/reverb tails that are still rendering when the
