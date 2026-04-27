@@ -91,6 +91,11 @@ public protocol AuditionEngine: AnyObject {
 @MainActor
 public enum AuditionEngineFactory {
     public static func make(kind: EngineKind) -> AuditionEngine {
-        fatalError("Engine '\(kind.rawValue)' not yet implemented")
+        switch kind {
+        case .apple:
+            return AppleAVSamplerEngine()
+        case .fluidsynth:
+            fatalError("FluidSynthEngine not yet implemented (Task 8)")
+        }
     }
 }
