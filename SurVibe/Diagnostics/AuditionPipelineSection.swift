@@ -313,6 +313,32 @@ struct AuditionPipelineSection: View {
 
     private func bounce(slot: SoundFontAuditionView.Slot) async {
         guard let g = graph else { return }
+
+        // Bug fix (2026-04-27): Bounce A/B button labels imply slot-specific
+        // capture, but the previous implementation only used `slot` for the
+        // output filename — both bounces actually used whichever SF2 was
+        // currently loaded. Confirmed by pipeline_log: A and B m4a files
+        // captured the same audio because no loadBank ran between them.
+        // Fix: explicitly load the requested slot's bank before bouncing.
+        if loadedSlot != slot {
+            let url: URL? = (slot == .a) ? bankA : bankB
+            if let url {
+                let presets = Array(Self.defaultPresets.prefix(g.samplers.count))
+                let presetList = presets.map { String($0) }.joined(separator: ",")
+                PipelineFileLog.shared.log(
+                    "bounce[\(slot.rawValue)]: pre-load bank \(url.lastPathComponent) presets=[\(presetList)]"
+                )
+                do {
+                    try g.loadBank(at: url, presets: presets)
+                    loadedSlot = slot
+                } catch {
+                    loadError = "Bank load before bounce failed: \(error.localizedDescription)"
+                    PipelineFileLog.shared.log("bounce[\(slot.rawValue)]: pre-load FAILED: \(error.localizedDescription)")
+                    return
+                }
+            }
+        }
+
         isBouncing = true
         // Fix C2 (review 2026-04-26): when the bounce ends — success, throw,
         // or task cancellation — flush any A/B slot the user requested while
