@@ -197,11 +197,19 @@ struct AuditionPipelineSection: View {
             let partCount = min(probeSeq.tracks.count, MultiTrackSamplerGraph.maxTracks)
 
             let g = try MultiTrackSamplerGraph(trackCount: partCount)
-            try g.loadMIDI(renderedMIDI)
             self.graph = g
 
-            // Initial bank load uses the parent's active slot.
+            // Bug 2 fix (2026-04-27): load SF2 BEFORE MIDI routing. AudioKit's
+            // MIDISampler may not have a live CoreMIDI virtual destination until
+            // the underlying AVAudioUnitSampler has loaded a SoundFont program.
+            // If we set track.destinationMIDIEndpoint = samplers[i].midiIn before
+            // the SF2 is loaded, the route silently binds to a stale endpoint and
+            // MIDI events never reach the sampler — playback is silent. Load the
+            // SF2 first, then route.
             await applyActiveBank(activeSlot)
+
+            // Now route (CoreMIDI endpoints are live because samplers have programs loaded).
+            try g.loadMIDI(renderedMIDI)
 
             let chList = renderedMIDI.channels.map { String($0) }.joined(separator: ", ")
             statusText = "✓ \(partCount) parts · channels [\(chList)]"

@@ -49,15 +49,13 @@ public final class RealtimeTapBouncer {
             AVEncoderBitRateKey: 128_000,
             AVEncoderAudioQualityKey: AVAudioQuality.high.rawValue,
         ]
-        let openedFile: AVAudioFile
+        let createdFile: AVAudioFile
         do {
-            openedFile = try AVAudioFile(forWriting: outputURL, settings: settings)
+            createdFile = try AVAudioFile(forWriting: outputURL, settings: settings)
         } catch {
-            throw PipelineError.bounceFailed(
-                reason: "AVAudioFile create failed: \(error.localizedDescription)"
-            )
+            throw PipelineError.bounceFailed(reason: "AVAudioFile create failed: \(error.localizedDescription)")
         }
-        self.file = openedFile
+        self.file = createdFile
 
         // Fix C3 (review 2026-04-26): defensively remove any pre-existing tap
         // before installing. AVAudioNode.installTap traps with
@@ -69,28 +67,27 @@ public final class RealtimeTapBouncer {
         // `removeTap` is a no-op when no tap exists, so this is always safe.
         source.removeTap(onBus: 0)
 
-        // Capture the AVAudioFile by value into the tap closure. The closure
-        // runs on a high-priority audio thread; it never touches `self` or
-        // any MainActor state. AVAudioFile.write(from:) is thread-safe when
-        // called from a single concurrent context (the tap callback is the
-        // only writer for the file's lifetime).
-        source.installTap(
-            onBus: 0,
-            bufferSize: Self.tapBufferSize,
-            format: format
-        ) { buffer, _ in
+        // Capture the file directly (NOT via self). The tap callback runs on
+        // CoreAudio's RealtimeMessenger.mServiceQueue — a non-main dispatch
+        // queue. Capturing `self` (a @MainActor class) forces every access
+        // through Swift's actor-isolation runtime check, which calls
+        // dispatch_assert_queue(main) and traps with EXC_BREAKPOINT. The file
+        // is a reference type and AVAudioFile.write is documented thread-safe
+        // (Apple's "Performing Offline Audio Processing" sample uses the same
+        // pattern), so the closure can hold its own strong ref safely.
+        let fileForTap = createdFile
+        source.installTap(onBus: 0, bufferSize: Self.tapBufferSize, format: format) { buffer, _ in
             do {
-                try openedFile.write(from: buffer)
+                try fileForTap.write(from: buffer)
             } catch {
-                bouncerLogger.error(
-                    "Tap write failed: \(error.localizedDescription, privacy: .public)"
-                )
+                // Cannot use `bouncerLogger` here — Logger calls cross actor
+                // boundaries. Drop the error silently; stop() will deliver a
+                // valid file from any successfully-written buffers up to this
+                // point.
             }
         }
         isTapping = true
-        bouncerLogger.info(
-            "Started bounce → \(self.outputURL.lastPathComponent, privacy: .public)"
-        )
+        bouncerLogger.info("Started bounce → \(self.outputURL.lastPathComponent, privacy: .public)")
     }
 
     /// Stop capturing and finalize the file. Safe to call multiple times.
