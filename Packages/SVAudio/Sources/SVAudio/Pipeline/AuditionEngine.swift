@@ -95,7 +95,7 @@ public enum AuditionEngineFactory {
         case .apple:
             return AppleAVSamplerEngine()
         case .fluidsynth:
-            fatalError("FluidSynthEngine not yet implemented (Task 8)")
+            return FluidSynthEngine()
         }
     }
 }
