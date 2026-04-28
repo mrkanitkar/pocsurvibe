@@ -288,16 +288,20 @@ struct AuditionPipelineSection: View {
         rendered = nil
         loadedSlot = nil
         statusText = ""
-        // Pause the engine so the next graph builds against a quiesced node
-        // graph. Hot detach + re-attach on a running engine can leave the
-        // new graph half-routed (single-channel audio regression observed
-        // when switching songs mid-playback). loadSong restarts the engine
-        // before constructing the new MultiTrackSamplerGraph.
+        // Stop the engine (not just pause) so AU instances release their
+        // hardware/kernel resources before the next graph attaches. pause()
+        // preserves AU state, which let CoreAudio kernel residue from the
+        // prior song carry over and degrade the next song's audio quality
+        // even after explicit Stop between songs. stop() forces AUs to
+        // reinitialize on the next engine.start(), giving the new graph
+        // a clean kernel state. loadSong's startForPlayback short-circuits
+        // when the manager mode is already playbackOnly, so it explicitly
+        // calls engine.start() to bring the engine back up before init.
         if hadGraph {
             let engine = AudioEngineManager.shared.engine
             if engine.isRunning {
-                engine.pause()
-                PipelineFileLog.shared.log("unloadCurrentSong: engine paused for clean swap")
+                engine.stop()
+                PipelineFileLog.shared.log("unloadCurrentSong: engine stopped for clean swap")
             }
         }
     }
