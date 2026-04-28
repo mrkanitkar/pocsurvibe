@@ -224,17 +224,33 @@ struct AuditionPipelineSection: View {
             let renderedMIDI = try bridge.render(musicXML: xml)
             self.rendered = renderedMIDI
 
-            // Probe the SMF for the actual track count Apple's sequencer will
-            // expose (excludes the conductor track).
-            let probeSeq = AVAudioSequencer(audioEngine: AudioEngineManager.shared.engine)
-            try probeSeq.load(from: renderedMIDI.data, options: [])
-            let partCount = min(probeSeq.tracks.count, MultiTrackSamplerGraph.maxTracks)
+            // QA finding 2026-04-28: a probe AVAudioSequencer attached to
+            // the SHARED AVAudioEngine to count tracks caused the graph's
+            // own sequencer to silently produce only ~95 KB / 2.25 Kbps of
+            // audio (versus the expected 1.9 MB / 119 Kbps). Two sequencers
+            // on the same engine compete for MIDI dispatch in a way that
+            // silently breaks routing. Use `rendered.trackInfo.count`
+            // directly — Verovio's music-only count excludes the conductor
+            // track, matching the prior working AppleAVSamplerEngine path.
+            let partCount = min(renderedMIDI.trackInfo.count, MultiTrackSamplerGraph.maxTracks)
 
             let g = try MultiTrackSamplerGraph(trackCount: partCount)
-            self.graph = g
-
-            await applyActiveBank(activeSlot)
+            // Load SF2 BEFORE setting self.graph or routing MIDI (Bug-2
+            // ordering: AudioKit's MIDISampler may not have a live CoreMIDI
+            // virtual destination until the underlying AVAudioUnitSampler
+            // has loaded a SoundFont program).
+            let activeURL: URL? = (activeSlot == .a) ? bankA : bankB
+            if let activeURL {
+                let presets = derivedPresets(samplerCount: partCount)
+                try g.loadBank(at: activeURL, presets: presets)
+                loadedSlot = activeSlot
+                let presetList = presets.map { String($0) }.joined(separator: ",")
+                PipelineFileLog.shared.log(
+                    "applyActiveBank(\(activeSlot.rawValue)) → \(activeURL.lastPathComponent) presets=[\(presetList)]"
+                )
+            }
             try g.loadMIDI(renderedMIDI)
+            self.graph = g
 
             let chList = renderedMIDI.channels.map { String($0) }.joined(separator: ", ")
             statusText = "✓ \(partCount) parts · channels [\(chList)]"
