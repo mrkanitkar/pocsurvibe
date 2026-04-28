@@ -56,6 +56,7 @@ struct ProfileTab: View {
                 settingsSection
                 appearanceSection
                 aboutSection
+                audioLogsSection
                 #if DEBUG
                     audioDiagnosticsSection
                 #endif
@@ -76,6 +77,8 @@ struct ProfileTab: View {
                     }
                 } else if destination == "acknowledgements" {
                     AcknowledgementsView()
+                } else if destination == "audioDiagnostics" {
+                    AudioDiagnosticsView()
                 }
                 #if DEBUG
                     if destination == "sfAudition" {
@@ -382,6 +385,23 @@ struct ProfileTab: View {
         }
     }
 
+    // MARK: - Audio Logs Section
+
+    /// Audio diagnostic logs row — toggle + share + delete. Visible in both
+    /// DEBUG and Release. The DEBUG-only `audioDiagnosticsSection` (which
+    /// links to the SoundFont A/B Audition tool) is unchanged.
+    private var audioLogsSection: some View {
+        Section(header: Text("Diagnostics")) {
+            NavigationLink(value: "audioDiagnostics") {
+                Label("Audio Logs", systemImage: "doc.text.magnifyingglass")
+            }
+            .hoverEffect(.automatic)
+            .accessibilityLabel(Text("Audio Logs"))
+            .accessibilityHint(Text("Toggle saving of audio logs to disk and share them with support. Double tap to open."))
+            .modifier(profileRowNav(for: .audioDiagnostics) { .ignored })
+        }
+    }
+
     // MARK: - Debug Section
 
     #if DEBUG
@@ -482,6 +502,7 @@ enum ProfileRowID: String, Hashable, CaseIterable {
     case theme
     case display
     case acknowledgements
+    case audioDiagnostics
 }
 
 // MARK: - ProfileRowNavModifier
