@@ -100,28 +100,34 @@ public final class ProductionMultiChannelEngine: MultiChannelEngineProtocol {
         // Build samplers
         var built: [AVAudioUnitSampler] = []
         built.reserveCapacity(Self.totalSamplers)
+        MultiChannelLog.shared.log(.info, "... init: about to attach 16 samplers")
         for _ in 0..<Self.totalSamplers {
             let s = AVAudioUnitSampler()
             engine.attach(s)
             built.append(s)
         }
         self.samplers = built
+        MultiChannelLog.shared.log(.info, "... init: samplers attached")
 
         // Build subMixer + TimePitch
+        MultiChannelLog.shared.log(.info, "... init: about to attach subMixer + timePitch")
         let mixer = AVAudioMixerNode()
         let tp = AVAudioUnitTimePitch()
         engine.attach(mixer)
         engine.attach(tp)
         self.subMixer = mixer
         self.timePitch = tp
+        MultiChannelLog.shared.log(.info, "... init: subMixer + timePitch attached")
 
         // Wire: each sampler → subMixer → timePitch → mainMixer
         let format = engine.mainMixerNode.outputFormat(forBus: 0)
+        MultiChannelLog.shared.log(.info, "... init: about to connect nodes (sampler→subMixer→timePitch→mainMixer)")
         for s in built {
             engine.connect(s, to: mixer, format: format)
         }
         engine.connect(mixer, to: tp, format: format)
         engine.connect(tp, to: engine.mainMixerNode, format: format)
+        MultiChannelLog.shared.log(.info, "... init: nodes connected")
 
         let fmtSR = format.sampleRate
         let fmtCH = format.channelCount
@@ -134,10 +140,19 @@ public final class ProductionMultiChannelEngine: MultiChannelEngineProtocol {
         )
 
         // Preload Acoustic Grand into samplers[0] (reserved for touch input)
-        try loadProgram(into: Self.touchSamplerIndex, program: 0, isPercussion: false)
+        MultiChannelLog.shared.log(.info, "... init: about to loadProgram(sampler[0], program=0)")
+        do {
+            try loadProgram(into: Self.touchSamplerIndex, program: 0, isPercussion: false)
+        } catch {
+            MultiChannelLog.shared.log(
+                .info, "<<< ProductionMultiChannelEngine.init THROW: \(error.localizedDescription)"
+            )
+            throw error
+        }
         MultiChannelLog.shared.log(
             .info, "init: sampler[0] preloaded program 0 (Acoustic Grand) for touch"
         )
+        MultiChannelLog.shared.log(.info, "<<< ProductionMultiChannelEngine.init DONE")
     }
 
     // MARK: - Touch input
@@ -206,22 +221,34 @@ public final class ProductionMultiChannelEngine: MultiChannelEngineProtocol {
     ///   - `MultiChannelEngineError.verovioRenderFailed` on MusicXML render error.
     ///   - `MultiChannelEngineError.sequencerLoadFailed` if the sequencer rejects the MIDI.
     public func loadSong(source: MIDISource) async throws {
+        MultiChannelLog.shared.log(
+            .info, ">>> ProductionMultiChannelEngine.loadSong source=\(sourceTag(source))"
+        )
         guard !isLoadingSong else {
             MultiChannelLog.shared.log(.warning, "loadSong: already loading another song; skipping")
             return
         }
+        MultiChannelLog.shared.log(.info, "... loadSong: isLoadingSong guard passed")
         guard engine.isRunning else { throw MultiChannelEngineError.engineNotRunning }
+        MultiChannelLog.shared.log(.info, "... loadSong: engine.isRunning guard passed")
         isLoadingSong = true
         defer { isLoadingSong = false }
 
-        if currentSong != nil { unloadSong() }
+        if currentSong != nil {
+            unloadSong()
+            MultiChannelLog.shared.log(.info, "... loadSong: previous song unloaded")
+        }
 
         MultiChannelLog.shared.session("loadSong start")
         let startTime = Date()
         MultiChannelLog.shared.log(.info, "loadSong START source=\(sourceTag(source))")
 
         // Resolve MIDI bytes (run Verovio if needed) and per-track program info.
+        MultiChannelLog.shared.log(.info, "... loadSong: resolveSource starting")
         let (midiData, trackInfos) = try resolveSource(source)
+        MultiChannelLog.shared.log(
+            .info, "... loadSong: resolveSource returned trackInfo.count=\(trackInfos.count)"
+        )
 
         // Validate track count against the song-slot capacity (samplers[1..15]).
         guard trackInfos.count <= Self.maxSongTracks else {
@@ -231,6 +258,9 @@ public final class ProductionMultiChannelEngine: MultiChannelEngineProtocol {
         }
 
         // Re-bank samplers[1..N] for this song's per-track programs.
+        MultiChannelLog.shared.log(
+            .info, "... loadSong: starting re-bank loop tracks=\(trackInfos.count)"
+        )
         for (idx, spec) in trackInfos.enumerated() {
             let samplerIndex = idx + 1   // [0] is reserved for touch
             do {
@@ -251,8 +281,10 @@ public final class ProductionMultiChannelEngine: MultiChannelEngineProtocol {
                 )
             }
         }
+        MultiChannelLog.shared.log(.info, "... loadSong: re-bank loop complete")
 
         // Construct or reuse the persistent sequencer.
+        MultiChannelLog.shared.log(.info, "... loadSong: ensuring sequencer")
         let seq: AVAudioSequencer
         if let existing = sequencer {
             seq = existing
@@ -260,12 +292,15 @@ public final class ProductionMultiChannelEngine: MultiChannelEngineProtocol {
             seq = AVAudioSequencer(audioEngine: engine)
             sequencer = seq
         }
+        MultiChannelLog.shared.log(.info, "... loadSong: seq.stop()")
         seq.stop()
+        MultiChannelLog.shared.log(.info, "... loadSong: calling seq.load")
         do {
             try seq.load(from: midiData, options: [])
         } catch {
             throw MultiChannelEngineError.sequencerLoadFailed(underlying: error)
         }
+        MultiChannelLog.shared.log(.info, "... loadSong: seq.load returned")
 
         // Bind tracks to samplers[1..N] via destinationAudioUnit
         // (Apple's documented best-practice pattern; verified in iPhoneOS17.0.sdk
@@ -278,14 +313,19 @@ public final class ProductionMultiChannelEngine: MultiChannelEngineProtocol {
                 "loadSong: seq.tracks.count=\(seq.tracks.count) != trackInfos.count=\(trackInfos.count); routing \(trackBindCount) tracks"
             )
         }
+        MultiChannelLog.shared.log(
+            .info, "... loadSong: binding tracks to samplers count=\(trackBindCount)"
+        )
         for i in 0..<trackBindCount {
             seq.tracks[i].destinationAudioUnit = samplers[i + 1]
         }
+        MultiChannelLog.shared.log(.info, "... loadSong: track bindings done")
 
         // Compute song duration as the max of per-track lengths.
         let durationBeats = seq.tracks.map { $0.lengthInBeats }.max() ?? 0
         let durationSec = seq.seconds(forBeats: durationBeats)
 
+        MultiChannelLog.shared.log(.info, "... loadSong: setting currentSong")
         self.currentSong = SongHandle(
             trackCount: trackInfos.count,
             durationSeconds: durationSec,
@@ -295,7 +335,7 @@ public final class ProductionMultiChannelEngine: MultiChannelEngineProtocol {
         let elapsed = Date().timeIntervalSince(startTime)
         MultiChannelLog.shared.log(
             .info,
-            "loadSong DONE tracks=\(trackInfos.count) elapsed=\(String(format: "%.2f", elapsed))s"
+            "<<< ProductionMultiChannelEngine.loadSong DONE elapsed=\(String(format: "%.2f", elapsed))s"
         )
     }
 
@@ -464,9 +504,17 @@ public final class ProductionMultiChannelEngine: MultiChannelEngineProtocol {
     ///   - isPercussion: When true, uses `kAUSampler_DefaultPercussionBankMSB`.
     /// - Throws: `MultiChannelEngineError.bankLoadFailed` on any failure.
     func loadProgram(into index: Int, program: UInt8, isPercussion: Bool) throws {
+        MultiChannelLog.shared.log(
+            .info, ">>> loadProgram index=\(index) program=\(program) isPercussion=\(isPercussion)"
+        )
+        MultiChannelLog.shared.log(.info, "... loadProgram: resolving bundle URL")
         guard let url = Bundle.module.url(
             forResource: Self.bankNameMuseScoreGeneral, withExtension: "sf2"
         ) else {
+            MultiChannelLog.shared.log(.info, "... loadProgram: bundle URL=nil")
+            MultiChannelLog.shared.log(
+                .info, "<<< loadProgram index=\(index) THROW: sf2 resource missing"
+            )
             throw MultiChannelEngineError.bankLoadFailed(
                 samplerIndex: index,
                 underlying: PipelineError.resourceMissing(
@@ -474,6 +522,7 @@ public final class ProductionMultiChannelEngine: MultiChannelEngineProtocol {
                 )
             )
         }
+        MultiChannelLog.shared.log(.info, "... loadProgram: bundle URL=\(url.lastPathComponent)")
         let bankMSB: UInt8 = isPercussion
             ? UInt8(kAUSampler_DefaultPercussionBankMSB)
             : UInt8(kAUSampler_DefaultMelodicBankMSB)
@@ -481,6 +530,7 @@ public final class ProductionMultiChannelEngine: MultiChannelEngineProtocol {
 
         var swiftError: (any Error)?
         var objcError: NSError?
+        MultiChannelLog.shared.log(.info, "... loadProgram: calling SVAudioTryObjC -> loadSoundBankInstrument")
         let success = SVAudioTryObjC({
             do {
                 try sampler.loadSoundBankInstrument(
@@ -493,19 +543,30 @@ public final class ProductionMultiChannelEngine: MultiChannelEngineProtocol {
                 swiftError = error
             }
         }, &objcError)
+        MultiChannelLog.shared.log(
+            .info,
+            "... loadProgram: SVAudioTryObjC success=\(success) swiftError=\(swiftError != nil) objcError=\(objcError != nil)"
+        )
 
         if let swiftError {
+            MultiChannelLog.shared.log(
+                .info, "<<< loadProgram index=\(index) THROW: \(swiftError.localizedDescription)"
+            )
             throw MultiChannelEngineError.bankLoadFailed(
                 samplerIndex: index, underlying: swiftError
             )
         }
         if !success {
             let message = objcError?.localizedDescription ?? "Unknown SF2 load failure"
+            MultiChannelLog.shared.log(
+                .info, "<<< loadProgram index=\(index) THROW: \(message)"
+            )
             throw MultiChannelEngineError.bankLoadFailed(
                 samplerIndex: index,
                 underlying: PipelineError.resourceMissing(name: "objc-exception:\(message)")
             )
         }
+        MultiChannelLog.shared.log(.info, "<<< loadProgram index=\(index) DONE")
     }
 }
 

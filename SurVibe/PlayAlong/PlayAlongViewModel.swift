@@ -304,7 +304,9 @@ final class PlayAlongViewModel {
     ///
     /// - Parameter song: The Song model to load.
     func loadSong(_ song: Song) async {
+        MultiChannelLog.shared.log(.info, ">>> PlayAlongViewModel.loadSong(\(song.title))")
         guard playback.loadSong(song) else { return }
+        MultiChannelLog.shared.log(.info, "... PlayAlongViewModel.loadSong: playback.loadSong returned ok=true")
 
         noteRouter.configureRagaContext(ragaName: song.ragaName)
         noteRouter.updateExpectedMidiNote()
@@ -314,14 +316,22 @@ final class PlayAlongViewModel {
             Self.logger.warning("Microphone permission denied — pitch detection unavailable")
         }
 
+        MultiChannelLog.shared.log(.info, "... PlayAlongViewModel.loadSong: starting input detection")
         noteRouter.startInputDetection()
         noteRouter.resetGuidedPlay()
 
+        MultiChannelLog.shared.log(.info, "... PlayAlongViewModel.loadSong: about to startForPlayback")
         do {
             try AudioEngineManager.shared.startForPlayback()
+            MultiChannelLog.shared.log(.info, "... PlayAlongViewModel.loadSong: startForPlayback returned")
         } catch {
+            MultiChannelLog.shared.log(
+                .info,
+                "... PlayAlongViewModel.loadSong: startForPlayback THREW: \(error.localizedDescription)"
+            )
             Self.logger.error("Audio engine start failed: \(error.localizedDescription)")
         }
+        MultiChannelLog.shared.log(.info, "<<< PlayAlongViewModel.loadSong DONE")
     }
 
     /// Start the play-along session from the beginning.
@@ -332,8 +342,12 @@ final class PlayAlongViewModel {
     ///
     /// Guards: only starts from `.idle` or `.stopped` with non-empty events.
     func startSession() async {
+        MultiChannelLog.shared.log(.info, ">>> PlayAlongViewModel.startSession")
+        MultiChannelLog.shared.log(.info, "... PlayAlongViewModel.startSession: about to await startScheduling")
         await playback.startScheduling()
+        MultiChannelLog.shared.log(.info, "... PlayAlongViewModel.startSession: startScheduling returned")
         noteRouter.startInputDetection()
+        MultiChannelLog.shared.log(.info, "<<< PlayAlongViewModel.startSession")
     }
 
     /// Pause the current play-along session.

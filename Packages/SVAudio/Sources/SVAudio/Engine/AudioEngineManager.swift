@@ -280,6 +280,13 @@ public final class AudioEngineManager: AudioEngineProviding {
     /// iOS configures the audio route for microphone input. Without this, the
     /// input node may report 0 channels when `installMicTap` is called later.
     public func start() throws {
+        MultiChannelLog.shared.log(.info, ">>> AudioEngineManager.start() currentMode=\(currentMode)")
+        defer {
+            MultiChannelLog.shared.log(
+                .info,
+                "<<< AudioEngineManager.start() exit currentMode=\(currentMode) isRunning=\(engine.isRunning)"
+            )
+        }
         // If already running in playAndRecord mode, nothing to do.
         if currentMode == .playAndRecord {
             Self.logger.info("start() called — already in playAndRecord mode, skipping")
@@ -299,11 +306,13 @@ public final class AudioEngineManager: AudioEngineProviding {
         }
 
         try AudioSessionManager.shared.configure()
+        MultiChannelLog.shared.log(.info, "... start: session configured for recording")
         Self.logger.info("Audio session configured for playAndRecord")
 
         // Reconnect nodes after session reconfiguration so format is valid
         if !isConfigured {
             connectNodes()
+            MultiChannelLog.shared.log(.info, "... start: nodes connected")
             Self.logger.info("Nodes connected")
         }
 
@@ -318,12 +327,17 @@ public final class AudioEngineManager: AudioEngineProviding {
         setupInterruptionAndRouteHandlers()
 
         engine.prepare()
+        MultiChannelLog.shared.log(.info, "... start: engine prepared")
+        MultiChannelLog.shared.log(.info, "... start: calling engine.start()")
         try engine.start()
+        MultiChannelLog.shared.log(.info, "... start: engine.start() returned")
         currentMode = .playAndRecord
 
         // USB MIDI input direct-wires through the touch sampler (samplers[0])
         // for sub-6 ms audible echo. Phase 3 retired the legacy .sampler.
+        MultiChannelLog.shared.log(.info, "... start: capturing samplerMIDIBlock")
         samplerMIDIBlock = multiChannel?.samplers[0].auAudioUnit.scheduleMIDIEventBlock
+        MultiChannelLog.shared.log(.info, "... start: samplerMIDIBlock captured non-nil=\(samplerMIDIBlock != nil)")
 
         Self.logger.info("Engine started in playAndRecord mode, isRunning=\(self.engine.isRunning)")
     }
@@ -338,6 +352,13 @@ public final class AudioEngineManager: AudioEngineProviding {
     /// If the engine is already running in `.playAndRecord` mode, returns
     /// immediately because that mode is a superset of playback.
     public func startForPlayback() throws {
+        MultiChannelLog.shared.log(.info, ">>> AudioEngineManager.startForPlayback() currentMode=\(currentMode)")
+        defer {
+            MultiChannelLog.shared.log(
+                .info,
+                "<<< AudioEngineManager.startForPlayback() exit currentMode=\(currentMode) isRunning=\(engine.isRunning)"
+            )
+        }
         // playAndRecord is a superset — no downgrade needed.
         if currentMode == .playAndRecord {
             Self.logger.info("startForPlayback() — already in playAndRecord mode, skipping")
@@ -352,17 +373,22 @@ public final class AudioEngineManager: AudioEngineProviding {
 
         Self.logger.info("startForPlayback() called — engine was stopped")
         try AudioSessionManager.shared.configureForPlayback()
+        MultiChannelLog.shared.log(.info, "... startForPlayback: session configured for recording")
         Self.logger.info("Audio session configured for playback")
 
         if !isConfigured {
             connectNodes()
+            MultiChannelLog.shared.log(.info, "... startForPlayback: nodes connected")
             Self.logger.info("Nodes connected")
         }
 
         setupInterruptionAndRouteHandlers()
 
         engine.prepare()
+        MultiChannelLog.shared.log(.info, "... startForPlayback: engine prepared")
+        MultiChannelLog.shared.log(.info, "... startForPlayback: calling engine.start()")
         try engine.start()
+        MultiChannelLog.shared.log(.info, "... startForPlayback: engine.start() returned")
         currentMode = .playbackOnly
 
         // Lazily construct the production multi-channel engine on first start.
@@ -370,20 +396,34 @@ public final class AudioEngineManager: AudioEngineProviding {
         // configured before attaching the multiChannel graph. Failure here is
         // non-fatal — samplerMIDIBlock is set to nil via optional-chaining so
         // USB MIDI is silenced rather than crashing when construction fails.
+        MultiChannelLog.shared.log(.info, "... startForPlayback: checking multiChannel")
         if multiChannel == nil {
             do {
                 self.multiChannel = try ProductionMultiChannelEngine(engine: engine)
+                MultiChannelLog.shared.log(
+                    .info, "... startForPlayback: multiChannel constructed=\(multiChannel != nil)"
+                )
                 Self.logger.info("multiChannel engine constructed")
             } catch {
+                MultiChannelLog.shared.log(
+                    .info,
+                    "... startForPlayback: multiChannel CONSTRUCTION FAILED: \(error.localizedDescription)"
+                )
                 Self.logger.error(
                     "multiChannel construction failed: \(error.localizedDescription, privacy: .public)"
                 )
             }
+        } else {
+            MultiChannelLog.shared.log(.info, "... startForPlayback: multiChannel ALREADY exists")
         }
 
         // USB MIDI input direct-wires through the touch sampler (samplers[0])
         // for sub-6 ms audible echo. Phase 3 retired the legacy .sampler.
+        MultiChannelLog.shared.log(.info, "... startForPlayback: capturing samplerMIDIBlock")
         samplerMIDIBlock = multiChannel?.samplers[0].auAudioUnit.scheduleMIDIEventBlock
+        MultiChannelLog.shared.log(
+            .info, "... startForPlayback: samplerMIDIBlock captured non-nil=\(samplerMIDIBlock != nil)"
+        )
 
         Self.logger.info("Engine started in playbackOnly mode, isRunning=\(self.engine.isRunning)")
     }

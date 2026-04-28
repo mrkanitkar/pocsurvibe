@@ -200,11 +200,15 @@ final class PracticeSessionViewModel {
     ///
     /// - Parameter song: The song to practice.
     func loadSong(_ song: Song) async {
+        MultiChannelLog.shared.log(.info, ">>> PracticeSessionViewModel.loadSong(\(song.title))")
         self.song = song
         phase = .loading
 
         // Decode sargam notes for scoring
         sargamNotes = song.decodedSargamNotes ?? []
+        MultiChannelLog.shared.log(
+            .info, "... PracticeSessionViewModel.loadSong: sargam decoded count=\(sargamNotes.count)"
+        )
         if sargamNotes.isEmpty {
             Self.logger.warning(
                 "Song '\(song.title, privacy: .public)' has no sargam notation — scoring will be limited"
@@ -214,20 +218,39 @@ final class PracticeSessionViewModel {
         // Set metronome to song tempo
         metronomeBPM = Double(song.tempo)
         metronomeEngine.updateBPM(metronomeBPM)
+        MultiChannelLog.shared.log(
+            .info, "... PracticeSessionViewModel.loadSong: metronome BPM set to \(song.tempo)"
+        )
 
         // Ensure the audio engine is running. Lazy-constructs
         // AudioEngineManager.shared.multiChannel which preloads
         // Acoustic Grand into samplers[0] for touch playback.
         // Song playback (this VM's playbackEngine) routes through
         // the same multiChannel — see SongPlaybackEngine migration.
+        MultiChannelLog.shared.log(
+            .info, "... PracticeSessionViewModel.loadSong: about to startForPlayback()"
+        )
         do {
             try AudioEngineManager.shared.startForPlayback()
+            MultiChannelLog.shared.log(
+                .info, "... PracticeSessionViewModel.loadSong: startForPlayback() returned"
+            )
         } catch {
+            MultiChannelLog.shared.log(
+                .info,
+                "... PracticeSessionViewModel.loadSong: startForPlayback() THREW: \(error.localizedDescription)"
+            )
             Self.logger.error("Audio engine start failed: \(error.localizedDescription, privacy: .public)")
         }
 
         // Load song into playback engine
+        MultiChannelLog.shared.log(
+            .info, "... PracticeSessionViewModel.loadSong: about to await playbackEngine.load"
+        )
         await playbackEngine.load(song: song)
+        MultiChannelLog.shared.log(
+            .info, "... PracticeSessionViewModel.loadSong: playbackEngine.load returned"
+        )
 
         // Reset scoring state
         noteScores = []
@@ -246,6 +269,7 @@ final class PracticeSessionViewModel {
 
         phase = .listenFirst
         Self.logger.info("Song loaded for practice: \(song.title, privacy: .public)")
+        MultiChannelLog.shared.log(.info, "<<< PracticeSessionViewModel.loadSong DONE")
     }
 
     /// Start the listen-first playback phase.
@@ -254,10 +278,16 @@ final class PracticeSessionViewModel {
     /// it before practicing. No-op if the song lacks MIDI data or the
     /// phase is not `.listenFirst`.
     func startListenPhase() {
+        MultiChannelLog.shared.log(
+            .info,
+            ">>> PracticeSessionViewModel.startListenPhase phase=\(phase) hasPlayableContent=\(playbackEngine.hasPlayableContent)"
+        )
         guard phase == .listenFirst else { return }
         if playbackEngine.hasPlayableContent {
+            MultiChannelLog.shared.log(.info, "... startListenPhase: calling play")
             playbackEngine.play()
         }
+        MultiChannelLog.shared.log(.info, "<<< PracticeSessionViewModel.startListenPhase")
     }
 
     /// Pause the listen-first playback.

@@ -111,23 +111,38 @@ final class SongPlaybackEngine {
     /// - Parameter song: The Song model whose `midiData` will be parsed.
     ///   If `midiData` is nil or empty, stays in `.idle` (notation-only mode).
     func load(song: Song) async {
+        MultiChannelLog.shared.log(.info, ">>> SongPlaybackEngine.load(song: \(song.title))")
         playbackState = .loading
         songTitle = song.title
 
         Self.logger.info("Loading song: \(song.title, privacy: .public)")
 
         guard let midiData = song.midiData, !midiData.isEmpty else {
+            MultiChannelLog.shared.log(
+                .info, "... SongPlaybackEngine.load: midiData bytes=\(song.midiData?.count ?? 0)"
+            )
+            MultiChannelLog.shared.log(.info, "... SongPlaybackEngine.load: notation-only branch")
             setNotationOnlyMode(song: song)
             return
         }
+        MultiChannelLog.shared.log(
+            .info, "... SongPlaybackEngine.load: midiData bytes=\(midiData.count)"
+        )
 
+        MultiChannelLog.shared.log(.info, "... SongPlaybackEngine.load: parsing MIDI")
         let result = MIDIParser.parse(data: midiData)
 
         switch result {
         case .success(let events):
+            MultiChannelLog.shared.log(
+                .info, "... SongPlaybackEngine.load: parse \(events.count) events"
+            )
+            MultiChannelLog.shared.log(.info, "... SongPlaybackEngine.load: about to await handleParsedEvents")
             await handleParsedEvents(events, midiData: midiData)
+            MultiChannelLog.shared.log(.info, "<<< SongPlaybackEngine.load DONE")
 
         case .failure(let error):
+            MultiChannelLog.shared.log(.info, "... SongPlaybackEngine.load: parse failed")
             handleParseFailure(error, songTitle: song.title)
         }
     }
@@ -151,15 +166,24 @@ final class SongPlaybackEngine {
     private func handleParsedEvents(
         _ events: [MIDIEvent], midiData: Data
     ) async {
+        MultiChannelLog.shared.log(
+            .info, ">>> SongPlaybackEngine.handleParsedEvents events=\(events.count)"
+        )
         midiEvents = events
         currentPosition = 0
         currentNoteIndex = nil
         nextNoteIndex = events.isEmpty ? nil : 0
 
         // Ensure the audio engine is running so multiChannel exists.
+        MultiChannelLog.shared.log(.info, "... handleParsedEvents: about to startForPlayback")
         do {
             try AudioEngineManager.shared.startForPlayback()
+            MultiChannelLog.shared.log(.info, "... handleParsedEvents: startForPlayback returned")
         } catch {
+            MultiChannelLog.shared.log(
+                .info,
+                "... handleParsedEvents: startForPlayback THREW: \(error.localizedDescription)"
+            )
             Self.logger.error(
                 "Audio engine start failed: \(error.localizedDescription, privacy: .public)"
             )
@@ -167,14 +191,25 @@ final class SongPlaybackEngine {
             return
         }
 
-        guard let multiChannel = AudioEngineManager.shared.multiChannel else {
+        let multiChannel = AudioEngineManager.shared.multiChannel
+        MultiChannelLog.shared.log(
+            .info,
+            "... handleParsedEvents: multiChannel resolved=\(multiChannel != nil ? "yes" : "NIL")"
+        )
+        guard let multiChannel else {
+            MultiChannelLog.shared.log(.info, "<<< handleParsedEvents EXIT (multiChannel nil)")
             Self.logger.error("multiChannel unavailable after startForPlayback()")
             playbackState = .error("Audio engine unavailable")
             return
         }
 
+        MultiChannelLog.shared.log(.info, "... handleParsedEvents: about to await multiChannel.loadSong")
         do {
             try await multiChannel.loadSong(source: .midi(midiData))
+            MultiChannelLog.shared.log(
+                .info,
+                "... handleParsedEvents: multiChannel.loadSong returned, currentSong=\(multiChannel.currentSong != nil)"
+            )
         } catch {
             let audioError = AudioError.sequencerError(underlying: error.localizedDescription)
             playbackState = .error(audioError.errorDescription ?? error.localizedDescription)
@@ -202,6 +237,7 @@ final class SongPlaybackEngine {
             duration=\(String(format: "%.1f", self.duration), privacy: .public)s
             """
         )
+        MultiChannelLog.shared.log(.info, "<<< handleParsedEvents DONE")
     }
 
     /// Handle a MIDI parse failure by transitioning to error state.

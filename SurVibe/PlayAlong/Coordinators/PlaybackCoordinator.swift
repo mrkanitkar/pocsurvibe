@@ -168,13 +168,20 @@ final class PlaybackCoordinator {
     ///   data was available (in which case `playbackState` is set to `.error`).
     @discardableResult
     func loadSong(_ song: Song) -> Bool {
+        MultiChannelLog.shared.log(.info, ">>> PlaybackCoordinator.loadSong(\(song.title))")
         playbackState = .loading
         self.song = song
 
+        let result: Bool
         if let midiData = song.midiData, !midiData.isEmpty,
             case .success(let midiEvents) = MIDIParser.parse(data: midiData)
         {
             noteEvents = NoteEvent.fromMIDI(events: midiEvents)
+            MultiChannelLog.shared.log(
+                .info,
+                "... PlaybackCoordinator.loadSong: branch=midi events=\(noteEvents.count)"
+            )
+            result = true
         } else if let sargam = song.decodedSargamNotes,
             let western = song.decodedWesternNotes
         {
@@ -183,10 +190,17 @@ final class PlaybackCoordinator {
                 westernNotes: western,
                 tempo: song.tempo
             )
+            MultiChannelLog.shared.log(
+                .info,
+                "... PlaybackCoordinator.loadSong: branch=notation events=\(noteEvents.count)"
+            )
+            result = true
         } else {
+            MultiChannelLog.shared.log(.info, "... PlaybackCoordinator.loadSong: branch=error")
             errorMessage = "No playable notation found"
             playbackState = .error("No playable notation")
             Self.logger.error("loadSong failed: no MIDI or notation data")
+            MultiChannelLog.shared.log(.info, "<<< PlaybackCoordinator.loadSong DONE returning=false")
             return false
         }
 
@@ -202,7 +216,8 @@ final class PlaybackCoordinator {
         Self.logger.info(
             "Song loaded: \(self.noteEvents.count) events, duration=\(String(format: "%.1f", self.duration))s"
         )
-        return true
+        MultiChannelLog.shared.log(.info, "<<< PlaybackCoordinator.loadSong DONE returning=\(result)")
+        return result
     }
 
     /// Seek to a normalized position (0.0 to 1.0). Only effective when paused —
@@ -225,12 +240,22 @@ final class PlaybackCoordinator {
     /// 6. If `isWaitModeEnabled`, construct the `waitController`.
     /// 7. Fire `songPlaybackStarted` analytics.
     func startScheduling() async {
+        MultiChannelLog.shared.log(
+            .info,
+            ">>> PlaybackCoordinator.startScheduling state=\(playbackState) noteEvents=\(noteEvents.count)"
+        )
         guard playbackState == .idle || playbackState == .stopped else { return }
+        MultiChannelLog.shared.log(.info, "... startScheduling: state guard passed")
         guard !noteEvents.isEmpty else { return }
 
+        MultiChannelLog.shared.log(.info, "... startScheduling: about to audioEngine.start()")
         do {
             try audioEngine.start()
+            MultiChannelLog.shared.log(.info, "... startScheduling: audioEngine.start returned")
         } catch {
+            MultiChannelLog.shared.log(
+                .info, "<<< startScheduling FAILED engine: \(error.localizedDescription)"
+            )
             Self.logger.error("Engine start failed: \(error.localizedDescription)")
             errorMessage = "Audio engine failed to start"
             playbackState = .error("Audio engine failed to start")
@@ -238,16 +263,23 @@ final class PlaybackCoordinator {
         }
 
         let scaledBPM = Double(song?.tempo ?? 120) * tempoScale
+        MultiChannelLog.shared.log(.info, "... startScheduling: metronome.setBPM(\(scaledBPM))")
         metronome.setBPM(scaledBPM)
+        MultiChannelLog.shared.log(.info, "... startScheduling: metronome.start()")
         metronome.start()
 
         reset()
+        MultiChannelLog.shared.log(.info, "... startScheduling: reset done")
 
         playbackStartTime = clock.now
         playbackStartDate = Date()
+        MultiChannelLog.shared.log(.info, "... startScheduling: clock.now captured")
         playbackState = .playing
+        MultiChannelLog.shared.log(.info, "... startScheduling: state=.playing")
 
+        MultiChannelLog.shared.log(.info, "... startScheduling: starting display link")
         startDisplayLink()
+        MultiChannelLog.shared.log(.info, "... startScheduling: kicking off playback Task")
         startPlayback()
 
         if isWaitModeEnabled {
@@ -266,6 +298,7 @@ final class PlaybackCoordinator {
         )
 
         Self.logger.info("Playback scheduling started")
+        MultiChannelLog.shared.log(.info, "<<< PlaybackCoordinator.startScheduling DONE")
     }
 
     /// Pause the active scheduling. Records elapsed time for seamless resume,
@@ -332,9 +365,19 @@ final class PlaybackCoordinator {
     }
 
     private func runPlaybackLoop(fromIndex: Int, timeOffset: TimeInterval) async {
+        MultiChannelLog.shared.log(
+            .info,
+            ">>> runPlaybackLoop fromIndex=\(fromIndex) totalEvents=\(noteEvents.count)"
+        )
         guard let startTime = playbackStartTime else { return }
 
         for index in fromIndex..<noteEvents.count {
+            if index < 5 || index % 50 == 0 {
+                MultiChannelLog.shared.log(
+                    .info,
+                    "... runPlaybackLoop: index=\(index) noteCount=\(noteEvents.count) sleeping"
+                )
+            }
             let event = noteEvents[index]
             let scaledTimestamp = event.timestamp / tempoScale
             let targetTime = startTime.advanced(by: .seconds(scaledTimestamp))
@@ -344,11 +387,19 @@ final class PlaybackCoordinator {
                 do {
                     try await clock.sleep(for: sleepDuration)
                 } catch {
+                    MultiChannelLog.shared.log(
+                        .info, "<<< runPlaybackLoop EXIT cancelled=\(Task.isCancelled)"
+                    )
                     return
                 }
             }
 
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled else {
+                MultiChannelLog.shared.log(
+                    .info, "<<< runPlaybackLoop EXIT cancelled=true"
+                )
+                return
+            }
 
             playNoteSound(event: event)
 
@@ -358,15 +409,25 @@ final class PlaybackCoordinator {
 
             do {
                 if try await awaitWaitModeResolution(index: index) {
+                    MultiChannelLog.shared.log(
+                        .info, "<<< runPlaybackLoop EXIT cancelled=\(Task.isCancelled)"
+                    )
                     return
                 }
             } catch {
+                MultiChannelLog.shared.log(
+                    .info, "<<< runPlaybackLoop EXIT cancelled=\(Task.isCancelled)"
+                )
                 return
             }
         }
 
         await awaitLastNoteCompletion()
-        guard !Task.isCancelled else { return }
+        guard !Task.isCancelled else {
+            MultiChannelLog.shared.log(.info, "<<< runPlaybackLoop EXIT cancelled=true")
+            return
+        }
+        MultiChannelLog.shared.log(.info, "<<< runPlaybackLoop EXIT cancelled=false")
         completeSession()
     }
 
@@ -397,12 +458,23 @@ final class PlaybackCoordinator {
     }
 
     private func awaitWaitModeResolution(index: Int) async throws -> Bool {
-        guard isWaitModeEnabled, let waitCtrl = waitController else { return false }
+        MultiChannelLog.shared.log(
+            .info,
+            ">>> awaitWaitModeResolution index=\(index) waitEnabled=\(isWaitModeEnabled)"
+        )
+        guard isWaitModeEnabled, let waitCtrl = waitController else {
+            MultiChannelLog.shared.log(.info, "<<< awaitWaitModeResolution returning=false (skip)")
+            return false
+        }
         waitCtrl.setCurrentNoteIndex(index)
         while waitCtrl.isWaitingForNote, !Task.isCancelled {
             try? await clock.sleep(for: .milliseconds(50))
         }
-        return Task.isCancelled
+        let cancelled = Task.isCancelled
+        MultiChannelLog.shared.log(
+            .info, "<<< awaitWaitModeResolution returning=\(cancelled)"
+        )
+        return cancelled
     }
 
     private func awaitLastNoteCompletion() async {

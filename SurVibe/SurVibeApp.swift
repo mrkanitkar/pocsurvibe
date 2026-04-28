@@ -38,13 +38,18 @@ struct SurVibeApp: App {
         CrashReportingManager.shared.activate()
 
         if !isTestHost {
-            // Sync persisted user preference into MultiChannelLog at launch.
-            // DEBUG default is true; Release default is false. The user-controlled
-            // @AppStorage("audioLogsEnabled") may flip either direction.
+            // Diagnostic instrumentation (Task 20 hang triage): always force
+            // file-mirror ON in DEBUG, regardless of any persisted user toggle.
+            // Release builds still respect the user toggle.
+            #if DEBUG
+            MultiChannelLog.shared.isFileMirrorEnabled = true
+            MultiChannelLog.shared.log(.info, "=== app launch (DEBUG file-mirror forced ON) ===")
+            #else
             if UserDefaults.standard.object(forKey: "audioLogsEnabled") != nil {
                 MultiChannelLog.shared.isFileMirrorEnabled =
                     UserDefaults.standard.bool(forKey: "audioLogsEnabled")
             }
+            #endif
         }
 
         if !isTestHost {
