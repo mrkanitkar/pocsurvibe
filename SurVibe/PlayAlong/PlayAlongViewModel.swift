@@ -262,7 +262,8 @@ final class PlayAlongViewModel {
     /// Tests inject mocks for deterministic behavior without audio hardware.
     ///
     /// - Parameters:
-    ///   - soundFont: SoundFont player for note playback. Defaults to `SoundFontManager.shared`.
+    ///   - soundFont: SoundFont player for note playback. Defaults to
+    ///     `MultiChannelTouchSoundFont()` (routes to multiChannel.samplers[0]).
     ///   - audioEngine: Audio engine for session setup. Defaults to `AudioEngineManager.shared`.
     ///   - metronome: Metronome player (stopped during play-along). Defaults to `MetronomePlayer.shared`.
     ///   - clock: Clock for drift-corrected scheduling. Defaults to `RealClock()`.
@@ -277,7 +278,7 @@ final class PlayAlongViewModel {
         let scoring = ScoringCoordinator()
         self.scoring = scoring
         self.playback = PlaybackCoordinator(
-            soundFont: soundFont ?? SoundFontManager.shared,
+            soundFont: soundFont ?? MultiChannelTouchSoundFont(),
             audioEngine: audioEngine ?? AudioEngineManager.shared,
             metronome: metronome ?? MetronomePlayer.shared,
             clock: clock ?? RealClock(),
@@ -317,9 +318,9 @@ final class PlayAlongViewModel {
         noteRouter.resetGuidedPlay()
 
         do {
-            try await SoundFontManager.shared.loadBundledPiano()
+            try AudioEngineManager.shared.startForPlayback()
         } catch {
-            Self.logger.error("SoundFont load failed: \(error.localizedDescription)")
+            Self.logger.error("Audio engine start failed: \(error.localizedDescription)")
         }
     }
 

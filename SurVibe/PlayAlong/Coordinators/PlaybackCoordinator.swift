@@ -550,7 +550,6 @@ final class PlaybackCoordinator {
     func cleanup() {
         cancelPlaybackTasks()
         soundFont.stopAllNotes()
-        SoundFontManager.shared.resetLoadedState()
         audioEngine.stop()
         metronome.stop()
         waitController?.reset()
