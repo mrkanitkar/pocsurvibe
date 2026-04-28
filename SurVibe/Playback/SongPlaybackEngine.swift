@@ -1,4 +1,3 @@
-import AVFoundation
 import Foundation
 import QuartzCore
 import SVAudio
@@ -6,14 +5,16 @@ import SVCore
 import UIKit
 import os.log
 
-/// Drives song playback using AVAudioSequencer for sample-accurate MIDI
-/// scheduling and tracks position for notation highlighting.
+/// Drives song playback by delegating to
+/// `AudioEngineManager.shared.multiChannel` (the production
+/// `ProductionMultiChannelEngine`). Tracks position via
+/// `CADisplayLink` for notation highlighting.
 ///
-/// SongPlaybackEngine loads MIDI data from a Song model, configures an
-/// AVAudioSequencer routed to AudioEngineManager's sampler, and parses
-/// events via MIDIParser for display. A `CADisplayLink` running at up
-/// to 120 Hz (ProMotion) updates the current position and note index
-/// for UI consumers (e.g., notation scroll views, progress bars).
+/// SongPlaybackEngine loads MIDI data from a Song model, delegates
+/// the sequencer setup + per-track sampler banking to multiChannel,
+/// and parses events via MIDIParser for display. A `CADisplayLink`
+/// running at up to 120 Hz (ProMotion) updates the current position
+/// and note index for UI consumers.
 ///
 /// ## Lifecycle
 /// ```
@@ -21,17 +22,16 @@ import os.log
 /// ```
 ///
 /// ## Note Scheduling Strategy (ARCH-005)
-/// Uses AVAudioSequencer for sample-accurate MIDI playback. The sequencer
-/// runs on the audio render thread, providing sub-millisecond timing
-/// accuracy. MIDIParser events are used for UI note highlighting only.
-/// Audio events are completely decoupled from display timing -- dropped
-/// CADisplayLink frames do NOT cause missed audio events.
+/// The actual sequencer lives inside multiChannel and runs on the audio
+/// render thread, providing sub-millisecond timing accuracy. MIDIParser
+/// events are used for UI note highlighting only. Audio events are
+/// completely decoupled from display timing — dropped CADisplayLink
+/// frames do NOT cause missed audio events.
 ///
 /// ## Thread Safety
-/// All mutable state is isolated to `@MainActor`. The sequencer is
-/// created and controlled from MainActor; its internal scheduling
-/// runs on the audio render thread. The `CADisplayLink` runs on the
-/// main run loop, matching `@MainActor` isolation.
+/// All mutable state is isolated to `@MainActor`. multiChannel is
+/// itself `@MainActor`; its internal scheduling runs on the audio
+/// render thread. The `CADisplayLink` runs on the main run loop.
 @Observable
 @MainActor
 final class SongPlaybackEngine {
@@ -69,10 +69,11 @@ final class SongPlaybackEngine {
 
     // MARK: - Private Properties
 
-    /// AVAudioSequencer for sample-accurate MIDI playback (ARCH-005).
-    /// Replaces Task.sleep scheduling for sub-millisecond timing accuracy.
-    /// Created during `load(song:)` and routed to AudioEngineManager's sampler.
-    private var sequencer: AVAudioSequencer?
+    /// True once `load(song:)` has successfully delegated the song to
+    /// `AudioEngineManager.shared.multiChannel`. The actual sequencer
+    /// lives inside `multiChannel`; this flag exists so transport
+    /// methods can guard cleanly without reaching into the manager.
+    private var hasLoadedSong = false
 
     /// AUD-010: CADisplayLink for UI position tracking at display refresh rate.
     /// Runs at up to 120 Hz on ProMotion devices, automatically matching the
@@ -102,9 +103,9 @@ final class SongPlaybackEngine {
 
     /// Load a song's MIDI data and prepare for playback.
     ///
-    /// Creates an AVAudioSequencer routed to the shared sampler for
-    /// sample-accurate playback (ARCH-005). Also parses the MIDI data
-    /// via `MIDIParser` to populate `midiEvents` for UI highlighting.
+    /// Delegates sequencer setup to `multiChannel` for sample-accurate
+    /// playback (ARCH-005). Also parses the MIDI data via `MIDIParser`
+    /// to populate `midiEvents` for UI highlighting.
     /// Transitions to `.idle` on success or `.error` on failure.
     ///
     /// - Parameter song: The Song model whose `midiData` will be parsed.
@@ -138,7 +139,7 @@ final class SongPlaybackEngine {
         currentPosition = 0
         currentNoteIndex = nil
         nextNoteIndex = nil
-        sequencer = nil
+        hasLoadedSong = false
         playbackState = .idle
 
         Self.logger.info(
@@ -155,20 +156,44 @@ final class SongPlaybackEngine {
         currentNoteIndex = nil
         nextNoteIndex = events.isEmpty ? nil : 0
 
+        // Ensure the audio engine is running so multiChannel exists.
         do {
-            try await SoundFontManager.shared.loadBundledPiano()
+            try AudioEngineManager.shared.startForPlayback()
         } catch {
             Self.logger.error(
-                "SoundFont load failed: \(error.localizedDescription, privacy: .public)"
+                "Audio engine start failed: \(error.localizedDescription, privacy: .public)"
             )
-        }
-
-        do {
-            try configureSequencer(midiData: midiData, events: events)
-        } catch {
+            playbackState = .error(error.localizedDescription)
             return
         }
 
+        guard let multiChannel = AudioEngineManager.shared.multiChannel else {
+            Self.logger.error("multiChannel unavailable after startForPlayback()")
+            playbackState = .error("Audio engine unavailable")
+            return
+        }
+
+        do {
+            try await multiChannel.loadSong(source: .midi(midiData))
+        } catch {
+            let audioError = AudioError.sequencerError(underlying: error.localizedDescription)
+            playbackState = .error(audioError.errorDescription ?? error.localizedDescription)
+            Self.logger.error(
+                "multiChannel.loadSong failed: \(error.localizedDescription, privacy: .public)"
+            )
+            return
+        }
+
+        // Derive duration from multiChannel; fall back to parsed events.
+        if let song = multiChannel.currentSong, song.durationSeconds > 0 {
+            duration = song.durationSeconds
+        } else if let lastEvent = events.last {
+            duration = lastEvent.timestamp + lastEvent.duration
+        } else {
+            duration = 0
+        }
+
+        hasLoadedSong = true
         playbackState = .idle
 
         Self.logger.info(
@@ -185,7 +210,7 @@ final class SongPlaybackEngine {
     ) {
         midiEvents = []
         duration = 0
-        sequencer = nil
+        hasLoadedSong = false
         playbackState = .error(
             error.errorDescription ?? "Unknown MIDI parse error"
         )
@@ -201,9 +226,9 @@ final class SongPlaybackEngine {
     /// Begin playback from the beginning of the song.
     ///
     /// Transitions from `.idle` or `.stopped` to `.playing`.
-    /// Resets the sequencer position to zero and starts it for
-    /// sample-accurate MIDI playback. Starts the CADisplayLink
-    /// (up to 120 Hz on ProMotion) for UI position tracking.
+    /// Delegates to `multiChannel.play()` for sample-accurate MIDI
+    /// playback. Starts the CADisplayLink (up to 120 Hz on ProMotion)
+    /// for UI position tracking.
     ///
     /// Fires `songPlaybackStarted` analytics event.
     func play() {
@@ -217,20 +242,20 @@ final class SongPlaybackEngine {
             Self.logger.warning("play() called with no MIDI events loaded")
             return
         }
-        guard let sequencer else {
-            Self.logger.warning("play() called with no sequencer configured")
+        guard hasLoadedSong, let multiChannel = AudioEngineManager.shared.multiChannel else {
+            Self.logger.warning("play() called before song loaded into multiChannel")
             return
         }
 
         positionCursor = 0
-        sequencer.currentPositionInSeconds = 0
-
+        // stop() resets the multiChannel sequencer position to zero, then play() starts it.
+        multiChannel.stop()
         do {
-            try sequencer.start()
+            try multiChannel.play()
         } catch {
             let audioError = AudioError.sequencerError(underlying: error.localizedDescription)
             playbackState = .error(audioError.errorDescription ?? error.localizedDescription)
-            Self.logger.error("Sequencer start failed: \(error.localizedDescription, privacy: .public)")
+            Self.logger.error("multiChannel.play failed: \(error.localizedDescription, privacy: .public)")
             return
         }
 
@@ -247,9 +272,9 @@ final class SongPlaybackEngine {
 
     /// Pause playback at the current position.
     ///
-    /// Stops the sequencer (preserving its position) and stops all
-    /// sounding notes. The position is preserved so `resume()` can
-    /// continue from where playback left off.
+    /// Delegates to `multiChannel.pause()` (preserving its position)
+    /// and stops all sounding notes. The position is preserved so
+    /// `resume()` can continue from where playback left off.
     ///
     /// Fires `songPlaybackPaused` analytics event.
     func pause() {
@@ -260,11 +285,11 @@ final class SongPlaybackEngine {
             return
         }
 
-        sequencer?.stop()
+        AudioEngineManager.shared.multiChannel?.pause()
         playbackState = .paused
 
         stopDisplayLink()
-        SoundFontManager.shared.stopAllNotes()
+        AudioEngineManager.shared.multiChannel?.stopAllTouchNotes()
 
         AnalyticsManager.shared.track(
             .songPlaybackPaused,
@@ -278,8 +303,8 @@ final class SongPlaybackEngine {
 
     /// Resume playback from the paused position.
     ///
-    /// Restarts the sequencer from its preserved position and
-    /// resumes the display loop for UI updates.
+    /// Delegates to `multiChannel.play()` from its preserved position
+    /// and resumes the display loop for UI updates.
     func resume() {
         guard playbackState == .paused else {
             Self.logger.warning(
@@ -287,17 +312,17 @@ final class SongPlaybackEngine {
             )
             return
         }
-        guard let sequencer else {
-            Self.logger.warning("resume() called with no sequencer configured")
+        guard hasLoadedSong, let multiChannel = AudioEngineManager.shared.multiChannel else {
+            Self.logger.warning("resume() called before song loaded")
             return
         }
 
         do {
-            try sequencer.start()
+            try multiChannel.play()
         } catch {
             let audioError = AudioError.sequencerError(underlying: error.localizedDescription)
             playbackState = .error(audioError.errorDescription ?? error.localizedDescription)
-            Self.logger.error("Sequencer resume failed: \(error.localizedDescription, privacy: .public)")
+            Self.logger.error("multiChannel.play (resume) failed: \(error.localizedDescription, privacy: .public)")
             return
         }
 
@@ -311,8 +336,9 @@ final class SongPlaybackEngine {
 
     /// Stop playback and reset position to the beginning.
     ///
-    /// Stops the sequencer, resets its position to zero, stops all
-    /// sounding notes, and transitions to `.stopped`.
+    /// Delegates to `multiChannel.stop()` (which also resets the
+    /// sequencer position to zero), stops all sounding notes,
+    /// and transitions to `.stopped`.
     func stop() {
         guard playbackState == .playing || playbackState == .paused else {
             Self.logger.warning(
@@ -321,11 +347,9 @@ final class SongPlaybackEngine {
             return
         }
 
-        sequencer?.stop()
-        sequencer?.currentPositionInSeconds = 0
-
+        AudioEngineManager.shared.multiChannel?.stop()
         stopDisplayLink()
-        SoundFontManager.shared.stopAllNotes()
+        AudioEngineManager.shared.multiChannel?.stopAllTouchNotes()
 
         currentPosition = 0
         currentNoteIndex = nil
@@ -335,49 +359,6 @@ final class SongPlaybackEngine {
         Self.logger.info("Playback stopped")
     }
 
-    // MARK: - Private Methods — Sequencer Setup
-
-    /// Create and configure the AVAudioSequencer from raw MIDI data.
-    ///
-    /// Loads the MIDI data, routes all tracks to the shared sampler,
-    /// and derives the playback duration. On failure, transitions to
-    /// `.error` state and throws to signal the caller to bail out.
-    ///
-    /// - Parameters:
-    ///   - midiData: Raw Standard MIDI File bytes.
-    ///   - events: Parsed MIDIEvent array for fallback duration calculation.
-    /// - Throws: `AudioError.sequencerError` if the sequencer fails to load.
-    private func configureSequencer(midiData: Data, events: [MIDIEvent]) throws {
-        do {
-            let seq = AVAudioSequencer(audioEngine: AudioEngineManager.shared.engine)
-            try seq.load(from: midiData, options: .smf_ChannelsToTracks)
-
-            // Route all tracks to the shared sampler so notes play through
-            // the SoundFont piano instead of the default General MIDI synth.
-            for track in seq.tracks {
-                track.destinationAudioUnit = AudioEngineManager.shared.sampler
-            }
-
-            seq.prepareToPlay()
-
-            // Derive duration from sequencer track lengths (most accurate source).
-            duration = seq.tracks.reduce(0) { max($0, $1.lengthInSeconds) }
-
-            // Fall back to parsed event duration if sequencer reports zero
-            // (can happen with malformed tempo maps).
-            if duration <= 0, let lastEvent = events.last {
-                duration = lastEvent.timestamp + lastEvent.duration
-            }
-
-            sequencer = seq
-        } catch {
-            let audioError = AudioError.sequencerError(underlying: error.localizedDescription)
-            playbackState = .error(audioError.errorDescription ?? error.localizedDescription)
-            Self.logger.error("Sequencer load failed: \(error.localizedDescription, privacy: .public)")
-            throw audioError
-        }
-    }
-
     // MARK: - Private Methods — Display Link
 
     /// Start a CADisplayLink at up to 120 Hz for UI position tracking.
@@ -385,7 +366,7 @@ final class SongPlaybackEngine {
     /// AUD-010: Uses `CADisplayLink` instead of `Task.sleep` polling,
     /// synchronizing UI updates exactly to the display refresh rate.
     /// On ProMotion displays this runs at 120 Hz; on standard displays
-    /// at 60 Hz. Audio events remain on the AVAudioSequencer timeline,
+    /// at 60 Hz. Audio events remain on the multiChannel sequencer timeline,
     /// completely decoupled from the display link cadence.
     private func startDisplayLink() {
         stopDisplayLink()
@@ -402,23 +383,24 @@ final class SongPlaybackEngine {
         displayLink = nil
     }
 
-    /// Read the current playback position from the sequencer,
+    /// Read the current playback position from `multiChannel`,
     /// update `currentNoteIndex` and `nextNoteIndex` for UI highlighting,
     /// and detect playback completion.
     ///
-    /// Called by `CADisplayLink` every display frame. Visual updates ONLY --
-    /// audio events are scheduled by AVAudioSequencer on the audio render
-    /// thread and are NOT triggered from this callback. Dropped frames do
-    /// NOT cause missed audio events.
+    /// Called by `CADisplayLink` every display frame. Visual updates ONLY —
+    /// audio events are scheduled by the multiChannel sequencer on the audio
+    /// render thread and are NOT triggered from this callback. Dropped frames
+    /// do NOT cause missed audio events.
     ///
     /// AUD-030: Uses forward-only `positionCursor` for O(1) amortised note
     /// lookup — advances past expired events, breaks at first future event.
     fileprivate func updatePlaybackPosition() {
-        guard playbackState == .playing, let sequencer else {
+        guard playbackState == .playing,
+              let multiChannel = AudioEngineManager.shared.multiChannel else {
             return
         }
 
-        currentPosition = min(sequencer.currentPositionInSeconds, duration)
+        currentPosition = min(multiChannel.currentPositionInSeconds, duration)
 
         // AUD-030: Advance cursor past events whose end time has passed.
         while positionCursor < midiEvents.count,
@@ -487,9 +469,9 @@ final class SongPlaybackEngine {
 
     /// Handle natural end-of-song: fire analytics, clean up, transition to idle.
     private func handlePlaybackCompletion() {
-        sequencer?.stop()
+        AudioEngineManager.shared.multiChannel?.stop()
         stopDisplayLink()
-        SoundFontManager.shared.stopAllNotes()
+        AudioEngineManager.shared.multiChannel?.stopAllTouchNotes()
 
         currentPosition = duration
         currentNoteIndex = nil
