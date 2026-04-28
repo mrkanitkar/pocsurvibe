@@ -215,11 +215,15 @@ final class PracticeSessionViewModel {
         metronomeBPM = Double(song.tempo)
         metronomeEngine.updateBPM(metronomeBPM)
 
-        // Load the SoundFont for playback
+        // Ensure the audio engine is running. Lazy-constructs
+        // AudioEngineManager.shared.multiChannel which preloads
+        // Acoustic Grand into samplers[0] for touch playback.
+        // Song playback (this VM's playbackEngine) routes through
+        // the same multiChannel — see SongPlaybackEngine migration.
         do {
-            try await SoundFontManager.shared.loadBundledPiano()
+            try AudioEngineManager.shared.startForPlayback()
         } catch {
-            Self.logger.error("SoundFont load failed: \(error.localizedDescription, privacy: .public)")
+            Self.logger.error("Audio engine start failed: \(error.localizedDescription, privacy: .public)")
         }
 
         // Load song into playback engine
@@ -427,7 +431,7 @@ final class PracticeSessionViewModel {
         {
             playbackEngine.stop()
         }
-        SoundFontManager.shared.stopAllNotes()
+        AudioEngineManager.shared.multiChannel?.stopAllTouchNotes()
         waitModeEngine.reset()
     }
 
