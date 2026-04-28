@@ -51,9 +51,9 @@ public final class ProductionMultiChannelEngine: MultiChannelEngineProtocol {
     public var isPlaying: Bool { sequencer?.isPlaying ?? false }
 
     /// Current playback position in seconds.
-    /// Uses sequencer beat position; finer conversion in Task 8.
     public var currentPositionInSeconds: TimeInterval {
-        TimeInterval(sequencer?.currentPositionInBeats ?? 0)
+        guard let seq = sequencer else { return 0 }
+        return seq.seconds(forBeats: seq.currentPositionInBeats)
     }
 
     /// Current playback rate. Range 0.5...1.5.
@@ -252,11 +252,22 @@ public final class ProductionMultiChannelEngine: MultiChannelEngineProtocol {
             MultiChannelLog.shared.log(.info, "flushSongPrograms: skipped (song active)")
             return
         }
+        var failedSlots: [Int] = []
         for i in 1..<Self.totalSamplers {
-            try? loadProgram(into: i, program: 0, isPercussion: false)
+            do {
+                try loadProgram(into: i, program: 0, isPercussion: false)
+            } catch {
+                failedSlots.append(i)
+                MultiChannelLog.shared.log(
+                    .warning,
+                    "flushSongPrograms: sampler[\(i)] reset failed: \(error.localizedDescription)"
+                )
+            }
         }
+        let level: MultiChannelLog.Level = failedSlots.isEmpty ? .info : .warning
         MultiChannelLog.shared.log(
-            .info, "flushSongPrograms: reset samplers[1..15] to program 0"
+            level,
+            "flushSongPrograms: reset samplers[1..15] to program 0; failed=\(failedSlots)"
         )
     }
 
