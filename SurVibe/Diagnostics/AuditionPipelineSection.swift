@@ -136,6 +136,30 @@ struct AuditionPipelineSection: View {
 
     // MARK: - Lifecycle
 
+    /// Starts the shared AVAudioEngine for song loading.
+    ///
+    /// Calls `AudioEngineManager.shared.startForPlayback()` to configure the
+    /// manager mode, then explicitly restarts the underlying engine when it is
+    /// paused. `startForPlayback` short-circuits when the manager is already in
+    /// `playbackOnly` mode, so the engine must be restarted directly after
+    /// `unloadCurrentSong` pauses it for the clean graph-swap.
+    ///
+    /// - Throws: Any error from `AudioEngineManager.startForPlayback()` or
+    ///   `AVAudioEngine.start()`.
+    private func startEngineForLoad() throws {
+        try AudioEngineManager.shared.startForPlayback()
+        sectionLogger.info("loadSong: engine started for playback")
+        PipelineFileLog.shared.log("loadSong: engine startForPlayback OK")
+        // If unloadCurrentSong paused the engine, restart it now so the
+        // new MultiTrackSamplerGraph's isRunning guard passes and its
+        // attach/connect calls run against a freshly-started engine.
+        let engine = AudioEngineManager.shared.engine
+        if !engine.isRunning {
+            try engine.start()
+            PipelineFileLog.shared.log("loadSong: engine restarted post-pause")
+        }
+    }
+
     private func loadSong(_ song: BundledSong) async {
         guard !isLoadingSong else {
             PipelineFileLog.shared.log("loadSong SKIP: already loading another song")
@@ -166,9 +190,7 @@ struct AuditionPipelineSection: View {
         loadError = nil
 
         do {
-            try AudioEngineManager.shared.startForPlayback()
-            sectionLogger.info("loadSong: engine started for playback")
-            PipelineFileLog.shared.log("loadSong: engine startForPlayback OK")
+            try startEngineForLoad()
 
             guard let mxlURL = Bundle.main.url(
                 forResource: song.id, withExtension: "mxl"
@@ -264,6 +286,18 @@ struct AuditionPipelineSection: View {
         rendered = nil
         loadedSlot = nil
         statusText = ""
+        // Pause the engine so the next graph builds against a quiesced node
+        // graph. Hot detach + re-attach on a running engine can leave the
+        // new graph half-routed (single-channel audio regression observed
+        // when switching songs mid-playback). loadSong restarts the engine
+        // before constructing the new MultiTrackSamplerGraph.
+        if hadGraph {
+            let engine = AudioEngineManager.shared.engine
+            if engine.isRunning {
+                engine.pause()
+                PipelineFileLog.shared.log("unloadCurrentSong: engine paused for clean swap")
+            }
+        }
     }
 
     private func applyActiveBank(_ slot: SoundFontAuditionView.Slot) async {
