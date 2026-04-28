@@ -503,7 +503,7 @@ public final class ProductionMultiChannelEngine: MultiChannelEngineProtocol {
     ///   - program: GM program number (0–127).
     ///   - isPercussion: When true, uses `kAUSampler_DefaultPercussionBankMSB`.
     /// - Throws: `MultiChannelEngineError.bankLoadFailed` on any failure.
-    func loadProgram(into index: Int, program: UInt8, isPercussion: Bool) throws {
+    public func loadProgram(into index: Int, program: UInt8, isPercussion: Bool) throws {
         MultiChannelLog.shared.log(
             .info, ">>> loadProgram index=\(index) program=\(program) isPercussion=\(isPercussion)"
         )
@@ -615,3 +615,11 @@ public enum MultiChannelEngineError: Error, LocalizedError, Equatable {
         }
     }
 }
+
+// MARK: - PlayTabAudioEngine conformance
+
+/// Adoption is label-only — every method required by `PlayTabAudioEngine`
+/// already exists on `ProductionMultiChannelEngine` with the exact signatures
+/// the protocol declares. Used by `PlayTabViewModel` so tests can substitute
+/// a mock engine without spinning up `AVAudioEngine`.
+extension ProductionMultiChannelEngine: PlayTabAudioEngine {}
