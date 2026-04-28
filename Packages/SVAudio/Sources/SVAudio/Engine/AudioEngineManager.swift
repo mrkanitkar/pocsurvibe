@@ -76,6 +76,17 @@ public final class AudioEngineManager: AudioEngineProviding {
     /// Sampler node for SoundFont instrument playback.
     public let sampler = AVAudioUnitSampler()
 
+    /// Production multi-channel audio engine. Lazily constructed on the first
+    /// `startForPlayback()` call after `engine.start()` succeeds (samplers
+    /// must attach to a started engine).
+    ///
+    /// Lives for the app process lifetime — there is no teardown path. Callers
+    /// from Play-Along, Song Playback, Practice listen-first, Interactive
+    /// Piano, and Isomorphic Sargam migrate to this surface in Phase 2 of
+    /// the production multi-channel migration. The legacy `.sampler` property
+    /// is retained alongside until Phase 3 deletes it.
+    public private(set) var multiChannel: ProductionMultiChannelEngine?
+
     /// Player node for tanpura drone.
     public let tanpuraNode = AVAudioPlayerNode()
 
@@ -362,6 +373,22 @@ public final class AudioEngineManager: AudioEngineProviding {
         engine.prepare()
         try engine.start()
         currentMode = .playbackOnly
+
+        // Lazily construct the production multi-channel engine on first start.
+        // Runs after engine.start() and currentMode set so the engine is fully
+        // configured before attaching the multiChannel graph. Failure here is
+        // non-fatal — the legacy .sampler path still works during the Phase 2
+        // migration window. Phase 3 removes the legacy path.
+        if multiChannel == nil {
+            do {
+                self.multiChannel = try ProductionMultiChannelEngine(engine: engine)
+                Self.logger.info("multiChannel engine constructed")
+            } catch {
+                Self.logger.error(
+                    "multiChannel construction failed: \(error.localizedDescription, privacy: .public)"
+                )
+            }
+        }
 
         // Capture the sampler's MIDI schedule block for direct-wire echo
         // from CoreMIDI (see start() for details).
