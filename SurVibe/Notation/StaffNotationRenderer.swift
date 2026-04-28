@@ -39,6 +39,13 @@ struct StaffNotationRenderer: View {
     /// so the user can see which staff positions correspond to the pressed key.
     var detectedMidiNote: Int?
 
+    /// MIDI note numbers currently pressed on the keyboard, used for chord-aware
+    /// live highlight on the Play tab.
+    ///
+    /// Combined (OR) with `detectedMidiNote` in the highlight predicate so existing
+    /// single-note callers (PlayAlong, Practice) continue to work unchanged.
+    var detectedMidiNotes: Set<Int> = []
+
     /// Scoring match state of the note at `currentNoteIndex`, for a correctness overlay border.
     ///
     /// When `.correct`, the highlight rect is drawn in green; when `.wrong`, in red.
@@ -47,8 +54,10 @@ struct StaffNotationRenderer: View {
 
     // MARK: - Environment
 
-    @Environment(\.colorScheme) var colorScheme
-    @Environment(\.accessibilityReduceMotion) private var reduceMotion
+    @Environment(\.colorScheme)
+    var colorScheme
+    @Environment(\.accessibilityReduceMotion)
+    private var reduceMotion
 
     // MARK: - Constants
 
@@ -104,13 +113,17 @@ struct StaffNotationRenderer: View {
                 // Draw notes
                 for (index, noteInfo) in layout.notes.enumerated() {
                     let isHighlighted = index == currentNoteIndex
-                    let isDetected = !noteInfo.isRest && noteInfo.midiNumber == detectedMidiNote
+                    let isDetected =
+                        !noteInfo.isRest
+                        && (noteInfo.midiNumber == detectedMidiNote || detectedMidiNotes.contains(noteInfo.midiNumber))
                     if noteInfo.isRest {
                         drawRest(context: &context, noteInfo: noteInfo, staffTop: staffTop)
                     } else {
                         drawNote(
-                            context: &context, noteInfo: noteInfo,
-                            staffTop: staffTop, isHighlighted: isHighlighted,
+                            context: &context,
+                            noteInfo: noteInfo,
+                            staffTop: staffTop,
+                            isHighlighted: isHighlighted,
                             isDetected: isDetected,
                             matchState: index == currentNoteIndex ? currentNoteMatchState : nil
                         )
@@ -220,13 +233,17 @@ struct StaffNotationRenderer: View {
         // Background highlights
         if isHighlighted {
             drawPlaybackHighlight(
-                context: &context, centerX: centerX,
-                centerY: centerY, matchState: matchState
+                context: &context,
+                centerX: centerX,
+                centerY: centerY,
+                matchState: matchState
             )
         }
         if isDetected {
             drawDetectionHighlight(
-                context: &context, centerX: centerX, centerY: centerY
+                context: &context,
+                centerX: centerX,
+                centerY: centerY
             )
         }
 
@@ -235,15 +252,21 @@ struct StaffNotationRenderer: View {
 
         // Accidental
         drawAccidental(
-            context: &context, noteInfo: noteInfo,
-            centerX: centerX, centerY: centerY, isHighlighted: isHighlighted
+            context: &context,
+            noteInfo: noteInfo,
+            centerX: centerX,
+            centerY: centerY,
+            isHighlighted: isHighlighted
         )
 
         // Notehead, stem, flags, augmentation dot
         let noteColor: Color = isDetected ? .green : (isHighlighted ? .accentColor : staffSwiftUIColor)
         drawNoteheadAndExtras(
-            context: &context, noteInfo: noteInfo,
-            centerX: centerX, centerY: centerY, color: noteColor
+            context: &context,
+            noteInfo: noteInfo,
+            centerX: centerX,
+            centerY: centerY,
+            color: noteColor
         )
     }
 
@@ -333,8 +356,11 @@ struct StaffNotationRenderer: View {
         }
 
         drawStemAndFlags(
-            context: &context, noteInfo: noteInfo,
-            centerX: centerX, centerY: centerY, color: color
+            context: &context,
+            noteInfo: noteInfo,
+            centerX: centerX,
+            centerY: centerY,
+            color: color
         )
 
         if noteInfo.isDotted {
@@ -356,17 +382,22 @@ struct StaffNotationRenderer: View {
         guard noteInfo.noteheadType.hasStem else { return }
 
         drawStem(
-            context: &context, centerX: centerX,
-            centerY: centerY, direction: noteInfo.stemDirection,
+            context: &context,
+            centerX: centerX,
+            centerY: centerY,
+            direction: noteInfo.stemDirection,
             color: color
         )
 
         // Flags for unbeamed notes only
         if noteInfo.noteheadType.beamCount == 0,
-           noteInfo.noteheadType.flagCount > 0 {
+            noteInfo.noteheadType.flagCount > 0
+        {
             drawFlags(
-                context: &context, noteInfo: noteInfo,
-                centerX: centerX, centerY: centerY,
+                context: &context,
+                noteInfo: noteInfo,
+                centerX: centerX,
+                centerY: centerY,
                 color: color
             )
         }
@@ -375,35 +406,43 @@ struct StaffNotationRenderer: View {
 
 // MARK: - Component Drawing
 
-private extension StaffNotationRenderer {
+extension StaffNotationRenderer {
     /// Draw a rest symbol at the note's x-position.
-    func drawRest(context: inout GraphicsContext, noteInfo: StaffNoteInfo, staffTop: CGFloat) {
+    fileprivate func drawRest(context: inout GraphicsContext, noteInfo: StaffNoteInfo, staffTop: CGFloat) {
         let centerX = noteInfo.xPosition
         let centerY = staffTop + staffHeight / 2
-        let restSymbol: String = switch noteInfo.noteheadType {
-        case .whole: "\u{1D13B}"
-        case .half: "\u{1D13C}"
-        case .quarter: "\u{1D13D}"
-        case .eighth: "\u{1D13E}"
-        case .sixteenth: "\u{1D13F}"
-        }
+        let restSymbol: String =
+            switch noteInfo.noteheadType {
+            case .whole: "\u{1D13B}"
+            case .half: "\u{1D13C}"
+            case .quarter: "\u{1D13D}"
+            case .eighth: "\u{1D13E}"
+            case .sixteenth: "\u{1D13F}"
+            }
         let text = Text(restSymbol).font(.system(size: 24)).foregroundColor(staffSwiftUIColor)
         context.draw(context.resolve(text), at: CGPoint(x: centerX, y: centerY), anchor: .center)
     }
 
     /// Draw a note stem.
-    func drawStem(
-        context: inout GraphicsContext, centerX: CGFloat,
-        centerY: CGFloat, direction: StemDirection, color: Color
+    fileprivate func drawStem(
+        context: inout GraphicsContext,
+        centerX: CGFloat,
+        centerY: CGFloat,
+        direction: StemDirection,
+        color: Color
     ) {
-        let stemX: CGFloat, stemStartY: CGFloat, stemEndY: CGFloat
+        let stemX: CGFloat
+        let stemStartY: CGFloat
+        let stemEndY: CGFloat
         switch direction {
         case .up:
             stemX = centerX + noteheadWidth / 2 - stemWidth / 2
-            stemStartY = centerY; stemEndY = centerY - stemLength
+            stemStartY = centerY
+            stemEndY = centerY - stemLength
         case .down:
             stemX = centerX - noteheadWidth / 2 + stemWidth / 2
-            stemStartY = centerY; stemEndY = centerY + stemLength
+            stemStartY = centerY
+            stemEndY = centerY + stemLength
         }
         var path = Path()
         path.move(to: CGPoint(x: stemX, y: stemStartY))
@@ -412,12 +451,16 @@ private extension StaffNotationRenderer {
     }
 
     /// Draw flags on an unbeamed note.
-    func drawFlags(
-        context: inout GraphicsContext, noteInfo: StaffNoteInfo,
-        centerX: CGFloat, centerY: CGFloat, color: Color
+    fileprivate func drawFlags(
+        context: inout GraphicsContext,
+        noteInfo: StaffNoteInfo,
+        centerX: CGFloat,
+        centerY: CGFloat,
+        color: Color
     ) {
         let dir = noteInfo.stemDirection
-        let stemX = dir == .up
+        let stemX =
+            dir == .up
             ? centerX + noteheadWidth / 2 - stemWidth / 2
             : centerX - noteheadWidth / 2 + stemWidth / 2
         let stemEndY = dir == .up ? centerY - stemLength : centerY + stemLength
@@ -428,17 +471,22 @@ private extension StaffNotationRenderer {
             p.move(to: CGPoint(x: stemX, y: flagY))
             p.addQuadCurve(
                 to: CGPoint(x: stemX + (dir == .up ? 8 : -8), y: flagY + (dir == .up ? 10 : -10)),
-                control: CGPoint(x: stemX + (dir == .up ? 12 : -12), y: flagY + (dir == .up ? 4 : -4)))
+                control: CGPoint(x: stemX + (dir == .up ? 12 : -12), y: flagY + (dir == .up ? 4 : -4))
+            )
             context.stroke(p, with: .color(color), lineWidth: 1.5)
         }
     }
 
     /// Draw ledger lines for notes above or below the staff.
-    func drawLedgerLines(
-        context: inout GraphicsContext, noteInfo: StaffNoteInfo, staffTop: CGFloat, centerX: CGFloat
+    fileprivate func drawLedgerLines(
+        context: inout GraphicsContext,
+        noteInfo: StaffNoteInfo,
+        staffTop: CGFloat,
+        centerX: CGFloat
     ) {
-        guard noteInfo.ledgerLines.count > 0 else { return } // swiftlint:disable:this empty_count
-        let halfWidth = noteheadWidth * 0.8, lineColor = staffColor
+        guard noteInfo.ledgerLines.count > 0 else { return }  // swiftlint:disable:this empty_count
+        let halfWidth = noteheadWidth * 0.8
+        let lineColor = staffColor
         for i in 0..<noteInfo.ledgerLines.count {
             let position = noteInfo.ledgerLines.isAbove ? 10 + (i * 2) : -2 - (i * 2)
             let y = yForStaffPosition(position, staffTop: staffTop)
@@ -450,8 +498,9 @@ private extension StaffNotationRenderer {
     }
 
     /// Draw barlines at the specified x-positions.
-    func drawBarlines(context: inout GraphicsContext, staffTop: CGFloat, positions: [Double]) {
-        let lineColor = staffColor, staffBottom = staffTop + staffHeight
+    fileprivate func drawBarlines(context: inout GraphicsContext, staffTop: CGFloat, positions: [Double]) {
+        let lineColor = staffColor
+        let staffBottom = staffTop + staffHeight
         for xPos in positions {
             var path = Path()
             path.move(to: CGPoint(x: xPos, y: staffTop))
@@ -461,14 +510,19 @@ private extension StaffNotationRenderer {
     }
 
     /// Draw a beam group connecting note stems.
-    func drawBeamGroup(
-        context: inout GraphicsContext, group: BeamGroup, notes: [StaffNoteInfo], staffTop: CGFloat
+    fileprivate func drawBeamGroup(
+        context: inout GraphicsContext,
+        group: BeamGroup,
+        notes: [StaffNoteInfo],
+        staffTop: CGFloat
     ) {
         guard group.noteIndices.count >= 2,
-              let firstIdx = group.noteIndices.first, let lastIdx = group.noteIndices.last
+            let firstIdx = group.noteIndices.first, let lastIdx = group.noteIndices.last
         else { return }
-        let first = notes[firstIdx], last = notes[lastIdx]
-        let dir = first.stemDirection, beamColor = staffSwiftUIColor
+        let first = notes[firstIdx]
+        let last = notes[lastIdx]
+        let dir = first.stemDirection
+        let beamColor = staffSwiftUIColor
         let fc = yForStaffPosition(first.staffYOffset, staffTop: staffTop)
         let lc = yForStaffPosition(last.staffYOffset, staffTop: staffTop)
         for level in 0..<group.beamCount {
