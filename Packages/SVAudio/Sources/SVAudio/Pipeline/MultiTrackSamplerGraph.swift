@@ -54,10 +54,18 @@ public final class MultiTrackSamplerGraph {
         }
         self.engine = AudioEngineManager.shared.engine
 
-        // Build samplers
+        // Per-instance identifier embedded in every sampler's name. Each
+        // MIDISampler creates a CoreMIDI virtual MIDI destination whose
+        // identity is keyed off `name`. Reusing the same names across
+        // graph teardown→rebuild cycles (e.g. mid-playback song switch)
+        // can cause new samplers to inherit a stale endpoint registration
+        // from the prior cycle's detached samplers, with audible "single-
+        // pipe" / muted-voice symptoms. A fresh UUID per graph guarantees
+        // the new virtual destinations have never existed before.
+        let instanceId = UUID().uuidString.prefix(8)
         var samplers: [MIDISampler] = []
         for i in 0..<trackCount {
-            let sampler = MIDISampler(name: "AuditionPipeline_\(i)")
+            let sampler = MIDISampler(name: "AuditionPipeline_\(instanceId)_\(i)")
             engine.attach(sampler.avAudioNode)
             samplers.append(sampler)
         }
@@ -85,7 +93,8 @@ public final class MultiTrackSamplerGraph {
         PipelineFileLog.shared.log(
             """
             MultiTrackSamplerGraph.init: trackCount=\(trackCount) \
-            format=\(fmtSR)Hz/\(fmtCH)ch attached samplers=\(samplers.count)
+            format=\(fmtSR)Hz/\(fmtCH)ch attached samplers=\(samplers.count) \
+            instance=\(instanceId)
             """
         )
     }
