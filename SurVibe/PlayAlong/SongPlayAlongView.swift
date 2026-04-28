@@ -199,6 +199,9 @@ struct SongPlayAlongView: View {
             // Layer 5 — first-time coach mark (auto-dismisses, AppStorage-gated)
             FirstTimeCoachMark()
         }
+        .onAppear {
+            MultiChannelLog.shared.log(.info, "ZSTACK SongPlayAlongView onAppear fired")
+        }
         .animation(
             reduceMotion ? nil : .easeInOut(duration: 0.25),
             value: viewModel.chromeVisibility

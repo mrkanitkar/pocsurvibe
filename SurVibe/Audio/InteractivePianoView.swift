@@ -161,17 +161,6 @@ struct InteractivePianoView: View {
                     keyContent(pitch: pitch, isActivated: isActivated)
                 }
                 .environment(\.layoutDirection, .leftToRight)
-                .overlay {
-                    Color.clear
-                        .preference(
-                            key: KeyPositionPreference.self,
-                            value: Self.computeKeyPositions(
-                                width: proxy.size.width,
-                                startMIDI: loMidi,
-                                endMIDI: hiMidi
-                            )
-                        )
-                }
                 .accessibilityElement(children: .contain)
                 .accessibilityLabel("Interactive piano keyboard, \(keyCount) keys")
             }
