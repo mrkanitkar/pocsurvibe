@@ -84,15 +84,38 @@ struct AuditionPipelineSection: View {
                 bounceControls
             }
         }
-        .onChange(of: activeSlot) { _, newValue in
+        .onChange(of: activeSlot) { oldValue, newValue in
+            // Diagnostic 2026-04-28: confirm the parent's top A/B selector is
+            // actually propagating into this child's view tree. Logs here
+            // unconditionally so even guarded-out applyActiveBank calls show
+            // the trigger fired.
+            PipelineFileLog.shared.log(
+                "AuditionPipelineSection.onChange(activeSlot): \(oldValue.rawValue) → \(newValue.rawValue)"
+            )
             Task { await applyActiveBank(newValue) }
         }
-        // Fix I4 (review 2026-04-26): tear down the pipeline when the parent
-        // view disappears. Without this the samplers stay attached to the
-        // shared engine indefinitely after the user navigates away, and any
-        // in-flight bounce keeps writing to disk in the background.
+        // Bug 2026-04-28 (diagnostic-confirmed): in a Form, a Section's
+        // `.onDisappear` fires when the section scrolls OUT of the visible
+        // viewport — not only on real navigation-away. The previous
+        // implementation called `disablePipeline()` here per Fix I4 (cleanup
+        // on navigate-away), but that caused the engine to be torn down
+        // every time the user scrolled up to the top "Active" selector, so
+        // taps on that selector then bailed with `engine=nil`.
+        //
+        // Trade-off accepted: do NOT tear down the engine here. Samplers
+        // stay attached to the shared `AVAudioEngine` until the user
+        // toggles the pipeline OFF. For a DEBUG-only POC this is acceptable
+        // (a few MB of sampler state per session). The original Fix I4
+        // concern about an in-flight bounce continuing on navigate-away is
+        // now mitigated by the deterministic-duration bounce (commit
+        // 1f0d21e) which finalises cleanly within `sequenceDuration`s
+        // anyway. We still abort an in-flight bouncer here as a belt-and-
+        // braces safeguard.
         .onDisappear {
-            disablePipeline()
+            PipelineFileLog.shared.log(
+                "AuditionPipelineSection.onDisappear (scroll OR navigate; engine NOT torn down)"
+            )
+            if isBouncing { bouncer?.abort() }
         }
     }
 
@@ -278,7 +301,20 @@ struct AuditionPipelineSection: View {
     }
 
     private func applyActiveBank(_ slot: SoundFontAuditionView.Slot) async {
-        guard let engine else { return }
+        // Diagnostic 2026-04-28: log entry unconditionally so we can see
+        // both the call and the reason for any silent bail-out.
+        let engineStr = engine == nil ? "nil" : "present"
+        let loadedStr = loadedSlot?.rawValue ?? "nil"
+        PipelineFileLog.shared.log(
+            """
+            applyActiveBank(\(slot.rawValue)) ENTRY: \
+            engine=\(engineStr) isBouncing=\(isBouncing) loadedSlot=\(loadedStr)
+            """
+        )
+        guard let engine else {
+            PipelineFileLog.shared.log("applyActiveBank(\(slot.rawValue)) BAIL: engine=nil")
+            return
+        }
         // Fix C2 (review 2026-04-26): a bank swap pauses the engine for
         // ~N×300 ms (Mode 2 sequential reload) — running this mid-bounce
         // silences the tap and leaves the m4a write head out of position,
