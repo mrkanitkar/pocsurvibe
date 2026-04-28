@@ -73,10 +73,6 @@ struct SongPlayAlongView: View {
     @State
     var hasStoredOverride: Bool = false
 
-    /// Piano key positions collected via preference key for note alignment.
-    @State
-    private var keyPositions: [KeyPosition] = []
-
     /// Whether the results overlay is presented.
     @State
     private var showResults = false
@@ -530,9 +526,6 @@ struct SongPlayAlongView: View {
             lhColor: viewModel.lhColor,
             chordColor: viewModel.chordColor
         )
-        .onPreferenceChange(KeyPositionPreference.self) { positions in
-            keyPositions = positions
-        }
     }
 
     /// Composes `notationAndChrome` + `keyboardContent` into the active
