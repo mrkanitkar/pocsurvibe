@@ -183,25 +183,177 @@ public final class ProductionMultiChannelEngine: MultiChannelEngineProtocol {
         MultiChannelLog.shared.log(.info, "stopAllTouchNotes")
     }
 
-    // MARK: - Song lifecycle (full impl in Task 8)
+    // MARK: - Song lifecycle
 
     /// Load a song from raw MIDI or MusicXML bytes.
     ///
-    /// - Note: Stubbed in Task 7. Full implementation in Task 8.
+    /// For `.musicXML` sources, auto-detects `.mxl` ZIP containers via a
+    /// leading `PK\x03\x04` magic-bytes check, unwraps via `MXLLoader`,
+    /// then renders through `VerovioBridge` to `RenderedMIDI`. The `.midi`
+    /// path parses per-track Program Change events via `MIDIProgramExtractor`.
+    ///
+    /// Re-banks `samplers[1..N]` for this song's programs. Per-sampler bank
+    /// failures are logged as warnings but do not abort the load — the song
+    /// plays with that voice silent.
+    ///
+    /// If a song is already loaded, it is unloaded first (sequencer stopped,
+    /// position reset). A concurrent second call is silently dropped.
+    ///
     /// - Parameter source: MIDI or MusicXML data source.
-    /// - Throws: `MultiChannelEngineError.engineNotRunning` always (stub).
+    /// - Throws:
+    ///   - `MultiChannelEngineError.engineNotRunning` if the engine is stopped.
+    ///   - `MultiChannelEngineError.tooManyTracks` if the source has > 15 tracks.
+    ///   - `MultiChannelEngineError.verovioRenderFailed` on MusicXML render error.
+    ///   - `MultiChannelEngineError.sequencerLoadFailed` if the sequencer rejects the MIDI.
     public func loadSong(source: MIDISource) async throws {
-        // Stubbed — Task 8 implements the full path.
-        throw MultiChannelEngineError.engineNotRunning
+        guard !isLoadingSong else {
+            MultiChannelLog.shared.log(.warning, "loadSong: already loading another song; skipping")
+            return
+        }
+        guard engine.isRunning else { throw MultiChannelEngineError.engineNotRunning }
+        isLoadingSong = true
+        defer { isLoadingSong = false }
+
+        if currentSong != nil { unloadSong() }
+
+        MultiChannelLog.shared.session("loadSong start")
+        let startTime = Date()
+        MultiChannelLog.shared.log(.info, "loadSong START source=\(sourceTag(source))")
+
+        // Resolve MIDI bytes (run Verovio if needed) and per-track program info.
+        let midiData: Data
+        let trackInfos: [TrackProgramSpec]
+        switch source {
+        case .midi(let bytes):
+            midiData = bytes
+            let raw = try MIDIProgramExtractor.extractPrograms(midi: bytes)
+            trackInfos = raw.map { TrackProgramSpec(program: $0 ?? 0, isPercussion: false) }
+        case .musicXML(let bytes):
+            let xml: String
+            if MIDISource.isLikelyMXLZip(bytes) {
+                do {
+                    xml = try MXLLoader.loadMusicXML(from: bytes)
+                } catch {
+                    throw MultiChannelEngineError.verovioRenderFailed(underlying: error)
+                }
+            } else {
+                guard let s = String(data: bytes, encoding: .utf8) else {
+                    throw MultiChannelEngineError.verovioRenderFailed(
+                        underlying: PipelineError.verovioRenderFailed(reason: "musicXML not utf8")
+                    )
+                }
+                xml = s
+            }
+            let bridge = VerovioBridge()
+            let rendered: RenderedMIDI
+            do {
+                rendered = try bridge.render(musicXML: xml)
+            } catch {
+                throw MultiChannelEngineError.verovioRenderFailed(underlying: error)
+            }
+            midiData = rendered.data
+            trackInfos = rendered.trackInfo.map {
+                TrackProgramSpec(program: $0.program ?? 0, isPercussion: $0.isPercussion)
+            }
+        }
+
+        // Validate track count against the song-slot capacity (samplers[1..15]).
+        guard trackInfos.count <= Self.maxSongTracks else {
+            throw MultiChannelEngineError.tooManyTracks(
+                found: trackInfos.count, max: Self.maxSongTracks
+            )
+        }
+
+        // Re-bank samplers[1..N] for this song's per-track programs.
+        for (idx, spec) in trackInfos.enumerated() {
+            let samplerIndex = idx + 1   // [0] is reserved for touch
+            do {
+                try loadProgram(
+                    into: samplerIndex,
+                    program: spec.program,
+                    isPercussion: spec.isPercussion
+                )
+                MultiChannelLog.shared.log(
+                    .info,
+                    "loadSong: sampler[\(samplerIndex)] preset=\(spec.program) percussion=\(spec.isPercussion) loaded OK"
+                )
+            } catch let e as MultiChannelEngineError {
+                // Continue loading remaining samplers; the song plays minus this voice.
+                MultiChannelLog.shared.log(
+                    .warning,
+                    "loadSong: sampler[\(samplerIndex)] preset=\(spec.program) FAILED: \(e.localizedDescription)"
+                )
+            }
+        }
+
+        // Construct or reuse the persistent sequencer.
+        let seq: AVAudioSequencer
+        if let existing = sequencer {
+            seq = existing
+        } else {
+            seq = AVAudioSequencer(audioEngine: engine)
+            sequencer = seq
+        }
+        do {
+            try seq.load(from: midiData, options: [])
+        } catch {
+            throw MultiChannelEngineError.sequencerLoadFailed(underlying: error)
+        }
+
+        // Bind tracks to samplers[1..N] via destinationAudioUnit
+        // (Apple's documented best-practice pattern; verified in iPhoneOS17.0.sdk
+        // AVMusicTrack.h that destinationAudioUnit and destinationMIDIEndpoint
+        // are mutually exclusive).
+        let trackBindCount = min(seq.tracks.count, trackInfos.count)
+        for i in 0..<trackBindCount {
+            seq.tracks[i].destinationAudioUnit = samplers[i + 1]
+        }
+
+        // Compute song duration as the max of per-track lengths.
+        let durationBeats = seq.tracks.map { $0.lengthInBeats }.max() ?? 0
+        let durationSec = seq.seconds(forBeats: durationBeats)
+
+        self.currentSong = SongHandle(
+            trackCount: trackInfos.count,
+            durationSeconds: durationSec,
+            programs: trackInfos.map { $0.program }
+        )
+
+        let elapsed = Date().timeIntervalSince(startTime)
+        MultiChannelLog.shared.log(
+            .info,
+            "loadSong DONE tracks=\(trackInfos.count) elapsed=\(String(format: "%.2f", elapsed))s"
+        )
     }
 
     /// Unload the current song. Stops the sequencer and resets position.
-    /// Samplers stay attached and warm for subsequent touch input or song load.
+    ///
+    /// Samplers stay attached and warm — re-banking happens on the next
+    /// `loadSong` call. Logs the previous song's programs for diagnostics.
     public func unloadSong() {
+        let prev = currentSong?.programs ?? []
         sequencer?.stop()
         sequencer?.currentPositionInBeats = 0
         currentSong = nil
-        MultiChannelLog.shared.log(.info, "unloadSong")
+        MultiChannelLog.shared.log(.info, "unloadSong: previous_programs=\(prev)")
+    }
+
+    // MARK: - Helpers
+
+    /// Compact description of a `MIDISource` for log messages.
+    private func sourceTag(_ s: MIDISource) -> String {
+        switch s {
+        case .midi(let d): return "midi(\(d.count)B)"
+        case .musicXML(let d): return "musicXML(\(d.count)B)"
+        }
+    }
+
+    /// Per-track program and percussion flag resolved during song load.
+    private struct TrackProgramSpec {
+        /// GM program number (0–127). Defaults to 0 (Acoustic Grand) if none found.
+        let program: UInt8
+        /// True when the track uses MIDI channel 9 (GM percussion convention).
+        let isPercussion: Bool
     }
 
     // MARK: - Transport

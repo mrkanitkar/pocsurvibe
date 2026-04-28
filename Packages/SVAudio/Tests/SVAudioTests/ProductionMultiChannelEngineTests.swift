@@ -71,4 +71,53 @@ struct ProductionMultiChannelEngineTests {
         m.setRate(1.0)
         #expect(m.rate == 1.0)
     }
+
+    @Test("loadSong with raw MIDI configures samplers and sequencer")
+    func loadSongMidi() async throws {
+        let m = try Self.makeOrGetEngine()
+        let smf = TestSMFFactory.buildSMF(programs: [0, 24])
+        try await m.loadSong(source: .midi(smf))
+
+        #expect(m.currentSong != nil)
+        #expect(m.currentSong?.trackCount == 2)
+        #expect(m.currentSong?.programs == [0, 24])
+    }
+
+    @Test("loadSong replaces a previously-loaded song")
+    func loadSongReplace() async throws {
+        let m = try Self.makeOrGetEngine()
+
+        let s1 = TestSMFFactory.buildSMF(programs: [0, 24])
+        try await m.loadSong(source: .midi(s1))
+        #expect(m.currentSong?.trackCount == 2)
+
+        let s2 = TestSMFFactory.buildSMF(programs: [27, 56, 65])
+        try await m.loadSong(source: .midi(s2))
+        #expect(m.currentSong?.trackCount == 3)
+        #expect(m.currentSong?.programs == [27, 56, 65])
+    }
+
+    @Test("loadSong throws tooManyTracks when source exceeds 15")
+    func loadSongTooMany() async throws {
+        let m = try Self.makeOrGetEngine()
+        let programs: [UInt8?] = Array(repeating: UInt8(0), count: 16).map(Optional.some)
+        let smf = TestSMFFactory.buildSMF(programs: programs)
+        do {
+            try await m.loadSong(source: .midi(smf))
+            Issue.record("expected throw")
+        } catch let MultiChannelEngineError.tooManyTracks(found, max) {
+            #expect(found == 16)
+            #expect(max == 15)
+        }
+    }
+
+    @Test("unloadSong clears state")
+    func unloadAfterLoad() async throws {
+        let m = try Self.makeOrGetEngine()
+        let smf = TestSMFFactory.buildSMF(programs: [0])
+        try await m.loadSong(source: .midi(smf))
+        #expect(m.currentSong != nil)
+        m.unloadSong()
+        #expect(m.currentSong == nil)
+    }
 }
