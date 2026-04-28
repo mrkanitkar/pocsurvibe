@@ -1,18 +1,22 @@
 import Foundation
+import os
 
 /// Adapter that exposes `MultiChannelEngineProtocol`'s touch surface
 /// through the legacy `SoundFontPlaying` interface.
 ///
-/// Used by `PlayAlongViewModel` / `PlaybackCoordinator` so that the
-/// existing manual scheduler (which fires `playNote / stopNote` per
-/// note timeline event) routes through `samplers[0]` (Acoustic Grand)
-/// of the new `ProductionMultiChannelEngine` instead of the legacy
-/// single `AVAudioUnitSampler`.
+/// Injected as the default `soundFont` in `PlayAlongViewModel.init`,
+/// then handed to `PlaybackCoordinator` as `any SoundFontPlaying`.
+/// `PlaybackCoordinator`'s manual scheduler fires `playNote / stopNote`
+/// per timeline event; this adapter forwards those calls to
+/// `samplers[0]` (Acoustic Grand) of the new
+/// `ProductionMultiChannelEngine` instead of the legacy single
+/// `AVAudioUnitSampler`.
 ///
-/// The adapter resolves `multiChannel` lazily on each call because
+/// `multiChannel` is resolved lazily on each call because
 /// `AudioEngineManager.shared.multiChannel` is constructed only after
 /// `startForPlayback()` runs. Calls before construction are no-ops
-/// (and logged as warnings).
+/// and emit a `.warning` log line via `MultiChannelLog.shared` so the
+/// pre-ready window is diagnosable in production.
 @MainActor
 public final class MultiChannelTouchSoundFont: SoundFontPlaying {
 
@@ -23,19 +27,44 @@ public final class MultiChannelTouchSoundFont: SoundFontPlaying {
     /// Acoustic Grand into samplers[0] at construction).
     public var isLoaded: Bool { multiChannel != nil }
 
+    /// Trigger a note on `samplers[0]`.
+    ///
     /// `channel` is accepted for protocol conformance but ignored —
     /// touch input always plays on channel 0 (the spec dedicates
-    /// `samplers[0]` to touch).
+    /// `samplers[0]` to touch input).
     public func playNote(midiNote: UInt8, velocity: UInt8, channel: UInt8) {
-        multiChannel?.playTouchNote(midiNote, velocity: velocity)
+        guard let mc = multiChannel else {
+            MultiChannelLog.shared.log(
+                .warning,
+                "MultiChannelTouchSoundFont.playNote: multiChannel not ready, ignored (midi=\(midiNote))"
+            )
+            return
+        }
+        mc.playTouchNote(midiNote, velocity: velocity)
     }
 
+    /// Stop a note on `samplers[0]`. `channel` is ignored — see `playNote`.
     public func stopNote(midiNote: UInt8, channel: UInt8) {
-        multiChannel?.stopTouchNote(midiNote)
+        guard let mc = multiChannel else {
+            MultiChannelLog.shared.log(
+                .warning,
+                "MultiChannelTouchSoundFont.stopNote: multiChannel not ready, ignored (midi=\(midiNote))"
+            )
+            return
+        }
+        mc.stopTouchNote(midiNote)
     }
 
+    /// Stop every active note on `samplers[0]`.
     public func stopAllNotes() {
-        multiChannel?.stopAllTouchNotes()
+        guard let mc = multiChannel else {
+            MultiChannelLog.shared.log(
+                .warning,
+                "MultiChannelTouchSoundFont.stopAllNotes: multiChannel not ready, ignored"
+            )
+            return
+        }
+        mc.stopAllTouchNotes()
     }
 
     public init() {}
