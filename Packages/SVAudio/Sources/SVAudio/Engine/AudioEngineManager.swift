@@ -21,7 +21,7 @@ nonisolated(unsafe) var samplerMIDIScheduleBlock: AUScheduleMIDIEventBlock?
 ///
 /// Node graph (per WWDC 2014/2019 best practice — single engine):
 /// - AVAudioInputNode (mic, tap at 44100 Hz)
-/// - AVAudioUnitSampler (SoundFont piano)
+/// - ProductionMultiChannelEngine subgraph (up to 16 AVAudioUnitSamplers via MuseScore_General)
 /// - AVAudioPlayerNode x2 (tanpura, metronome)
 /// - Main mixer with per-node volume
 ///
@@ -73,18 +73,14 @@ public final class AudioEngineManager: AudioEngineProviding {
     /// The single AVAudioEngine instance.
     public let engine = AVAudioEngine()
 
-    /// Sampler node for SoundFont instrument playback.
-    public let sampler = AVAudioUnitSampler()
-
     /// Production multi-channel audio engine. Lazily constructed on the first
-    /// `startForPlayback()` call after `engine.start()` succeeds (samplers
-    /// must attach to a started engine).
+    /// `startForPlayback()` call after `engine.start()` succeeds.
     ///
-    /// Lives for the app process lifetime — there is no teardown path. Callers
-    /// from Play-Along, Song Playback, Practice listen-first, Interactive
-    /// Piano, and Isomorphic Sargam migrate to this surface in Phase 2 of
-    /// the production multi-channel migration. The legacy `.sampler` property
-    /// is retained alongside until Phase 3 deletes it.
+    /// Lives for the app process lifetime — there is no teardown path. The
+    /// only audio destination for SF2 playback in this codebase. All five
+    /// production audio surfaces (Play-Along, Song Playback, Practice
+    /// listen-first, Interactive Piano, Isomorphic Sargam) plus USB MIDI
+    /// keyboard input route through here.
     public private(set) var multiChannel: ProductionMultiChannelEngine?
 
     /// Player node for tanpura drone.
@@ -133,7 +129,6 @@ public final class AudioEngineManager: AudioEngineProviding {
 
     private init() {
         // Attach nodes only — defer connections to start() after session is configured
-        engine.attach(sampler)
         engine.attach(tanpuraNode)
         engine.attach(metronomeNode)
     }
@@ -146,7 +141,6 @@ public final class AudioEngineManager: AudioEngineProviding {
         let mainMixer = engine.mainMixerNode
         let format = mainMixer.outputFormat(forBus: 0)
 
-        engine.connect(sampler, to: mainMixer, format: format)
         engine.connect(tanpuraNode, to: mainMixer, format: format)
         engine.connect(metronomeNode, to: mainMixer, format: format)
         isConfigured = true
@@ -158,12 +152,10 @@ public final class AudioEngineManager: AudioEngineProviding {
     /// headphones plugged in) so nodes use the newly negotiated format.
     private func reconnectNodes() {
         let mainMixer = engine.mainMixerNode
-        engine.disconnectNodeOutput(sampler)
         engine.disconnectNodeOutput(tanpuraNode)
         engine.disconnectNodeOutput(metronomeNode)
 
         let format = mainMixer.outputFormat(forBus: 0)
-        engine.connect(sampler, to: mainMixer, format: format)
         engine.connect(tanpuraNode, to: mainMixer, format: format)
         engine.connect(metronomeNode, to: mainMixer, format: format)
 
@@ -329,10 +321,9 @@ public final class AudioEngineManager: AudioEngineProviding {
         try engine.start()
         currentMode = .playAndRecord
 
-        // Capture the sampler's MIDI schedule block after prepare(). It is
-        // nil before the AU is initialized; now that engine.prepare()
-        // has run and start() succeeded, the AU is ready.
-        samplerMIDIBlock = sampler.auAudioUnit.scheduleMIDIEventBlock
+        // USB MIDI input direct-wires through the touch sampler (samplers[0])
+        // for sub-6 ms audible echo. Phase 3 retired the legacy .sampler.
+        samplerMIDIBlock = multiChannel?.samplers[0].auAudioUnit.scheduleMIDIEventBlock
 
         Self.logger.info("Engine started in playAndRecord mode, isRunning=\(self.engine.isRunning)")
     }
@@ -377,8 +368,8 @@ public final class AudioEngineManager: AudioEngineProviding {
         // Lazily construct the production multi-channel engine on first start.
         // Runs after engine.start() and currentMode set so the engine is fully
         // configured before attaching the multiChannel graph. Failure here is
-        // non-fatal — the legacy .sampler path still works during the Phase 2
-        // migration window. Phase 3 removes the legacy path.
+        // non-fatal — samplerMIDIBlock is set to nil via optional-chaining so
+        // USB MIDI is silenced rather than crashing when construction fails.
         if multiChannel == nil {
             do {
                 self.multiChannel = try ProductionMultiChannelEngine(engine: engine)
@@ -390,9 +381,9 @@ public final class AudioEngineManager: AudioEngineProviding {
             }
         }
 
-        // Capture the sampler's MIDI schedule block for direct-wire echo
-        // from CoreMIDI (see start() for details).
-        samplerMIDIBlock = sampler.auAudioUnit.scheduleMIDIEventBlock
+        // USB MIDI input direct-wires through the touch sampler (samplers[0])
+        // for sub-6 ms audible echo. Phase 3 retired the legacy .sampler.
+        samplerMIDIBlock = multiChannel?.samplers[0].auAudioUnit.scheduleMIDIEventBlock
 
         Self.logger.info("Engine started in playbackOnly mode, isRunning=\(self.engine.isRunning)")
     }
@@ -511,9 +502,9 @@ public final class AudioEngineManager: AudioEngineProviding {
         micTapBufferSize = nil
     }
 
-    /// Set volume for the sampler node (0.0 to 1.0).
+    /// Set volume for the touch sampler (samplers[0]) node (0.0 to 1.0).
     public func setSamplerVolume(_ volume: Float) {
-        sampler.volume = volume
+        multiChannel?.samplers[0].volume = volume
     }
 
     /// Set volume for the tanpura node (0.0 to 1.0).

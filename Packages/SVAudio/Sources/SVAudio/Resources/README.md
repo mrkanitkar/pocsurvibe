@@ -8,8 +8,7 @@ bundle. Files in this directory are exposed to runtime code via
 
 | File | Bundled in git | Purpose |
 |------|----------------|---------|
-| `UprightPianoKW.sf2` (~9 MB) | Yes | Legacy single-instrument bank. Scheduled for deletion in Phase 3 of the production multi-channel migration. |
-| `MuseScore_General.sf2` (~206 MB) | **No — gitignored, must be placed manually** | Production default General-MIDI bank. Used by `ProductionMultiChannelEngine` for all song-driven playback paths. |
+| `MuseScore_General.sf2` (~206 MB) | **No — gitignored, must be placed manually** | Production General-MIDI bank. Used by `ProductionMultiChannelEngine` for all SF2 playback paths. |
 
 ## Placing `MuseScore_General.sf2`
 

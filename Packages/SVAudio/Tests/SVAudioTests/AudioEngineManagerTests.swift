@@ -18,17 +18,15 @@ struct AudioEngineManagerTests {
         #expect(AudioEngineManager.shared.bufferSize == 1024)
     }
 
-    @Test("All three playback nodes are attached")
+    @Test("Both playback nodes are attached and distinct")
     @MainActor
     func nodesAttached() {
         let manager = AudioEngineManager.shared
-        // Verify nodes are non-nil and of the correct types
-        let sampler: AVAudioUnitSampler = manager.sampler
+        // Verify player nodes are non-nil and of the correct types
         let tanpura: AVAudioPlayerNode = manager.tanpuraNode
         let metronome: AVAudioPlayerNode = manager.metronomeNode
         // Nodes should be distinct instances
         #expect(tanpura !== metronome)
-        _ = sampler  // suppress unused warning
     }
 
     @Test("Engine exposes the AVAudioEngine instance")
@@ -42,11 +40,10 @@ struct AudioEngineManagerTests {
     @MainActor
     func volumeSettersAcceptBoundaries() {
         let manager = AudioEngineManager.shared
-        // 0.0 and 1.0 are the standard range boundaries
+        // setSamplerVolume routes to multiChannel?.samplers[0]; multiChannel is nil
+        // until the engine starts, so these are no-ops that must not crash.
         manager.setSamplerVolume(0.0)
-        #expect(manager.sampler.volume == 0.0)
         manager.setSamplerVolume(1.0)
-        #expect(manager.sampler.volume == 1.0)
 
         manager.setTanpuraVolume(0.5)
         #expect(manager.tanpuraNode.volume == 0.5)

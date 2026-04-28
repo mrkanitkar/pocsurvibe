@@ -2,7 +2,7 @@ import Foundation
 
 /// Synthesises MIDI data from a parsed notation.
 ///
-/// Uses `SoundFontManager` via the `SVAudio` package to render notes.
+/// Renders notes via SVAudio's production audio engine.
 /// Returns raw MIDI binary data suitable for storage in `Song.midiData`.
 public protocol ImportMIDISynthesisProtocol: Sendable {
 

@@ -5,20 +5,10 @@ import SVAudio
 /// Integration tests verifying Sprint 0 demo scenarios.
 ///
 /// Uses `.serialized` to prevent parallel tests from polluting shared
-/// singleton state (AnalyticsManager, SoundFontManager, etc.).
+/// singleton state (AnalyticsManager, etc.).
 @Suite("Sprint 0 Integration Tests", .serialized)
 @MainActor
 struct IntegrationTests {
-
-    // MARK: - D2: SoundFont play (stub verification)
-
-    @Test("SoundFontManager singleton initializes")
-    @MainActor func testSoundFontManagerInit() {
-        let manager = SoundFontManager.shared
-        // Singleton is accessible — isLoaded may be true if another test
-        // triggered loading, so we just verify the singleton exists.
-        #expect(manager === SoundFontManager.shared, "shared should return same instance")
-    }
 
     // MARK: - D3: Pitch detection pipeline (protocol verification)
 
@@ -46,7 +36,6 @@ struct IntegrationTests {
         #expect(manager.bufferSize == 1024)
         // Access nodes to verify they exist (all non-optional)
         _ = manager.engine
-        _ = manager.sampler
         _ = manager.tanpuraNode
         _ = manager.metronomeNode
     }
