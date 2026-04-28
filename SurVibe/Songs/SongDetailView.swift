@@ -1,3 +1,4 @@
+import SVAudio
 import SVCore
 import SwiftUI
 
@@ -65,6 +66,7 @@ struct SongDetailView: View {
 
                 // Play Along button
                 Button {
+                    MultiChannelLog.shared.log(.info, "==> SongDetailView: Play-Along button tapped, presenting cover")
                     showPlayAlong = true
                 } label: {
                     Label("Play Along", systemImage: "play.fill")
@@ -100,6 +102,7 @@ struct SongDetailView: View {
             )
         }
         .fullScreenCover(isPresented: $showPlayAlong) {
+            let _ = MultiChannelLog.shared.log(.info, "==> SongDetailView: fullScreenCover content closure invoked")
             NavigationStack {
                 PlayAlongSceneHost(song: song)
             }

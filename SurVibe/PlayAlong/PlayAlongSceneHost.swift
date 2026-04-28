@@ -33,8 +33,11 @@ struct PlayAlongSceneHost: View {
     ///
     /// - Parameter song: The song to play along with.
     init(song: Song) {
+        MultiChannelLog.shared.log(.info, ">>> PlayAlongSceneHost.init song=\(song.title)")
         self.song = song
+        MultiChannelLog.shared.log(.info, "... PlayAlongSceneHost.init: about to construct PlayAlongViewModel()")
         _vm = State(initialValue: PlayAlongViewModel())
+        MultiChannelLog.shared.log(.info, "<<< PlayAlongSceneHost.init DONE")
     }
 
     // MARK: - Body

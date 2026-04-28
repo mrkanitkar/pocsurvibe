@@ -275,21 +275,35 @@ final class PlayAlongViewModel {
         clock: (any ClockProviding)? = nil,
         midiInput: (any MIDIInputProviding)? = nil
     ) {
+        MultiChannelLog.shared.log(.info, ">>> PlayAlongViewModel.init")
         let scoring = ScoringCoordinator()
         self.scoring = scoring
+        MultiChannelLog.shared.log(.info, "... PlayAlongViewModel.init: scoring constructed; about to resolve dependencies")
+        let resolvedSoundFont = soundFont ?? MultiChannelTouchSoundFont()
+        MultiChannelLog.shared.log(.info, "... PlayAlongViewModel.init: soundFont resolved")
+        let resolvedEngine: any AudioEngineProviding = audioEngine ?? AudioEngineManager.shared
+        MultiChannelLog.shared.log(.info, "... PlayAlongViewModel.init: audioEngine resolved")
+        let resolvedMetronome = metronome ?? MetronomePlayer.shared
+        MultiChannelLog.shared.log(.info, "... PlayAlongViewModel.init: metronome resolved")
+        let resolvedClock = clock ?? RealClock()
+        MultiChannelLog.shared.log(.info, "... PlayAlongViewModel.init: clock resolved")
+        let resolvedMIDI = midiInput ?? MIDIInputManager.shared
+        MultiChannelLog.shared.log(.info, "... PlayAlongViewModel.init: midiInput resolved")
         self.playback = PlaybackCoordinator(
-            soundFont: soundFont ?? MultiChannelTouchSoundFont(),
-            audioEngine: audioEngine ?? AudioEngineManager.shared,
-            metronome: metronome ?? MetronomePlayer.shared,
-            clock: clock ?? RealClock(),
+            soundFont: resolvedSoundFont,
+            audioEngine: resolvedEngine,
+            metronome: resolvedMetronome,
+            clock: resolvedClock,
             scoring: scoring,
             analytics: nil  // nil-sentinel — uses AnalyticsManager.shared at call time
         )
+        MultiChannelLog.shared.log(.info, "... PlayAlongViewModel.init: PlaybackCoordinator constructed")
         self.noteRouter = NoteRouter(
-            midiInput: midiInput ?? MIDIInputManager.shared,
+            midiInput: resolvedMIDI,
             scoring: scoring,
             playback: playback
         )
+        MultiChannelLog.shared.log(.info, "<<< PlayAlongViewModel.init DONE")
     }
 
     // MARK: - Public Methods — lifecycle

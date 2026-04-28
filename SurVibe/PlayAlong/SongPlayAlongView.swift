@@ -231,6 +231,7 @@ struct SongPlayAlongView: View {
             MicPermissionPrePrompt(onContinue: {})
         }
         .task {
+            MultiChannelLog.shared.log(.info, ">>> SongPlayAlongView.task song=\(song.title)")
             viewModel.modelContext = modelContext
             // Derive view mode and notation from the active theme preset
             viewModel.viewMode = themeManager.currentPreset.viewMode
@@ -250,6 +251,7 @@ struct SongPlayAlongView: View {
             tanpura.setSoundEnabled(viewModel.isSoundEnabled)
             hasStoredOverride = (progress?.preferredSaHz != nil)
             didInitialSeed = true
+            MultiChannelLog.shared.log(.info, "... SongPlayAlongView.task: about to await viewModel.loadSong")
             await viewModel.loadSong(song)
         }
         .onChange(of: themeManager.currentPreset) { _, newPreset in
