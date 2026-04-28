@@ -221,41 +221,7 @@ public final class ProductionMultiChannelEngine: MultiChannelEngineProtocol {
         MultiChannelLog.shared.log(.info, "loadSong START source=\(sourceTag(source))")
 
         // Resolve MIDI bytes (run Verovio if needed) and per-track program info.
-        let midiData: Data
-        let trackInfos: [TrackProgramSpec]
-        switch source {
-        case .midi(let bytes):
-            midiData = bytes
-            let raw = try MIDIProgramExtractor.extractPrograms(midi: bytes)
-            trackInfos = raw.map { TrackProgramSpec(program: $0 ?? 0, isPercussion: false) }
-        case .musicXML(let bytes):
-            let xml: String
-            if MIDISource.isLikelyMXLZip(bytes) {
-                do {
-                    xml = try MXLLoader.loadMusicXML(from: bytes)
-                } catch {
-                    throw MultiChannelEngineError.verovioRenderFailed(underlying: error)
-                }
-            } else {
-                guard let s = String(data: bytes, encoding: .utf8) else {
-                    throw MultiChannelEngineError.verovioRenderFailed(
-                        underlying: PipelineError.verovioRenderFailed(reason: "musicXML not utf8")
-                    )
-                }
-                xml = s
-            }
-            let bridge = VerovioBridge()
-            let rendered: RenderedMIDI
-            do {
-                rendered = try bridge.render(musicXML: xml)
-            } catch {
-                throw MultiChannelEngineError.verovioRenderFailed(underlying: error)
-            }
-            midiData = rendered.data
-            trackInfos = rendered.trackInfo.map {
-                TrackProgramSpec(program: $0.program ?? 0, isPercussion: $0.isPercussion)
-            }
-        }
+        let (midiData, trackInfos) = try resolveSource(source)
 
         // Validate track count against the song-slot capacity (samplers[1..15]).
         guard trackInfos.count <= Self.maxSongTracks else {
@@ -294,6 +260,7 @@ public final class ProductionMultiChannelEngine: MultiChannelEngineProtocol {
             seq = AVAudioSequencer(audioEngine: engine)
             sequencer = seq
         }
+        seq.stop()
         do {
             try seq.load(from: midiData, options: [])
         } catch {
@@ -305,6 +272,12 @@ public final class ProductionMultiChannelEngine: MultiChannelEngineProtocol {
         // AVMusicTrack.h that destinationAudioUnit and destinationMIDIEndpoint
         // are mutually exclusive).
         let trackBindCount = min(seq.tracks.count, trackInfos.count)
+        if seq.tracks.count != trackInfos.count {
+            MultiChannelLog.shared.log(
+                .warning,
+                "loadSong: seq.tracks.count=\(seq.tracks.count) != trackInfos.count=\(trackInfos.count); routing \(trackBindCount) tracks"
+            )
+        }
         for i in 0..<trackBindCount {
             seq.tracks[i].destinationAudioUnit = samplers[i + 1]
         }
@@ -424,6 +397,59 @@ public final class ProductionMultiChannelEngine: MultiChannelEngineProtocol {
     }
 
     // MARK: - Private
+
+    /// Resolve a `MIDISource` into raw MIDI bytes and per-track program info.
+    ///
+    /// For `.midi` sources, extracts GM program numbers via
+    /// `MIDIProgramExtractor`. For `.musicXML`, unwraps optional MXL ZIP
+    /// containers and renders through `VerovioBridge`.
+    ///
+    /// - Parameter source: The audio data source to resolve.
+    /// - Returns: A tuple of the raw MIDI `Data` and an array of
+    ///   `TrackProgramSpec` values (one per MIDI track).
+    /// - Throws: `MultiChannelEngineError.sequencerLoadFailed` on malformed
+    ///   MIDI bytes; `MultiChannelEngineError.verovioRenderFailed` on
+    ///   MusicXML render errors.
+    private func resolveSource(_ source: MIDISource) throws -> (Data, [TrackProgramSpec]) {
+        switch source {
+        case .midi(let bytes):
+            let raw: [UInt8?]
+            do {
+                raw = try MIDIProgramExtractor.extractPrograms(midi: bytes)
+            } catch {
+                throw MultiChannelEngineError.sequencerLoadFailed(underlying: error)
+            }
+            let infos = raw.map { TrackProgramSpec(program: $0 ?? 0, isPercussion: false) }
+            return (bytes, infos)
+        case .musicXML(let bytes):
+            let xml: String
+            if MIDISource.isLikelyMXLZip(bytes) {
+                do {
+                    xml = try MXLLoader.loadMusicXML(from: bytes)
+                } catch {
+                    throw MultiChannelEngineError.verovioRenderFailed(underlying: error)
+                }
+            } else {
+                guard let s = String(data: bytes, encoding: .utf8) else {
+                    throw MultiChannelEngineError.verovioRenderFailed(
+                        underlying: PipelineError.verovioRenderFailed(reason: "musicXML not utf8")
+                    )
+                }
+                xml = s
+            }
+            let bridge = VerovioBridge()
+            let rendered: RenderedMIDI
+            do {
+                rendered = try bridge.render(musicXML: xml)
+            } catch {
+                throw MultiChannelEngineError.verovioRenderFailed(underlying: error)
+            }
+            let infos = rendered.trackInfo.map {
+                TrackProgramSpec(program: $0.program ?? 0, isPercussion: $0.isPercussion)
+            }
+            return (rendered.data, infos)
+        }
+    }
 
     /// Load `program` into `samplers[index]` from the bundled
     /// `MuseScore_General.sf2`.

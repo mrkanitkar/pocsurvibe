@@ -100,14 +100,15 @@ struct ProductionMultiChannelEngineTests {
     @Test("loadSong throws tooManyTracks when source exceeds 15")
     func loadSongTooMany() async throws {
         let m = try Self.makeOrGetEngine()
-        let programs: [UInt8?] = Array(repeating: UInt8(0), count: 16).map(Optional.some)
-        let smf = TestSMFFactory.buildSMF(programs: programs)
+        let smf = TestSMFFactory.buildSMF(programs: [UInt8?](repeating: 0, count: 16))
         do {
             try await m.loadSong(source: .midi(smf))
             Issue.record("expected throw")
         } catch let MultiChannelEngineError.tooManyTracks(found, max) {
             #expect(found == 16)
             #expect(max == 15)
+        } catch {
+            Issue.record("unexpected error: \(error)")
         }
     }
 
@@ -119,5 +120,7 @@ struct ProductionMultiChannelEngineTests {
         #expect(m.currentSong != nil)
         m.unloadSong()
         #expect(m.currentSong == nil)
+        #expect(!m.isPlaying)
+        #expect(m.currentPositionInSeconds == 0)
     }
 }
