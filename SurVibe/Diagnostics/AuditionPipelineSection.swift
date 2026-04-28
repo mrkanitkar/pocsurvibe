@@ -147,23 +147,31 @@ struct AuditionPipelineSection: View {
         // row's tap gesture — tapping any one fires ALL of them. Confirmed
         // by pipeline_log.txt 2026-04-27: every Play tap was followed by
         // pause+stop within the same millisecond.
+        // QA finding 2026-04-28: tapping Stop/Play during a bounce
+        // contaminated the m4a (5–6 s of music + silence + restart artifacts).
+        // The bouncer is independent of the sequencer, so transport taps
+        // mid-bounce keep capturing whatever (or no) audio comes out. Lock
+        // out transport while bouncing so the user can't accidentally
+        // sabotage their own capture.
         HStack(spacing: 16) {
             Button {
                 do { try engine?.play() } catch { loadError = error.localizedDescription }
             } label: { Label("Play", systemImage: "play.fill") }
                 .buttonStyle(.borderless)
                 .accessibilityLabel("Play pipeline")
-                .disabled(engine == nil)
+                .disabled(engine == nil || isBouncing)
             Button {
                 engine?.pause()
             } label: { Label("Pause", systemImage: "pause.fill") }
                 .buttonStyle(.borderless)
                 .accessibilityLabel("Pause pipeline")
+                .disabled(engine == nil || isBouncing)
             Button {
                 engine?.stop()
             } label: { Label("Stop", systemImage: "stop.fill") }
                 .buttonStyle(.borderless)
                 .accessibilityLabel("Stop pipeline and reset")
+                .disabled(engine == nil || isBouncing)
         }
     }
 
