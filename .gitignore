@@ -89,3 +89,7 @@ iOSInjectionProject/
 # (>100 MB GitHub limit). Engineers re-download into AuditionAssets/
 # per docs/superpowers/specs/2026-04-25-audition-song-playback-design.md
 SurVibe/Diagnostics/AuditionAssets/*.sf2
+
+# Production multi-channel SF2 — too large for git; placed manually per
+# Packages/SVAudio/Sources/SVAudio/Resources/README.md
+Packages/SVAudio/Sources/SVAudio/Resources/MuseScore_General.sf2
