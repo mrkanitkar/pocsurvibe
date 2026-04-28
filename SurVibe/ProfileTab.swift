@@ -55,6 +55,7 @@ struct ProfileTab: View {
                 authSection
                 settingsSection
                 appearanceSection
+                aboutSection
                 #if DEBUG
                     audioDiagnosticsSection
                 #endif
@@ -73,6 +74,8 @@ struct ProfileTab: View {
                     if let am = gamificationService?.achievementManager {
                         AchievementGalleryView(achievementManager: am)
                     }
+                } else if destination == "acknowledgements" {
+                    AcknowledgementsView()
                 }
                 #if DEBUG
                     if destination == "sfAudition" {
@@ -364,6 +367,21 @@ struct ProfileTab: View {
         }
     }
 
+    // MARK: - About Section
+
+    /// About section -- exposes Acknowledgements (third-party attribution).
+    private var aboutSection: some View {
+        Section(header: Text("About")) {
+            NavigationLink(value: "acknowledgements") {
+                Label("Acknowledgements", systemImage: "doc.text")
+            }
+            .hoverEffect(.automatic)
+            .accessibilityLabel(Text("Acknowledgements"))
+            .accessibilityHint(Text("Third-party software and SoundFont attribution. Double tap to open."))
+            .modifier(profileRowNav(for: .acknowledgements) { .ignored })
+        }
+    }
+
     // MARK: - Debug Section
 
     #if DEBUG
@@ -455,14 +473,15 @@ struct ProfileTab: View {
 
 // MARK: - ProfileRowID
 
-/// Stable identity for the 5 ProfileTab NavigationLink/Button rows with hoverEffect.
-/// Order matches the on-screen vertical list order (Settings section first, then Appearance).
+/// Stable identity for the ProfileTab NavigationLink/Button rows with hoverEffect.
+/// Order matches the on-screen vertical list order (Settings section first, then Appearance, then About).
 enum ProfileRowID: String, Hashable, CaseIterable {
     case appLanguage
     case midiDevice
     case redoOnboarding
     case theme
     case display
+    case acknowledgements
 }
 
 // MARK: - ProfileRowNavModifier
