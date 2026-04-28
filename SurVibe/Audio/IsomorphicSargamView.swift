@@ -15,7 +15,7 @@ import Tonic
 /// - Equal-sized keys in chromatic order (C2–C7)
 /// - Spectral coloring by swar with komal/tivra darkening
 /// - Devanagari labels on all keys
-/// - Touch-to-play via SoundFontManager
+/// - Touch-to-play routed through `AudioEngineManager.shared.multiChannel`
 /// - Pitch detection dual highlighting (blue=detected, green=touched, cyan=both)
 /// - Optional raga filtering (future: show only notes in selected raga)
 struct IsomorphicSargamView: View {
@@ -170,23 +170,25 @@ struct IsomorphicSargamView: View {
     private func handleNoteOn(_ pitch: Pitch, _ point: CGPoint) {
         let midi = UInt8(clamping: Int(pitch.midiNoteNumber))
         touchedMidiNotes.insert(Int(midi))
-        SoundFontManager.shared.playNote(midiNote: midi, velocity: 100)
+        AudioEngineManager.shared.multiChannel?.playTouchNote(midi, velocity: 100)
     }
 
     /// Handle noteOff from AudioKit Keyboard.
     private func handleNoteOff(_ pitch: Pitch) {
         let midi = UInt8(clamping: Int(pitch.midiNoteNumber))
         touchedMidiNotes.remove(Int(midi))
-        SoundFontManager.shared.stopNote(midiNote: midi)
+        AudioEngineManager.shared.multiChannel?.stopTouchNote(midi)
     }
 
     // MARK: - SoundFont Loading
 
-    /// Eagerly load the bundled piano SoundFont on first appearance.
+    /// Ensure the audio engine is running so touch input has a destination.
+    /// Lazy-constructs `AudioEngineManager.shared.multiChannel` which preloads
+    /// Acoustic Grand into `samplers[0]` for touch playback.
     private func loadSoundFontIfNeeded() async {
         guard !isSoundFontLoaded else { return }
         do {
-            try await SoundFontManager.shared.loadBundledPiano()
+            try AudioEngineManager.shared.startForPlayback()
             isSoundFontLoaded = true
         } catch {
             isSoundFontLoaded = false

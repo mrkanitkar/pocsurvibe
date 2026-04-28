@@ -8,7 +8,7 @@ import Tonic
 ///
 /// Wraps AudioKit Keyboard's `Keyboard` SwiftUI view with SurVibe-specific features:
 /// - Devanagari labels and Western note names on each key
-/// - SoundFont playback via SoundFontManager on touch
+/// - Touch playback routed through `AudioEngineManager.shared.multiChannel`
 /// - Pitch detection highlighting (blue) from external `activeMidiNotes`
 /// - Touch highlighting (green) from direct finger contact
 /// - Dual highlighting (cyan) when both sources activate the same key
@@ -429,7 +429,7 @@ struct InteractivePianoView: View {
     private func handleNoteOn(_ pitch: Pitch, _ point: CGPoint) {
         let midi = UInt8(clamping: Int(pitch.midiNoteNumber))
         touchedMidiNotes.insert(Int(midi))
-        SoundFontManager.shared.playNote(midiNote: midi, velocity: 100)
+        AudioEngineManager.shared.multiChannel?.playTouchNote(midi, velocity: 100)
         onNoteOn?(Int(midi))
     }
 
@@ -437,14 +437,14 @@ struct InteractivePianoView: View {
     private func handleNoteOff(_ pitch: Pitch) {
         let midi = UInt8(clamping: Int(pitch.midiNoteNumber))
         touchedMidiNotes.remove(Int(midi))
-        SoundFontManager.shared.stopNote(midiNote: midi)
+        AudioEngineManager.shared.multiChannel?.stopTouchNote(midi)
         onNoteOff?(Int(midi))
     }
 
     /// Clear all latched notes, stopping their audio.
     func clearAllLatched() {
         for midi in touchedMidiNotes {
-            SoundFontManager.shared.stopNote(midiNote: UInt8(clamping: midi))
+            AudioEngineManager.shared.multiChannel?.stopTouchNote(UInt8(clamping: midi))
         }
         touchedMidiNotes.removeAll()
     }
@@ -497,14 +497,16 @@ struct InteractivePianoView: View {
 
     // MARK: - SoundFont Loading
 
-    /// Eagerly load the bundled piano SoundFont on first appearance.
+    /// Ensure the audio engine is running so touch input has a destination.
+    /// Lazy-constructs `AudioEngineManager.shared.multiChannel` which preloads
+    /// Acoustic Grand into `samplers[0]` for touch playback.
     private func loadSoundFontIfNeeded() async {
         guard !isSoundFontLoaded else { return }
         do {
-            try await SoundFontManager.shared.loadBundledPiano()
+            try AudioEngineManager.shared.startForPlayback()
             isSoundFontLoaded = true
         } catch {
-            // Non-fatal: keyboard touch will still work, just no sound
+            // Non-fatal: keyboard touch will still work silently if engine fails
             isSoundFontLoaded = false
         }
     }
