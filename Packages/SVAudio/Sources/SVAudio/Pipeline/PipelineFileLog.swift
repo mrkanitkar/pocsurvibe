@@ -17,7 +17,7 @@ public final class PipelineFileLog: @unchecked Sendable {
 
     public static let shared = PipelineFileLog()
 
-    /// On-disk URL of the log file. Truncated at every `start()`.
+    /// On-disk URL of the log file.
     public let url: URL
 
     private let queue = DispatchQueue(label: "com.survibe.PipelineFileLog")
@@ -33,18 +33,35 @@ public final class PipelineFileLog: @unchecked Sendable {
         self.isoFormatter = formatter
     }
 
-    /// Truncate the log file and prepare it for fresh writes.
-    /// Call once per pipeline session (e.g. when the user toggles the
-    /// "Use multi-channel pipeline" switch ON).
-    public func start() {
+    /// Open (or re-open) the log file for writes. When `truncate == true`
+    /// the file is recreated empty; when `false` writes append to whatever
+    /// is already on disk. The file handle is positioned at end-of-file
+    /// after this call so the next `log(_:)` writes a fresh trailing line
+    /// rather than overwriting existing content.
+    ///
+    /// Use `truncate: true` for a hard reset (e.g. cold app launch). Use
+    /// `truncate: false` to mark the start of a new session within the
+    /// same on-disk file so multiple song-cycles in one app run all land
+    /// in one log.
+    ///
+    /// - Parameter truncate: When `true`, recreate the file. Default `true`
+    ///   for backwards compatibility with existing call sites.
+    public func start(truncate: Bool = true) {
         queue.sync {
             handle?.closeFile()
-            FileManager.default.createFile(atPath: url.path, contents: nil)
+            if truncate || !FileManager.default.fileExists(atPath: url.path) {
+                FileManager.default.createFile(atPath: url.path, contents: nil)
+            }
             handle = try? FileHandle(forWritingTo: url)
-            let header = "=== pipeline_log started \(isoFormatter.string(from: Date())) ===\n"
+            if !truncate {
+                try? handle?.seekToEnd()
+            }
+            let kind = truncate ? "started" : "session"
+            let header = "=== pipeline_log \(kind) \(isoFormatter.string(from: Date())) ===\n"
             handle?.write(Data(header.utf8))
         }
-        osLogger.info("PipelineFileLog: started → \(self.url.path, privacy: .public)")
+        let kind = truncate ? "started" : "session"
+        osLogger.info("PipelineFileLog: \(kind, privacy: .public) → \(self.url.path, privacy: .public)")
     }
 
     /// Append one line. Adds an ISO8601 timestamp prefix and a newline.

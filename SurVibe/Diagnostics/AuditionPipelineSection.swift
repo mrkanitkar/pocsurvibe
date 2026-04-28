@@ -180,8 +180,10 @@ struct AuditionPipelineSection: View {
         // Tear down any previous song before loading the new one.
         await unloadCurrentSong()
 
-        // Truncate-and-restart the file log so each song-cycle is self-contained.
-        PipelineFileLog.shared.start()
+        // Append a session marker (don't truncate) so multiple song-cycles
+        // in one app run all land in the same log — needed to diagnose
+        // mid-playback song-switch behavior.
+        PipelineFileLog.shared.start(truncate: false)
         let startTime = Date()
         PipelineFileLog.shared.log(
             "=== loadSong START id=\(song.id) activeSlot=\(activeSlot.rawValue) ==="
