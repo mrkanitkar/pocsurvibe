@@ -38,7 +38,6 @@ let package = Package(
                 .product(name: "VerovioToolkit", package: "verovio"),
                 .product(name: "ZIPFoundation", package: "ZIPFoundation"),
                 "ObjCExceptionCatcher",
-                "FluidSynth",
             ],
             resources: [.process("Resources")]
         ),
@@ -48,10 +47,6 @@ let package = Package(
                 "SVAudio",
                 .product(name: "ZIPFoundation", package: "ZIPFoundation"),
             ]
-        ),
-        .binaryTarget(
-            name: "FluidSynth",
-            path: "../../Frameworks/FluidSynth.xcframework"
         ),
     ]
 )

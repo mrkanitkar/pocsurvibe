@@ -10,8 +10,8 @@ private let sectionLogger = Logger(
 )
 
 /// DEBUG-only section embedded inside `SoundFontAuditionView`.
-/// Owns the multi-channel pipeline lifecycle (graph + bouncer) and
-/// renders the toggle, status, tempo slider, transport, and bounce UI.
+/// Owns the multi-channel pipeline lifecycle (graph + bouncer) and renders
+/// the toggle, status, tempo slider, transport, and bounce UI.
 @MainActor
 struct AuditionPipelineSection: View {
 
@@ -23,8 +23,7 @@ struct AuditionPipelineSection: View {
     let activeSlot: SoundFontAuditionView.Slot
 
     @State private var pipelineEnabled = false
-    @State private var engine: AuditionEngine?
-    @State private var selectedEngine: EngineKind = .apple
+    @State private var graph: MultiTrackSamplerGraph?
     @State private var rendered: RenderedMIDI?
     @State private var statusText: String = ""
     @State private var loadError: String?
@@ -67,18 +66,7 @@ struct AuditionPipelineSection: View {
                     .foregroundStyle(.red)
                     .accessibilityLabel("Pipeline error: \(loadError)")
             }
-            if pipelineEnabled, engine != nil {
-                Picker("Engine", selection: $selectedEngine) {
-                    ForEach(EngineKind.allCases) { kind in
-                        Text(kind.displayName).tag(kind)
-                    }
-                }
-                .pickerStyle(.segmented)
-                .accessibilityLabel("Audition synth engine")
-                .disabled(isBouncing)
-                .onChange(of: selectedEngine) { _, newKind in
-                    Task { await switchEngine(to: newKind) }
-                }
+            if pipelineEnabled, graph != nil {
                 tempoControl
                 transportControls
                 bounceControls
@@ -100,7 +88,7 @@ struct AuditionPipelineSection: View {
         // implementation called `disablePipeline()` here per Fix I4 (cleanup
         // on navigate-away), but that caused the engine to be torn down
         // every time the user scrolled up to the top "Active" selector, so
-        // taps on that selector then bailed with `engine=nil`.
+        // taps on that selector then bailed with `graph=nil`.
         //
         // Trade-off accepted: do NOT tear down the engine here. Samplers
         // stay attached to the shared `AVAudioEngine` until the user
@@ -137,7 +125,7 @@ struct AuditionPipelineSection: View {
             }
             .accessibilityLabel("Pipeline playback tempo")
             .accessibilityValue(String(format: "%.2f times", tempo))
-            .onChange(of: tempo) { _, newValue in engine?.setTempo(rate: newValue) }
+            .onChange(of: tempo) { _, newValue in graph?.setTempo(rate: newValue) }
         }
     }
 
@@ -155,23 +143,23 @@ struct AuditionPipelineSection: View {
         // sabotage their own capture.
         HStack(spacing: 16) {
             Button {
-                do { try engine?.play() } catch { loadError = error.localizedDescription }
+                do { try graph?.play() } catch { loadError = error.localizedDescription }
             } label: { Label("Play", systemImage: "play.fill") }
                 .buttonStyle(.borderless)
                 .accessibilityLabel("Play pipeline")
-                .disabled(engine == nil || isBouncing)
+                .disabled(graph == nil || isBouncing)
             Button {
-                engine?.pause()
+                graph?.pause()
             } label: { Label("Pause", systemImage: "pause.fill") }
                 .buttonStyle(.borderless)
                 .accessibilityLabel("Pause pipeline")
-                .disabled(engine == nil || isBouncing)
+                .disabled(graph == nil || isBouncing)
             Button {
-                engine?.stop()
+                graph?.stop()
             } label: { Label("Stop", systemImage: "stop.fill") }
                 .buttonStyle(.borderless)
                 .accessibilityLabel("Stop pipeline and reset")
-                .disabled(engine == nil || isBouncing)
+                .disabled(graph == nil || isBouncing)
         }
     }
 
@@ -216,7 +204,7 @@ struct AuditionPipelineSection: View {
 
     private func enablePipeline() async {
         PipelineFileLog.shared.start()  // truncate + open log file
-        PipelineFileLog.shared.log("=== enablePipeline START engine=\(selectedEngine.rawValue) ===")
+        PipelineFileLog.shared.log("=== enablePipeline START ===")
         statusText = "Loading bond.mxl..."
         loadError = nil
         do {
@@ -236,20 +224,21 @@ struct AuditionPipelineSection: View {
             let renderedMIDI = try bridge.render(musicXML: xml)
             self.rendered = renderedMIDI
 
-            guard let bankURL: URL = (activeSlot == .a) ? bankA : bankB else {
-                throw PipelineError.resourceMissing(name: "active SF2 bank")
-            }
-            let newEngine = AuditionEngineFactory.make(kind: selectedEngine)
-            try newEngine.setup(rendered: renderedMIDI, bankURL: bankURL)
-            self.engine = newEngine
-            self.loadedSlot = activeSlot
+            // Probe the SMF for the actual track count Apple's sequencer will
+            // expose (excludes the conductor track).
+            let probeSeq = AVAudioSequencer(audioEngine: AudioEngineManager.shared.engine)
+            try probeSeq.load(from: renderedMIDI.data, options: [])
+            let partCount = min(probeSeq.tracks.count, MultiTrackSamplerGraph.maxTracks)
+
+            let g = try MultiTrackSamplerGraph(trackCount: partCount)
+            self.graph = g
+
+            await applyActiveBank(activeSlot)
+            try g.loadMIDI(renderedMIDI)
 
             let chList = renderedMIDI.channels.map { String($0) }.joined(separator: ", ")
-            let trackCount = renderedMIDI.trackInfo.count
-            statusText = "✓ \(selectedEngine.displayName) · \(trackCount) parts · channels [\(chList)]"
-            PipelineFileLog.shared.log(
-                "=== enablePipeline DONE engine=\(selectedEngine.rawValue) parts=\(trackCount) ==="
-            )
+            statusText = "✓ \(partCount) parts · channels [\(chList)]"
+            PipelineFileLog.shared.log("=== enablePipeline DONE — \(partCount) parts ready ===")
         } catch let pipelineError as PipelineError {
             loadError = pipelineError.localizedDescription
             PipelineFileLog.shared.log("enablePipeline FAILED: \(pipelineError.localizedDescription)")
@@ -263,10 +252,10 @@ struct AuditionPipelineSection: View {
 
     private func disablePipeline() {
         // Fix I4 (review 2026-04-26): if a bounce is mid-flight when the user
-        // disables the pipeline (or navigates away), abort it so the tap is
-        // removed from the sub-mixer before we tear that node down. Resetting
-        // `isBouncing` here unblocks the `bounce()` task body, which observes
-        // `engine == nil` and short-circuits.
+        // disables the pipeline, abort it so the tap is removed from the
+        // sub-mixer before we tear that node down. Resetting `isBouncing`
+        // here unblocks the `bounce()` task body, which observes
+        // `graph == nil` and short-circuits.
         if isBouncing {
             bouncer?.abort()
         }
@@ -274,53 +263,26 @@ struct AuditionPipelineSection: View {
         isBouncing = false
         deferredSlot = nil
         loadedSlot = nil
-        engine?.stop()
-        engine?.tearDown()
-        engine = nil
+        graph?.stop()
+        graph?.teardown()
+        graph = nil
         rendered = nil
         statusText = ""
-    }
-
-    private func switchEngine(to newKind: EngineKind) async {
-        guard let oldEngine = engine, let rendered else { return }
-        statusText = "Switching to \(newKind.displayName)..."
-        PipelineFileLog.shared.log(
-            "switchEngine: \(oldEngine.displayName) → \(newKind.displayName)"
-        )
-        oldEngine.stop()
-        oldEngine.tearDown()
-        self.engine = nil
-
-        let url: URL? = (loadedSlot == .b) ? bankB : bankA
-        guard let url else {
-            loadError = "No active bank URL"
-            return
-        }
-        let newEngine = AuditionEngineFactory.make(kind: newKind)
-        do {
-            try newEngine.setup(rendered: rendered, bankURL: url)
-            self.engine = newEngine
-            statusText = "✓ \(newKind.displayName) · \(rendered.trackInfo.count) parts ready"
-            PipelineFileLog.shared.log("switchEngine DONE: \(newEngine.diagnosticSummary())")
-        } catch {
-            loadError = "Engine switch failed: \(error.localizedDescription)"
-            PipelineFileLog.shared.log("switchEngine FAILED: \(error.localizedDescription)")
-        }
     }
 
     private func applyActiveBank(_ slot: SoundFontAuditionView.Slot) async {
         // Diagnostic 2026-04-28: log entry unconditionally so we can see
         // both the call and the reason for any silent bail-out.
-        let engineStr = engine == nil ? "nil" : "present"
+        let engineStr = graph == nil ? "nil" : "present"
         let loadedStr = loadedSlot?.rawValue ?? "nil"
         PipelineFileLog.shared.log(
             """
             applyActiveBank(\(slot.rawValue)) ENTRY: \
-            engine=\(engineStr) isBouncing=\(isBouncing) loadedSlot=\(loadedStr)
+            graph=\(engineStr) isBouncing=\(isBouncing) loadedSlot=\(loadedStr)
             """
         )
-        guard let engine else {
-            PipelineFileLog.shared.log("applyActiveBank(\(slot.rawValue)) BAIL: engine=nil")
+        guard let g = graph else {
+            PipelineFileLog.shared.log("applyActiveBank(\(slot.rawValue)) BAIL: graph=nil")
             return
         }
         // Fix C2 (review 2026-04-26): a bank swap pauses the engine for
@@ -340,15 +302,15 @@ struct AuditionPipelineSection: View {
             PipelineFileLog.shared.log("applyActiveBank(\(slot.rawValue)) ABORT: no URL for slot")
             return
         }
+        let presets = derivedPresets(samplerCount: g.samplers.count)
+        let presetList = presets.map { String($0) }.joined(separator: ",")
         PipelineFileLog.shared.log(
-            "applyActiveBank(\(slot.rawValue)) → \(url.lastPathComponent)"
+            "applyActiveBank(\(slot.rawValue)) → \(url.lastPathComponent) presets=[\(presetList)]"
         )
         do {
-            try engine.loadBank(url)
+            try g.loadBank(at: url, presets: presets)
             loadedSlot = slot
-            PipelineFileLog.shared.log(
-                "applyActiveBank(\(slot.rawValue)) DONE engine=\(selectedEngine.rawValue)"
-            )
+            PipelineFileLog.shared.log("applyActiveBank(\(slot.rawValue)) DONE")
             if loadError == "Bank swap deferred until bounce completes" {
                 loadError = nil
             }
@@ -358,8 +320,23 @@ struct AuditionPipelineSection: View {
         }
     }
 
+    /// Derive per-sampler GM presets from `rendered.trackInfo`. Falls back
+    /// to GM 0 (Acoustic Grand Piano) if a track had no Program Change.
+    private func derivedPresets(samplerCount: Int) -> [UInt8] {
+        let trackInfo = rendered?.trackInfo ?? []
+        var result: [UInt8] = []
+        for i in 0..<samplerCount {
+            if i < trackInfo.count, let program = trackInfo[i].program {
+                result.append(program)
+            } else {
+                result.append(0)
+            }
+        }
+        return result
+    }
+
     private func bounce(slot: SoundFontAuditionView.Slot) async {
-        guard let engine else { return }
+        guard let g = graph else { return }
 
         // Bug fix (2026-04-27): Bounce A/B button labels imply slot-specific
         // capture, but the previous implementation only used `slot` for the
@@ -369,11 +346,13 @@ struct AuditionPipelineSection: View {
         if loadedSlot != slot {
             let url: URL? = (slot == .a) ? bankA : bankB
             if let url {
+                let presets = derivedPresets(samplerCount: g.samplers.count)
+                let presetList = presets.map { String($0) }.joined(separator: ",")
                 PipelineFileLog.shared.log(
-                    "bounce[\(slot.rawValue)]: pre-load engine=\(selectedEngine.rawValue) bank=\(url.lastPathComponent)"
+                    "bounce[\(slot.rawValue)]: pre-load bank=\(url.lastPathComponent) presets=[\(presetList)]"
                 )
                 do {
-                    try engine.loadBank(url)
+                    try g.loadBank(at: url, presets: presets)
                     loadedSlot = slot
                 } catch {
                     let msg = error.localizedDescription
@@ -399,35 +378,31 @@ struct AuditionPipelineSection: View {
             }
         }
 
-        let filename = "audition_bond_\(slot.rawValue)_\(selectedEngine.rawValue).m4a"
+        let filename = "audition_bond_\(slot.rawValue).m4a"
         let docs = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
         let url = docs.appendingPathComponent(filename)
         try? FileManager.default.removeItem(at: url)
 
-        let b = RealtimeTapBouncer(source: engine.output, outputURL: url)
+        let b = RealtimeTapBouncer(source: g.subMixer, outputURL: url)
         bouncer = b
         sectionLogger.info(
-            """
-            bounce[\(slot.rawValue, privacy: .public)] start \
-            engine=\(selectedEngine.rawValue, privacy: .public) \
-            → \(url.lastPathComponent, privacy: .public)
-            """
+            "bounce[\(slot.rawValue, privacy: .public)] start → \(url.lastPathComponent, privacy: .public)"
         )
         do {
-            engine.stop()
+            g.stop()
             try b.start()
-            try engine.play()
+            try g.play()
             // QA finding 2026-04-27: AVAudioSequencer.isPlaying transitions to
             // false when events have been dispatched, not when audio finishes
             // rendering. Polling it truncated bounces to ~4–9 s on a 127 s
             // song. Wait the explicit sequence duration instead.
-            let duration = engine.sequenceDuration
+            let duration = sequenceDuration(for: g)
             // Code review C-2 (2026-04-27): a zero duration would silently
             // produce a near-empty m4a. Surface as an error instead.
             guard duration > 0 else {
                 PipelineFileLog.shared.log("bounce[\(slot.rawValue)] ABORT: sequenceDuration=0")
                 loadError = "Bounce aborted: sequence duration is zero"
-                engine.stop()
+                g.stop()
                 b.abort()
                 return
             }
@@ -460,7 +435,7 @@ struct AuditionPipelineSection: View {
             // release tails before stopping the tap. 300 ms is generous for
             // both the TimePitch latency and a typical SF2 release tail.
             try? await Task.sleep(nanoseconds: 300_000_000)
-            engine.stop()
+            g.stop()
             b.stop()
             switch slot {
             case .a: bounceURLA = url
@@ -470,6 +445,12 @@ struct AuditionPipelineSection: View {
             b.abort()
             loadError = "Bounce failed: \(error.localizedDescription)"
         }
+    }
+
+    /// Wall-clock duration of the loaded sequence (longest non-empty track).
+    private func sequenceDuration(for graph: MultiTrackSamplerGraph) -> TimeInterval {
+        guard let tracks = graph.sequencer?.tracks, !tracks.isEmpty else { return 0 }
+        return tracks.map(\.lengthInSeconds).max() ?? 0
     }
 }
 #endif
