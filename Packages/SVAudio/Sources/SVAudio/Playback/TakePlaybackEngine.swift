@@ -126,7 +126,7 @@ public final class TakePlaybackEngine: TakePlaybackProviding {
         )
         do {
             try sequencer.load(from: midiData, options: [])
-            bindTracksToPlaybackSlot()
+            bindTracksToPlaybackSlot(program: snapshot.instrumentProgram)
         } catch {
             // Surface to tests/console; UI error path is wired in Task 14.
             assertionFailure("TakePlaybackEngine.schedule: load failed: \(error)")
@@ -135,11 +135,19 @@ public final class TakePlaybackEngine: TakePlaybackProviding {
 
     /// Routes every sequencer track's audio destination to slot 2's sampler so
     /// the take never collides with touch input (slot 0) or a song (slots 1–15).
-    private func bindTracksToPlaybackSlot() {
+    /// Also loads the SoundFont program for the take's instrument into slot 2 —
+    /// without this, the AUSampler routes MIDI through a default sine tone and
+    /// playback sounds distorted.
+    private func bindTracksToPlaybackSlot(program: UInt8) {
         guard
             let production = multiChannel as? ProductionMultiChannelEngine,
             production.samplers.indices.contains(Self.playbackSlot)
         else { return }
+        // Load the SoundFont bank/program on slot 2 so the sampler renders the
+        // correct instrument timbre instead of the default oscillator.
+        try? production.loadProgram(
+            into: Self.playbackSlot, program: program, isPercussion: false
+        )
         let dest = production.samplers[Self.playbackSlot]
         for track in sequencer.tracks {
             track.destinationAudioUnit = dest

@@ -33,8 +33,8 @@ struct PlayTab: View {
     ///
     /// PlayTab.body never reads `highlightState.activeMidiNotes`, so SwiftUI
     /// does NOT re-render PlayTab when the MIDI thread updates the highlight
-    /// set. Only `LiveHighlightStaffView` and `LargePianoView` (which read
-    /// the property) re-render — matching PlayAlong's scoping path.
+    /// set. Only `LargePianoView` (which reads the property) re-renders —
+    /// matching PlayAlong's scoping path.
     @State
     private var highlightState = PlayTabHighlightState()
     @Environment(\.scenePhase)
@@ -199,16 +199,11 @@ struct PlayTab: View {
     }
 }
 
-/// Container that hosts `PlayTabBottomStrip` and the Expanded Timeline Sheet.
-///
-/// Wraps the strip in a view with `@Bindable var viewModel` so we can derive
-/// `$viewModel.expandedSheetPresented` for the `.sheet(isPresented:)` modifier
-/// without exposing a `@Bindable` shadow at the top of `PlayTab.body` (which
-/// would re-tag the parent body as observing the entire view model).
-///
-/// The sheet's `TakeSnapshot` is built lazily via `freezeForSave()` only when
-/// SwiftUI evaluates the sheet's content closure (sheet open path), so the
-/// freeze does not run on every body re-evaluation.
+/// Wraps `PlayTabBottomStrip` with the standard Play tab horizontal padding.
+/// The Expanded Timeline Sheet (popup) was removed in favour of the inline
+/// Play/Stop button on the bottom strip and the cursor-driven highlight on
+/// the live grand staff — there is no longer any reason to stack a sheet on
+/// top of the staff.
 private struct PlayTabBottomStripContainer: View {
     @Bindable var viewModel: PlayTabViewModel
 
@@ -216,19 +211,6 @@ private struct PlayTabBottomStripContainer: View {
         PlayTabBottomStrip(viewModel: viewModel)
             .padding(.horizontal)
             .padding(.bottom, 4)
-            .sheet(isPresented: $viewModel.expandedSheetPresented) {
-                let frozen = viewModel.scratchpad.freezeForSave()
-                ExpandedTimelineSheet(
-                    snapshot: TakeSnapshot(
-                        notes: frozen.notes,
-                        sustain: frozen.sustain,
-                        instrumentProgram: viewModel.scratchpad.instrumentProgram,
-                        saPitchMidi: viewModel.scratchpad.saPitchMidi
-                    ),
-                    isTake: false,
-                    presented: $viewModel.expandedSheetPresented
-                )
-            }
     }
 }
 
@@ -275,25 +257,76 @@ private struct SoftCapBanner: View {
     }
 }
 
-/// Staff subview — owns the observation of `saPitch` / `notationMode` so
-/// frequent scratchpad mutations never invalidate `PlayTab.body` (which
-/// contains the performance-critical `LargePianoView`). The bottom strip
-/// (replacing v1 `RecordingStripView`) lands in Task 11.
+/// Staff subview — owns the observation of `saPitch` / `notationMode` and
+/// reads the scratchpad's note-tail so frequent scratchpad mutations only
+/// invalidate THIS subview, never `PlayTab.body` (which contains the
+/// performance-critical `LargePianoView`).
+///
+/// Reading `viewModel.scratchpad.notes` here registers the dependency at
+/// the subview boundary; the @Observable system re-renders this struct on
+/// every Phase-2 append, but `PlayTab.body` and `LargePianoView` are
+/// untouched.
 private struct PlayTabRecordSection: View {
     let viewModel: PlayTabViewModel
     let highlightState: PlayTabHighlightState
 
+    /// Maximum number of recent recorded notes rendered on the live staff.
+    /// Lifted from v1's 16 to 200 so long passages keep extending across
+    /// the staff (the renderer wraps in its own horizontal `ScrollView`).
+    /// 200 keeps `StaffNotationRenderer` layout well under one frame on
+    /// iPad Air 4.
+    private static let liveStaffTailCount: Int = 200
+
     var body: some View {
-        VStack(spacing: 0) {
-            LiveHighlightStaffView(
-                highlightState: highlightState,
-                saPitch: viewModel.saPitch,
-                notationMode: viewModel.notationMode
-            )
-            .frame(maxHeight: .infinity)
+        // Sort by `onTimeSec` so the staff renders notes in chronological
+        // order — notes append to scratchpad on note-OFF so chord finger
+        // release order would otherwise scramble onset order.
+        let tail = Array(viewModel.scratchpad.notes.suffix(Self.liveStaffTailCount))
+            .sorted { $0.onTimeSec < $1.onTimeSec }
+        // Recording: static path. Body re-renders on every @Observable
+        // scratchpad mutation, so notes appear on the staff at their
+        // correct time-aligned x positions immediately.
+        if viewModel.isInlinePlaying {
+            playbackBody(tail: tail)
+                .frame(height: Self.liveStaffSectionHeight)
+        } else {
+            TimelineGrandStaffView(notes: tail, positionSec: nil, isPlaying: false)
+                .frame(height: Self.liveStaffSectionHeight)
         }
     }
+
+    /// Animated body used while inline playback is active. `TimelineView`
+    /// fires every ~33ms; each tick samples the engine's position and
+    /// hands it to `TimelineGrandStaffView` as `positionSec` so the
+    /// per-note highlight + sweeping playhead bar both advance in lockstep
+    /// with audio. The grand staff renders both clefs on a *shared* time
+    /// axis — left-hand and right-hand notes that played simultaneously
+    /// appear at the same x.
+    @ViewBuilder
+    private func playbackBody(tail: [RecordedNote]) -> some View {
+        TimelineView(.animation(minimumInterval: 1.0 / 30.0, paused: false)) { _ in
+            TimelineGrandStaffView(
+                notes: tail,
+                positionSec: positionSec,
+                isPlaying: true
+            )
+        }
+    }
+
+    /// Vertical budget for the live staff section, hosting
+    /// `TimelineGrandStaffView` (treble + gap + bass + margins ≈ 200pt
+    /// intrinsic). The extra slack lets the staff breathe vs. the bottom
+    /// strip / `LargePianoView` underneath.
+    private static let liveStaffSectionHeight: CGFloat = 220
+
+    /// Sampled per-frame inside the `TimelineView`; the closure must read
+    /// it on every fire so SwiftUI re-evaluates the body and pushes a new
+    /// cursor index downstream.
+    private var positionSec: TimeInterval {
+        viewModel.inlinePlaybackPositionSec
+    }
 }
+
 
 /// No-op engine placeholder used only during the brief window before
 /// AudioEngineManager.startForPlayback() succeeds.

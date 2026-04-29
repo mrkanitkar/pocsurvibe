@@ -97,6 +97,25 @@ final class PlayTabViewModel {
     /// Most recent user-facing error message. `nil` when no error pending.
     private(set) var lastError: String?
 
+    /// Whether the inline take-playback engine is currently playing the
+    /// captured scratchpad back through the multi-channel sampler. Toggled
+    /// by `togglePlayback()` from the bottom strip's transport button.
+    private(set) var isInlinePlaying: Bool = false
+
+    /// Lazily-instantiated playback engine for the inline transport. Stays
+    /// resident once created so re-pressing Play doesn't pay reconstruction
+    /// cost; `stopInlinePlayback()` resets it to position 0 without tearing
+    /// the engine down.
+    private var inlinePlaybackEngine: TakePlaybackEngine?
+
+    /// Current playback position in seconds. Read once per frame by
+    /// `PlayTabRecordSection` (driven by `TimelineView`) to compute the
+    /// cursor index on the live grand staff. Returns 0 when no playback
+    /// is in flight.
+    var inlinePlaybackPositionSec: TimeInterval {
+        inlinePlaybackEngine?.currentPositionSec ?? 0
+    }
+
     /// Whether the Save Take sheet is currently presented. Toggled by the ⋯
     /// menu's "Save take" action and cleared when the sheet dismisses.
     var saveTakeSheetPresented: Bool = false
@@ -355,6 +374,69 @@ final class PlayTabViewModel {
             highlightCoordinator.noteOff(Int(midi))
         }
         activeMidiNotes.removeAll()
+    }
+
+    // MARK: - Inline take playback
+
+    /// Toggle playback of the current scratchpad through slot 2 of the
+    /// production multi-channel engine. Drives the same
+    /// ``MIDINoteHighlightCoordinator`` used by live MIDI/touch input so
+    /// playback notes light up on the live grand staff and on-screen piano.
+    func togglePlayback() {
+        if isInlinePlaying {
+            stopInlinePlayback()
+        } else {
+            startInlinePlayback()
+        }
+    }
+
+    /// Build a snapshot from the current scratchpad and begin inline playback.
+    ///
+    /// No-op when the scratchpad has no content. Lazily constructs the
+    /// `TakePlaybackEngine` against `AudioEngineManager.shared.multiChannel`;
+    /// if the multi-channel engine is unavailable (SoundFont missing or
+    /// engine not started) the call surfaces an error via `lastError` and
+    /// leaves `isInlinePlaying` false.
+    func startInlinePlayback() {
+        guard !isInlinePlaying else { return }
+        guard scratchpad.hasContent else { return }
+        guard let multiChannel = AudioEngineManager.shared.multiChannel else {
+            lastError = "Audio engine unavailable — try restarting the app."
+            return
+        }
+        let frozen = scratchpad.freezeForSave()
+        let snapshot = TakeSnapshot(
+            notes: frozen.notes,
+            sustain: frozen.sustain,
+            instrumentProgram: scratchpad.instrumentProgram,
+            saPitchMidi: scratchpad.saPitchMidi
+        )
+        let avEngine = AudioEngineManager.shared.engine
+        let player = inlinePlaybackEngine
+            ?? TakePlaybackEngine(
+                multiChannel: multiChannel,
+                highlightSink: highlightCoordinator,
+                engine: avEngine
+            )
+        inlinePlaybackEngine = player
+        isInlinePlaying = true
+        Task { @MainActor [weak self] in
+            await player.schedule(
+                snapshot: snapshot,
+                speed: 1.0,
+                handFilter: .both,
+                saMidi: snapshot.saPitchMidi
+            )
+            guard let self, self.isInlinePlaying else { return }
+            player.play()
+        }
+    }
+
+    /// Stop inline playback and rewind the engine to position 0.
+    func stopInlinePlayback() {
+        guard isInlinePlaying else { return }
+        inlinePlaybackEngine?.stop()
+        isInlinePlaying = false
     }
 
     // MARK: - Lifecycle

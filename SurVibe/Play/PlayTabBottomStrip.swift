@@ -30,6 +30,18 @@ struct PlayTabBottomStrip: View {
                 .accessibilityLabel(
                     "Recording duration \(viewModel.scratchpad.durationSec.formattedAsClock)"
                 )
+            // Inline playback transport — drives slot 2 sampler and the
+            // shared `MIDINoteHighlightCoordinator`, so playback notes
+            // light up on the live grand staff + on-screen piano.
+            Button {
+                viewModel.togglePlayback()
+            } label: {
+                Image(
+                    systemName: viewModel.isInlinePlaying ? "stop.fill" : "play.fill"
+                )
+            }
+            .disabled(!viewModel.scratchpad.hasContent && !viewModel.isInlinePlaying)
+            .accessibilityLabel(viewModel.isInlinePlaying ? "Stop playback" : "Play scratchpad")
             Text("\(viewModel.scratchpad.noteCount) notes · scratchpad")
                 .font(.caption)
                 .foregroundStyle(.secondary)
@@ -42,16 +54,15 @@ struct PlayTabBottomStrip: View {
             .accessibilityValue(
                 "\(viewModel.scratchpad.noteCount) of \(ScratchpadState.hardCap) notes"
             )
-            Button {
-                viewModel.expandedSheetPresented = true
-            } label: {
-                Image(systemName: "arrow.up.left.and.arrow.down.right")
-            }
-            .accessibilityLabel("Expand timeline")
-            .accessibilityHint("Opens the expanded staff and waterfall view")
         }
         .padding(.horizontal)
         .padding(.vertical, 6)
-        .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 12))
+        // `.glassEffect(.regular, in:)` was found to swallow Button taps on
+        // iOS 26 in this layout (the Liquid-Glass overlay sat above the
+        // embedded play/stop Button); fall back to a regular material so the
+        // tap reliably reaches the button. Visually similar.
+        .background(
+            RoundedRectangle(cornerRadius: 12).fill(.regularMaterial)
+        )
     }
 }

@@ -14,39 +14,29 @@ struct PlayTabToolbar: View {
     let onTapInstrument: () -> Void
 
     var body: some View {
-        HStack(spacing: 12) {
+        HStack(spacing: 10) {
             instrumentButton
             notationToggle
             saPitchMenu
-            Spacer(minLength: 8)
+            Spacer(minLength: 4)
             midiStatusBadge
-            recordingIndicator
             undoButton
             overflowMenu
         }
         .padding(.horizontal, 12)
-        .padding(.vertical, 8)
-        .glassEffect(.regular)
+        .padding(.vertical, 6)
+        .background(.regularMaterial)
     }
 
-    /// Red dot + monospaced clock counter; visible whenever the scratchpad
-    /// has any captured content.
-    @ViewBuilder
-    private var recordingIndicator: some View {
-        if viewModel.scratchpad.hasContent {
-            HStack(spacing: 4) {
-                Circle()
-                    .fill(.red)
-                    .frame(width: 8, height: 8)
-                Text(viewModel.scratchpad.durationSec.formattedAsClock)
-                    .font(.caption.monospacedDigit())
-                    .foregroundStyle(.secondary)
-            }
-            .accessibilityElement(children: .combine)
-            .accessibilityLabel(
-                "Recording \(viewModel.scratchpad.durationSec.formattedAsClock)"
-            )
+    private var notationToggle: some View {
+        Picker("Notation", selection: $viewModel.notationMode) {
+            Text("West").tag(PlayTabNotationMode.western)
+            Text("Sgm").tag(PlayTabNotationMode.sargam)
+            Text("Both").tag(PlayTabNotationMode.both)
         }
+        .pickerStyle(.segmented)
+        .frame(maxWidth: 180)
+        .accessibilityLabel("Notation system")
     }
 
     /// Pops the most recently closed note from the scratchpad.
@@ -96,28 +86,23 @@ struct PlayTabToolbar: View {
     }
 
     private var instrumentButton: some View {
+        // Icon + truncated name so the toolbar fits beside iPadOS's
+        // centred floating tab-chip without overflowing into it. Tap to
+        // open the full instrument picker (where the user sees the long
+        // GM name + browses categories).
         Button(action: onTapInstrument) {
-            Label(
-                GMInstrumentCatalog.name(for: viewModel.currentInstrument),
-                systemImage: "pianokeys"
-            )
-            .lineLimit(1)
+            HStack(spacing: 4) {
+                Image(systemName: "pianokeys")
+                Text(GMInstrumentCatalog.name(for: viewModel.currentInstrument))
+                    .lineLimit(1)
+                    .truncationMode(.tail)
+                    .frame(maxWidth: 110, alignment: .leading)
+            }
         }
         .buttonStyle(.bordered)
         .accessibilityLabel("Instrument")
         .accessibilityValue(GMInstrumentCatalog.name(for: viewModel.currentInstrument))
         .accessibilityHint("Opens the instrument picker")
-    }
-
-    private var notationToggle: some View {
-        Picker("Notation", selection: $viewModel.notationMode) {
-            Text("West").tag(PlayTabNotationMode.western)
-            Text("Sgm").tag(PlayTabNotationMode.sargam)
-            Text("Both").tag(PlayTabNotationMode.both)
-        }
-        .pickerStyle(.segmented)
-        .frame(maxWidth: 200)
-        .accessibilityLabel("Notation system")
     }
 
     private var saPitchMenu: some View {
