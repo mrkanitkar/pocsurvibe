@@ -12,12 +12,21 @@ struct LiveHighlightStaffView: View {
     let activeMidiNotes: Set<UInt8>
     let saPitch: UInt8
     let notationMode: PlayTabNotationMode
+    let recordedNotes: [RecordedNote]
+
+    /// Played notes mapped into the renderer's note model. Quarter-note
+    /// duration is used for everything because we don't track real timing —
+    /// SurVibe's recording strip is a sequence, not a tempo-aware capture.
+    @MainActor
+    private var westernNotes: [WesternNote] {
+        recordedNotes.map(Self.westernNote(from:))
+    }
 
     var body: some View {
         VStack(spacing: 8) {
             if notationMode == .western || notationMode == .both {
                 StaffNotationRenderer(
-                    notes: [],
+                    notes: westernNotes,
                     currentNoteIndex: nil,
                     keySignature: .cMajor,
                     timeSignature: .fourFour,
@@ -34,6 +43,18 @@ struct LiveHighlightStaffView: View {
                 sargamRow
             }
         }
+    }
+
+    /// Convert a `RecordedNote` into the renderer's `WesternNote` shape.
+    /// Uses `WesternNoteHelper` for the note-name + octave calculation and
+    /// hard-codes a quarter-note duration (the strip has no real timing).
+    private static func westernNote(from recorded: RecordedNote) -> WesternNote {
+        let midi = Int(recorded.midi)
+        return WesternNote(
+            note: WesternNoteHelper.displayName(from: midi),
+            duration: 1.0,
+            midiNumber: midi
+        )
     }
 
     /// One-line strip of Sargam syllables for currently-pressed notes.
@@ -72,19 +93,38 @@ struct LiveHighlightStaffView: View {
 }
 
 #Preview("No notes") {
-    LiveHighlightStaffView(activeMidiNotes: [], saPitch: 60, notationMode: .both)
-        .frame(height: 200)
-        .padding()
+    LiveHighlightStaffView(
+        activeMidiNotes: [],
+        saPitch: 60,
+        notationMode: .both,
+        recordedNotes: []
+    )
+    .frame(height: 200)
+    .padding()
 }
 
 #Preview("C major triad, Sa = C") {
-    LiveHighlightStaffView(activeMidiNotes: [60, 64, 67], saPitch: 60, notationMode: .both)
-        .frame(height: 200)
-        .padding()
+    LiveHighlightStaffView(
+        activeMidiNotes: [60, 64, 67],
+        saPitch: 60,
+        notationMode: .both,
+        recordedNotes: [
+            RecordedNote(midi: 60),
+            RecordedNote(midi: 64),
+            RecordedNote(midi: 67),
+        ]
+    )
+    .frame(height: 200)
+    .padding()
 }
 
 #Preview("Sargam-only, Sa = D") {
-    LiveHighlightStaffView(activeMidiNotes: [62, 64, 66], saPitch: 62, notationMode: .sargam)
-        .frame(height: 200)
-        .padding()
+    LiveHighlightStaffView(
+        activeMidiNotes: [62, 64, 66],
+        saPitch: 62,
+        notationMode: .sargam,
+        recordedNotes: []
+    )
+    .frame(height: 200)
+    .padding()
 }

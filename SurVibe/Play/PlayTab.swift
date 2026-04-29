@@ -42,7 +42,8 @@ struct PlayTab: View {
             LiveHighlightStaffView(
                 activeMidiNotes: viewModel.activeMidiNotes,
                 saPitch: viewModel.saPitch,
-                notationMode: viewModel.notationMode
+                notationMode: viewModel.notationMode,
+                recordedNotes: viewModel.recordedNotes
             )
             .frame(maxHeight: .infinity)
             RecordingStripView(
