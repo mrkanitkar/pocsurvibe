@@ -63,6 +63,21 @@ final class PlayTabViewModel {
         }
     }
 
+    /// Whether external MIDI input should also play through the iPad's
+    /// built-in sampler. Default is `false` because most users have a MIDI
+    /// keyboard with its own sound — doubling produces an unwanted echo.
+    ///
+    /// The hot-path snapshot (`playAudioOnMIDIRead`) is kept in sync via
+    /// ``setPlayAudioOnMIDI(_:)`` so the CoreMIDI thread can read the toggle
+    /// state without a MainActor hop.
+    var playAudioOnMIDI: Bool {
+        didSet {
+            let newValue = playAudioOnMIDI
+            UserDefaults.standard.set(newValue, forKey: Self.kPlayAudioOnMIDI)
+            playAudioOnMIDIRead.withLock { $0 = newValue }
+        }
+    }
+
     // MARK: - Session-only state
 
     /// Notation display mode. Session-only (not persisted in v1).
@@ -96,6 +111,11 @@ final class PlayTabViewModel {
     private let midiInput: any MIDIInputProviding
     private let highlightCoordinator: MIDINoteHighlightCoordinator
 
+    /// Hot-path mirror of ``playAudioOnMIDI`` for the CoreMIDI callback
+    /// thread. Updated together with the published property so MIDI-thread
+    /// reads never require a MainActor hop.
+    private let playAudioOnMIDIRead: OSAllocatedUnfairLock<Bool>
+
     /// Snapshot the current engine. Cheap (uncontended unfair lock).
     private var engine: any PlayTabAudioEngine {
         engineLock.withLock { $0 }
@@ -103,6 +123,7 @@ final class PlayTabViewModel {
 
     private static let kInstrument = "playTab.lastInstrument"
     private static let kSaPitch = "playTab.saPitch"
+    private static let kPlayAudioOnMIDI = "playTab.playAudioOnMIDI"
     private static let stripCap = 16
 
     private let log = Logger.survibe(category: "PlayTab")
@@ -133,6 +154,10 @@ final class PlayTabViewModel {
         self.saPitch = UInt8(
             UserDefaults.standard.object(forKey: Self.kSaPitch) as? Int ?? 60
         )
+        let initialPlayAudioOnMIDI =
+            UserDefaults.standard.object(forKey: Self.kPlayAudioOnMIDI) as? Bool ?? false
+        self.playAudioOnMIDI = initialPlayAudioOnMIDI
+        self.playAudioOnMIDIRead = OSAllocatedUnfairLock(initialState: initialPlayAudioOnMIDI)
     }
 
     // MARK: - Public actions
@@ -194,13 +219,28 @@ final class PlayTabViewModel {
         log.info("Sa pitch -> \(midi)")
     }
 
+    /// Toggle whether external MIDI input plays through the iPad's sampler.
+    ///
+    /// Updates both the published `playAudioOnMIDI` property (so SwiftUI
+    /// re-renders the toolbar button) and the `playAudioOnMIDIRead` snapshot
+    /// (so the next CoreMIDI callback sees the new value without a MainActor
+    /// hop). The published `didSet` already syncs the snapshot — the explicit
+    /// lock write below is redundant but kept for clarity.
+    ///
+    /// - Parameter on: `true` to route MIDI input through the iPad sampler;
+    ///   `false` (default) to leave audio to the external keyboard.
+    func setPlayAudioOnMIDI(_ on: Bool) {
+        playAudioOnMIDI = on
+        log.info("playAudioOnMIDI -> \(on)")
+    }
+
     /// Handle a note-on from either touch or MIDI.
     ///
     /// Touch path: VM observes only — `InteractivePianoView` produces audio.
     /// MIDI path: VM produces audio with the supplied velocity.
     func handleNoteOn(_ midi: UInt8, velocity: UInt8, source: NoteSource) {
         let wasAlreadyOn = activeMidiNotes.contains(midi)
-        if source == .midi {
+        if source == .midi && playAudioOnMIDI {
             engine.playTouchNote(midi, velocity: velocity)
         }
         highlightCoordinator.noteOn(Int(midi))
@@ -214,7 +254,7 @@ final class PlayTabViewModel {
 
     /// Handle a note-off from either touch or MIDI.
     func handleNoteOff(_ midi: UInt8, source: NoteSource) {
-        if source == .midi {
+        if source == .midi && playAudioOnMIDI {
             engine.stopTouchNote(midi)
         }
         highlightCoordinator.noteOff(Int(midi))
@@ -286,14 +326,19 @@ final class PlayTabViewModel {
     }
 
     /// Phase-1 engine call — runs synchronously on the CoreMIDI callback
-    /// thread. Touches only the locked engine snapshot.
+    /// thread. Touches only the locked engine snapshot. Gated by
+    /// ``playAudioOnMIDIRead`` so the iPad sampler stays silent when the user
+    /// has the toggle off (default).
     nonisolated private func engineSyncPlay(note: UInt8, velocity: UInt8) {
+        guard playAudioOnMIDIRead.withLock({ $0 }) else { return }
         let snapshot = engineLock.withLock { $0 }
         snapshot.playTouchNote(note, velocity: velocity)
     }
 
     /// Phase-1 engine stop — runs synchronously on the CoreMIDI callback thread.
+    /// Gated by ``playAudioOnMIDIRead`` for symmetry with ``engineSyncPlay``.
     nonisolated private func engineSyncStop(note: UInt8) {
+        guard playAudioOnMIDIRead.withLock({ $0 }) else { return }
         let snapshot = engineLock.withLock { $0 }
         snapshot.stopTouchNote(note)
     }

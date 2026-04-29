@@ -15,6 +15,7 @@ struct PlayTabToolbar: View {
             instrumentButton
             notationToggle
             saPitchMenu
+            midiAudioToggle
             Spacer(minLength: 8)
             midiStatusBadge
         }
@@ -67,6 +68,23 @@ struct PlayTabToolbar: View {
         }
         .accessibilityLabel("Sa pitch")
         .accessibilityValue(noteName(for: viewModel.saPitch))
+    }
+
+    /// Toggles whether incoming MIDI also plays through the iPad sampler.
+    /// Off by default — most users have a MIDI keyboard with built-in sound.
+    private var midiAudioToggle: some View {
+        Button {
+            viewModel.setPlayAudioOnMIDI(!viewModel.playAudioOnMIDI)
+        } label: {
+            Image(
+                systemName: viewModel.playAudioOnMIDI
+                    ? "speaker.wave.2.fill" : "speaker.slash.fill"
+            )
+        }
+        .buttonStyle(.bordered)
+        .accessibilityLabel("MIDI audio")
+        .accessibilityValue(viewModel.playAudioOnMIDI ? "On" : "Off")
+        .accessibilityHint("Toggles whether external MIDI input plays through the iPad sampler")
     }
 
     @ViewBuilder

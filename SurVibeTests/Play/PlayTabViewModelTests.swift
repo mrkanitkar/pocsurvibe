@@ -15,6 +15,7 @@ struct PlayTabViewModelTests {
         // Clear UserDefaults to avoid bleed between tests.
         UserDefaults.standard.removeObject(forKey: "playTab.lastInstrument")
         UserDefaults.standard.removeObject(forKey: "playTab.saPitch")
+        UserDefaults.standard.removeObject(forKey: "playTab.playAudioOnMIDI")
         let coord = MIDINoteHighlightCoordinator()
         let vm = PlayTabViewModel(engine: engine, midiInput: midi, highlightCoordinator: coord)
         return (vm, engine, midi)
@@ -103,6 +104,7 @@ struct PlayTabViewModelTests {
     @Test
     func midiHandleNoteOnPlaysAudioWithVelocityPreserved() {
         let (vm, engine, _) = makeVM()
+        vm.setPlayAudioOnMIDI(true)
         vm.handleNoteOn(67, velocity: 80, source: .midi)
         #expect(engine.playTouchNoteCalls.count == 1)
         #expect(engine.playTouchNoteCalls[0].midi == 67)
@@ -113,10 +115,41 @@ struct PlayTabViewModelTests {
     @Test
     func midiHandleNoteOffStopsAudio() {
         let (vm, engine, _) = makeVM()
+        vm.setPlayAudioOnMIDI(true)
         vm.handleNoteOn(67, velocity: 80, source: .midi)
         vm.handleNoteOff(67, source: .midi)
         #expect(engine.stopTouchNoteCalls == [67])
         #expect(vm.activeMidiNotes.isEmpty)
+    }
+
+    // MARK: - playAudioOnMIDI toggle
+
+    @Test
+    func midiAudioOffByDefault() {
+        let (vm, _, _) = makeVM()
+        #expect(vm.playAudioOnMIDI == false)
+    }
+
+    @Test
+    func midiAudioOffSilencesEngineButKeepsHighlight() async {
+        let (vm, engine, _) = makeVM()
+        vm.onAppear()
+        vm.handleNoteOn(60, velocity: 100, source: .midi)
+        #expect(
+            engine.playTouchNoteCalls.isEmpty,
+            "MIDI input must not echo through iPad sampler when toggle is off"
+        )
+        #expect(vm.activeMidiNotes == [60])
+        #expect(vm.recordedNotes.count == 1)
+    }
+
+    @Test
+    func midiAudioOnRoutesEngineCall() async {
+        let (vm, engine, _) = makeVM()
+        vm.setPlayAudioOnMIDI(true)
+        vm.onAppear()
+        vm.handleNoteOn(60, velocity: 100, source: .midi)
+        #expect(engine.playTouchNoteCalls.count == 1)
     }
 
     // MARK: - Re-trigger guard
@@ -145,6 +178,7 @@ struct PlayTabViewModelTests {
     @Test
     func seventeenthNoteAudioPlaysButStripDoesNotGrow() {
         let (vm, engine, _) = makeVM()
+        vm.setPlayAudioOnMIDI(true)
         for n: UInt8 in 60..<76 {
             vm.handleNoteOn(n, velocity: 100, source: .midi)
             vm.handleNoteOff(n, source: .midi)
@@ -183,6 +217,7 @@ struct PlayTabViewModelTests {
     @Test
     func midiVelocityZeroRoutesAsNoteOff() async {
         let (vm, engine, midi) = makeVM()
+        vm.setPlayAudioOnMIDI(true)
         vm.onAppear()
         engine.playTouchNoteCalls.removeAll()
         engine.stopTouchNoteCalls.removeAll()
@@ -201,6 +236,7 @@ struct PlayTabViewModelTests {
     @Test
     func midiHandleNoteOnPlaysAudioSynchronouslyOnFire() async {
         let (vm, engine, midi) = makeVM()
+        vm.setPlayAudioOnMIDI(true)
         vm.onAppear()
         engine.playTouchNoteCalls.removeAll()
         midi.fire(MIDIInputEvent(noteNumber: 67, velocity: 80))
@@ -254,6 +290,7 @@ struct PlayTabViewModelTests {
         let initial = MockPlayTabAudioEngine()
         let real = MockPlayTabAudioEngine()
         let (vm, _, _) = makeVM(engine: initial)
+        vm.setPlayAudioOnMIDI(true)
         vm.attachEngine(real)
         real.loadProgramCalls.removeAll()  // clear the attach-time reload
         vm.handleNoteOn(60, velocity: 100, source: .midi)
