@@ -100,27 +100,25 @@ struct PlayTab: View {
                 print("[PlayTab][displayLink] notes=\(notes.count) ts=\(timestampMicros)")
                 hs.activeMidiNotes = notes
             }
-            // `MIDIInputManager.refreshSources()` yields the new connection
-            // state on the connection stream BEFORE its `Task { @MainActor }`
-            // setter that writes `connectedDeviceName` runs. Without yielding
-            // first we would read the previous (often nil) value and the
-            // toolbar badge would stay empty after a hot-plug. One yield is
-            // enough to drain the queued setter on the main actor.
-            await Task.yield()
-            refreshDeviceList()
-            // React to hot-plug/unplug. `connectionStateStream` yields `true`
-            // when a source connects and `false` when all sources disconnect;
-            // either transition warrants refreshing the toolbar badge name.
-            // The `for await` is the LAST statement in `.task` — anything
-            // after it would be unreachable. SwiftUI auto-cancels this task
-            // (and the stream's continuation) on view disappear.
-            for await _ in MIDIInputManager.shared.connectionStateStream {
-                // Same race as above: the stream fires on the CoreMIDI thread
-                // synchronously with `connectionBox.yield(...)`, but the
-                // `connectedDeviceName` setter is queued via
-                // `Task { @MainActor }`. Yield once to let it drain.
-                await Task.yield()
-                refreshDeviceList()
+            // Poll `connectedDeviceName` every 250ms instead of consuming
+            // `connectionStateStream`. Reasons:
+            //
+            // 1. The stream is single-consumer — if PlayAlong (or any other
+            //    feature) is also draining it, our subscriber may never see
+            //    the connect/disconnect events.
+            // 2. The stream value is `Bool` (connected vs not) and the
+            //    actual `connectedDeviceName` is set asynchronously on the
+            //    main actor, so reading the property directly is the
+            //    source-of-truth path with no extra synchronization.
+            //
+            // 250ms is fine for badge UX: hot-plug visibility within ~250ms.
+            // SwiftUI auto-cancels this task on view disappear.
+            while !Task.isCancelled {
+                let names = [MIDIInputManager.shared.connectedDeviceName].compactMap { $0 }
+                if names != connectedDeviceNames {
+                    connectedDeviceNames = names
+                }
+                try? await Task.sleep(for: .milliseconds(250))
             }
         }
         .onDisappear {
@@ -145,9 +143,6 @@ struct PlayTab: View {
         }
     }
 
-    private func refreshDeviceList() {
-        connectedDeviceNames = [MIDIInputManager.shared.connectedDeviceName].compactMap { $0 }
-    }
 }
 
 /// No-op engine placeholder used only during the brief window before
