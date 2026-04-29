@@ -17,10 +17,56 @@ struct PlayTabToolbar: View {
             saPitchMenu
             Spacer(minLength: 8)
             midiStatusBadge
+            recordingIndicator
+            undoButton
+            overflowMenu
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
         .glassEffect(.regular)
+    }
+
+    /// Red dot + monospaced clock counter; visible whenever the scratchpad
+    /// has any captured content.
+    @ViewBuilder
+    private var recordingIndicator: some View {
+        if viewModel.scratchpad.hasContent {
+            HStack(spacing: 4) {
+                Circle()
+                    .fill(.red)
+                    .frame(width: 8, height: 8)
+                Text(viewModel.scratchpad.durationSec.formattedAsClock)
+                    .font(.caption.monospacedDigit())
+                    .foregroundStyle(.secondary)
+            }
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(
+                "Recording \(viewModel.scratchpad.durationSec.formattedAsClock)"
+            )
+        }
+    }
+
+    /// Pops the most recently closed note from the scratchpad.
+    private var undoButton: some View {
+        Button {
+            _ = viewModel.scratchpad.undoLastNote()
+        } label: {
+            Image(systemName: "arrow.uturn.backward")
+        }
+        .disabled(viewModel.scratchpad.notes.isEmpty)
+        .accessibilityLabel("Undo last note")
+        .accessibilityHint("Removes the most recently completed note from the recording")
+    }
+
+    /// Overflow stub — concrete entries (Save take, Takes…, New session, …)
+    /// land in Tasks 13 / 14 / 16.
+    private var overflowMenu: some View {
+        Menu {
+            // Intentionally empty in T6 — populated by later tasks.
+        } label: {
+            Image(systemName: "ellipsis.circle")
+        }
+        .accessibilityLabel("More")
     }
 
     private var instrumentButton: some View {
@@ -97,5 +143,14 @@ struct PlayTabToolbar: View {
     private func noteName(for midi: UInt8) -> String {
         let names = ["C", "C♯", "D", "D♯", "E", "F", "F♯", "G", "G♯", "A", "A♯", "B"]
         return names[Int(midi) % 12]
+    }
+}
+
+extension TimeInterval {
+    /// Formats this interval as `m:ss` (e.g. `0:42`, `1:07`). Used by the
+    /// recording-indicator counter on `PlayTabToolbar`.
+    var formattedAsClock: String {
+        let total = Int(self)
+        return String(format: "%d:%02d", total / 60, total % 60)
     }
 }

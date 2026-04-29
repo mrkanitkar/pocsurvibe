@@ -47,11 +47,10 @@ struct PlayTab: View {
                     .frame(maxWidth: .infinity)
                     .background(Color.orange)
             }
-            // Staff + strip read viewModel.recordedNotes / saPitch /
-            // notationMode internally. Extracted so PlayTab.body never
-            // depends on these properties — keypresses no longer invalidate
-            // the parent body (which would re-evaluate LargePianoView
-            // and slow keypress reflection until recordedNotes hit its cap).
+            // Staff reads viewModel.saPitch / notationMode internally.
+            // Extracted so PlayTab.body never depends on these properties —
+            // keypresses no longer invalidate the parent body (which would
+            // re-evaluate LargePianoView and slow keypress reflection).
             PlayTabRecordSection(
                 viewModel: viewModel,
                 highlightState: highlightState
@@ -90,7 +89,7 @@ struct PlayTab: View {
             // observe `activeMidiNotes`, so PlayTab.body is NOT invalidated
             // by writes here. This mirrors PlayAlong's HighlightState path.
             //
-            // VM bookkeeping (`activeMidiNotes`, `recordedNotes`) is unaffected.
+            // VM bookkeeping (`activeMidiNotes`, `scratchpad`) is unaffected.
             viewModel.installHighlightObserver { [hs = highlightState] notes in
                 hs.activeMidiNotes = notes
             }
@@ -138,10 +137,10 @@ struct PlayTab: View {
     }
 }
 
-/// Staff + recording-strip subview — owns the observation of
-/// `viewModel.recordedNotes`/`saPitch`/`notationMode` so frequent strip
-/// mutations never invalidate `PlayTab.body` (which contains the
-/// performance-critical `LargePianoView`).
+/// Staff subview — owns the observation of `saPitch` / `notationMode` so
+/// frequent scratchpad mutations never invalidate `PlayTab.body` (which
+/// contains the performance-critical `LargePianoView`). The bottom strip
+/// (replacing v1 `RecordingStripView`) lands in Task 11.
 private struct PlayTabRecordSection: View {
     let viewModel: PlayTabViewModel
     let highlightState: PlayTabHighlightState
@@ -151,16 +150,9 @@ private struct PlayTabRecordSection: View {
             LiveHighlightStaffView(
                 highlightState: highlightState,
                 saPitch: viewModel.saPitch,
-                notationMode: viewModel.notationMode,
-                recordedNotes: viewModel.recordedNotes
+                notationMode: viewModel.notationMode
             )
             .frame(maxHeight: .infinity)
-            RecordingStripView(
-                recordedNotes: viewModel.recordedNotes,
-                saPitch: viewModel.saPitch,
-                notationMode: viewModel.notationMode,
-                onClear: { viewModel.clearStrip() }
-            )
         }
     }
 }
