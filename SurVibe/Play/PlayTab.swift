@@ -113,11 +113,19 @@ struct PlayTab: View {
             //
             // 250ms is fine for badge UX: hot-plug visibility within ~250ms.
             // SwiftUI auto-cancels this task on view disappear.
+            var pollCount = 0
             while !Task.isCancelled {
-                let names = [MIDIInputManager.shared.connectedDeviceName].compactMap { $0 }
+                let raw = MIDIInputManager.shared.connectedDeviceName
+                let isConnected = MIDIInputManager.shared.isConnected
+                let names = [raw].compactMap { $0 }
+                if pollCount % 4 == 0 || names != connectedDeviceNames {
+                    print("[PlayTab][polling] tick=\(pollCount) isConnected=\(isConnected) name=\(raw ?? "<nil>")")
+                }
                 if names != connectedDeviceNames {
                     connectedDeviceNames = names
+                    print("[PlayTab][polling] PUSHED names=\(names)")
                 }
+                pollCount += 1
                 try? await Task.sleep(for: .milliseconds(250))
             }
         }

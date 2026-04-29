@@ -21,6 +21,13 @@ struct SurVibeApp: App {
     // MARK: - Initialization
 
     init() {
+        // Unbuffer stdout so debug print() statements flow to devicectl --console
+        // in real time instead of accumulating in libc's 4KB block buffer.
+        // Debug-only — production builds have no print() calls in hot paths.
+        #if DEBUG
+        setvbuf(stdout, nil, _IONBF, 0)
+        #endif
+
         let schema = Self.appSchema
         let isTestHost = ProcessInfo.processInfo.environment["XCTestBundlePath"] != nil
 
