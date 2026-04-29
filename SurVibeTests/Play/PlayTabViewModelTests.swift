@@ -314,6 +314,29 @@ struct PlayTabViewModelTests {
         #expect(vm2.currentInstrument == 25)
     }
 
+    // MARK: - Highlight observer wiring
+
+    @Test
+    func installHighlightObserverWiresCoordinatorCallback() {
+        let coord = MIDINoteHighlightCoordinator()
+        let vm = PlayTabViewModel(
+            engine: MockPlayTabAudioEngine(),
+            midiInput: MockMIDIInputProviding(),
+            highlightCoordinator: coord
+        )
+        var received: Set<Int>?
+        vm.installHighlightObserver { notes in
+            received = notes
+        }
+        // The coordinator's `onActiveNotesChanged` is what `installHighlightObserver`
+        // assigns. The CADisplayLink callback is what fires it; the unit-test
+        // assertion is that the wiring assigned the closure (not the cadence).
+        // Invoke directly to prove the callback the VM installed is the one the
+        // coordinator will call.
+        coord.onActiveNotesChanged?([60, 64, 67])
+        #expect(received == [60, 64, 67])
+    }
+
     @Test
     func userDefaultsRoundTripSaPitch() {
         let (vm1, _, _) = makeVM()

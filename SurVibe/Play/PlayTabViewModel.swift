@@ -219,6 +219,25 @@ final class PlayTabViewModel {
         log.info("Sa pitch -> \(midi)")
     }
 
+    /// Install a callback that fires every time the highlight coordinator
+    /// publishes a new active-notes set (driven by a CADisplayLink, so the
+    /// cadence is bounded by display refresh — typically 8–16 ms).
+    ///
+    /// Used by `PlayTab` to drive the visual highlight (staff + keyboard) on
+    /// the display-link path instead of waiting for a `Task { @MainActor }`
+    /// hop in the MIDI bookkeeping pipeline. This matches PlayAlong's
+    /// keyboard-highlight path and keeps perceived MIDI→highlight latency
+    /// under one display frame.
+    ///
+    /// The callback receives a `Set<Int>` of MIDI note numbers currently
+    /// highlighted. It runs on the main actor; assign the value into a
+    /// `@State` on the view to drive SwiftUI re-render.
+    ///
+    /// - Parameter callback: Closure invoked when the highlight set changes.
+    func installHighlightObserver(_ callback: @escaping @MainActor (Set<Int>) -> Void) {
+        highlightCoordinator.onActiveNotesChanged = callback
+    }
+
     /// Toggle whether external MIDI input plays through the iPad's sampler.
     ///
     /// Updates both the published `playAudioOnMIDI` property (so SwiftUI

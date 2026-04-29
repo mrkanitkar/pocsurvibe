@@ -9,7 +9,11 @@ import SwiftUI
 /// `.sargam` or `.both`, a single-row Sargam strip renders the current note(s)
 /// as Sargam syllables relative to `saPitch`.
 struct LiveHighlightStaffView: View {
-    let activeMidiNotes: Set<UInt8>
+    /// MIDI notes currently highlighted, sourced from the display-link-driven
+    /// `MIDINoteHighlightCoordinator` so the visual updates are bounded by
+    /// the display refresh rate (~8–16 ms) rather than the MIDI bookkeeping
+    /// `Task { @MainActor }` hop.
+    let activeMidiNotes: Set<Int>
     let saPitch: UInt8
     let notationMode: PlayTabNotationMode
     let recordedNotes: [RecordedNote]
@@ -32,7 +36,7 @@ struct LiveHighlightStaffView: View {
                     timeSignature: .fourFour,
                     zoomScale: 1.0,
                     detectedMidiNote: nil,
-                    detectedMidiNotes: Set(activeMidiNotes.map(Int.init)),
+                    detectedMidiNotes: activeMidiNotes,
                     currentNoteMatchState: nil
                 )
                 // Staff is decorative for VoiceOver — the keyboard
@@ -65,7 +69,7 @@ struct LiveHighlightStaffView: View {
     private var sargamRow: some View {
         HStack(spacing: 12) {
             ForEach(Array(activeMidiNotes).sorted(), id: \.self) { midi in
-                Text(SargamLabeler.label(midi: midi, saPitch: saPitch).display)
+                Text(SargamLabeler.label(midi: UInt8(midi), saPitch: saPitch).display)
                     .font(.title2)
                     .monospaced()
             }
@@ -86,7 +90,7 @@ struct LiveHighlightStaffView: View {
         }
         let syllables = Array(activeMidiNotes)
             .sorted()
-            .map { SargamLabeler.label(midi: $0, saPitch: saPitch).display }
+            .map { SargamLabeler.label(midi: UInt8($0), saPitch: saPitch).display }
             .joined(separator: ", ")
         return String(localized: "Currently playing: \(syllables)")
     }
@@ -105,7 +109,7 @@ struct LiveHighlightStaffView: View {
 
 #Preview("C major triad, Sa = C") {
     LiveHighlightStaffView(
-        activeMidiNotes: [60, 64, 67],
+        activeMidiNotes: [60, 64, 67] as Set<Int>,
         saPitch: 60,
         notationMode: .both,
         recordedNotes: [
@@ -120,7 +124,7 @@ struct LiveHighlightStaffView: View {
 
 #Preview("Sargam-only, Sa = D") {
     LiveHighlightStaffView(
-        activeMidiNotes: [62, 64, 66],
+        activeMidiNotes: [62, 64, 66] as Set<Int>,
         saPitch: 62,
         notationMode: .sargam,
         recordedNotes: []

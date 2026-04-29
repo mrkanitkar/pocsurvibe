@@ -21,6 +21,15 @@ struct PlayTab: View {
     private var isPickerPresented = false
     @State
     private var connectedDeviceNames: [String] = []
+    /// Display-link-driven snapshot of currently-highlighted MIDI notes.
+    ///
+    /// Written by ``PlayTabViewModel/installHighlightObserver(_:)`` from
+    /// the `MIDINoteHighlightCoordinator`'s CADisplayLink callback. We
+    /// pass this to the visual surfaces (staff + on-screen keyboard) so
+    /// MIDI→highlight latency is bounded by the display refresh interval
+    /// (~8–16 ms) instead of an unbounded `Task { @MainActor }` hop.
+    @State
+    private var displayedActiveNotes: Set<Int> = []
     @Environment(\.scenePhase)
     private var scenePhase
 
@@ -40,7 +49,7 @@ struct PlayTab: View {
                     .background(Color.orange)
             }
             LiveHighlightStaffView(
-                activeMidiNotes: viewModel.activeMidiNotes,
+                activeMidiNotes: displayedActiveNotes,
                 saPitch: viewModel.saPitch,
                 notationMode: viewModel.notationMode,
                 recordedNotes: viewModel.recordedNotes
@@ -53,7 +62,7 @@ struct PlayTab: View {
                 onClear: { viewModel.clearStrip() }
             )
             InteractivePianoView(
-                activeMidiNotes: Set(viewModel.activeMidiNotes.map(Int.init)),
+                activeMidiNotes: displayedActiveNotes,
                 activeCentsOffset: 0.0,
                 onNoteOn: { midi in
                     viewModel.handleNoteOn(UInt8(midi), velocity: 100, source: .touch)
@@ -78,6 +87,14 @@ struct PlayTab: View {
             // CoreMIDI client/port creation. Idempotent — safe if already started.
             MIDIInputManager.shared.start()
             viewModel.onAppear()
+            // Drive the visual highlight (staff + on-screen keyboard) from
+            // the display-link-driven coordinator so MIDI→highlight latency
+            // is bounded by display refresh (~8–16 ms) instead of an
+            // unbounded `Task { @MainActor }` hop in the bookkeeping path.
+            // VM bookkeeping (`activeMidiNotes`, `recordedNotes`) is unaffected.
+            viewModel.installHighlightObserver { notes in
+                displayedActiveNotes = notes
+            }
             refreshDeviceList()
             // React to hot-plug/unplug. `connectionStateStream` yields `true`
             // when a source connects and `false` when all sources disconnect;
