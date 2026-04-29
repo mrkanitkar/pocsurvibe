@@ -73,29 +73,36 @@ Net effect: the spec leans on "extend in place where convenient, replace where c
 | 4.9 | **Student-experience layer**: undo last note, sustain-pedal capture + MIDI export, velocity capture + playback + MIDI export, empty-state hints, recording indicator + duration counter, graceful errors (MIDI disconnect, sampler fallback), delete take, rename take, unsaved-scratchpad guard prompt. | Q7-1,2,3,4,5,6,9,10,11 |
 | 4.10 | **Architectural fit**: extend in place — pure types + quantizer + MusicXML/MIDI serializers in SVCore; `TakePlaybackEngine` + `MXLPackager` in SVAudio; `RecordedTake` `@Model` and all UI in the SurVibe app target (CloudKit constraint). | Q8-A |
 | 4.11 | **Sa pitch on saved takes**: stored at recording time; Sargam labels in playback view always re-rendered against the take's stored Sa, not the global current Sa. Take row shows a "Sa = C" badge so it's visible. | Q10-a |
-| 4.12 | **Background recording**: pause capture when app is backgrounded; resume on foreground. Required because without a `UIBackgroundModes: ["audio"]` declaration, CoreMIDI packets are *dropped* (not queued) while suspended. v2 does not declare audio background mode. | Q11-a |
+| 4.12 | **Background recording**: pause capture when app is backgrounded; resume on foreground. The `audio` background mode IS declared at the entitlement level (per `.claude/rules/app-target.md`), but Play tab v2 chooses NOT to use it for live MIDI capture — when the app moves to `.background`, the scratchpad stops appending events. Resume on `.active`. (Rationale: keeping CoreMIDI delivery alive in the background would require holding an `AVAudioSession` open just for keystroke capture, which is overkill for the noodling use case and competes with system audio.) | Q11-a |
 
 ## 5. Architecture
 
 ### 5.1 Module / package allocation
 
+SVCore organizes by category (`Models/`, `Protocols/`, `Theme/`, etc.), not by feature. New SVCore additions follow that convention. SVAudio has both `Playback/` and `Pipeline/` subdirectories; `MXLPackager` lives in `Pipeline/` symmetric with the existing `MXLLoader.swift`.
+
 ```
 SVCore  (foundation, no AVFoundation, no AudioKit, no zip)
-├── Play/RecordedNote.swift                    -- value type (extend existing)
-├── Play/RecordedSustainEvent.swift            -- value type
-├── Play/QuantizedNote.swift                   -- value type, output of Quantizer
-├── Play/MusicalDuration.swift                 -- enum (whole, half, quarter, eighth, 16th, dotted variants, tuplets)
-├── Play/Quantizer.swift                       -- pure logic (BPM + grid + time-sig in → QuantizedScore out)
-├── Play/MusicXMLSerializer.swift              -- pure logic (QuantizedScore → MusicXML 4.0 string, no namespace, DTD declared)
-├── Play/MIDISerializer.swift                  -- pure logic (RecordedNote+Sustain → SMF Type-0 bytes, PPQ 1000, 60 BPM tempo meta)
-├── Play/SargamLabeler.swift                   -- MOVED from app target; pure value-type mapping
-└── Play/SargamLabel.swift                     -- value type (already exists, moves alongside)
+├── Models/Play/RecordedNote.swift             -- value type (rewrites the v1 internal struct)
+├── Models/Play/RecordedSustainEvent.swift     -- value type
+├── Models/Play/QuantizedNote.swift            -- value type, output of Quantizer
+├── Models/Play/MusicalDuration.swift          -- enum (whole, half, quarter, eighth, 16th, dotted variants, tuplets)
+├── Music/Quantizer.swift                      -- pure logic (BPM + grid + time-sig in → QuantizedScore out)
+├── Music/MusicXMLSerializer.swift             -- pure logic (QuantizedScore → MusicXML 4.0 string, no namespace, DTD declared)
+├── Music/MIDISerializer.swift                 -- pure logic (RecordedNote+Sustain → SMF Type-0 bytes, PPQ 1000, 60 BPM tempo meta)
+├── Music/SargamLabeler.swift                  -- MOVED from app target; pure value-type mapping
+├── Music/SargamLabel.swift                    -- value type (already exists, moves alongside)
+└── Protocols/HighlightSink.swift              -- NEW: protocol abstraction for the playback-driven visual sync sink
+                                               --  (so SVAudio can drive visual sync without importing the app target)
 
 SVAudio  (depends on SVCore, has AudioKit + ZIPFoundation + AVFoundation)
-├── Playback/TakePlaybackEngine.swift          -- @MainActor, schedules notes/sustain to slot 2 with playhead sync
+├── Playback/TakePlaybackEngine.swift          -- @MainActor; AVAudioSequencer for audible dispatch + CADisplayLink for visual sync
 ├── Playback/TakePlaybackProviding.swift       -- protocol for testability
-├── Playback/MXLPackager.swift                 -- ZIPFoundation; mimetype-first uncompressed entry, container.xml, score.musicxml
-└── Protocols/MultiChannelEngineProtocol.swift -- EXTENDED: + playNoteOnSlot, stopNoteOnSlot, allNotesOffOnSlot, scheduleMIDIEvent (default impl on protocol so existing mocks compile)
+├── Pipeline/MXLPackager.swift                 -- ZIPFoundation; mimetype-first uncompressed entry, container.xml, score.musicxml
+└── Protocols/MultiChannelEngineProtocol.swift -- EXTENDED additively: + playNoteOnSlot, stopNoteOnSlot, allNotesOffOnSlot, sendControlChangeOnSlot
+
+SurVibe app target (owns SwiftData @Model classes per .claude/rules/app-target.md)
+├── PlayAlong/MIDINoteHighlightCoordinator.swift -- EXTENDED: conform to SVCore HighlightSink (additive)
 
 SurVibe (app target — owns SwiftData models per CLAUDE.md rule)
 ├── Models/RecordedTake.swift                  -- @Model, holds take metadata + .externalStorage Data blobs
@@ -210,14 +217,40 @@ public final class ScratchpadState {
     public var hasContent: Bool { !notes.isEmpty || !openNotes.isEmpty }
     public var durationSec: TimeInterval { … }                // 0 if startedAt nil; running otherwise
 
-    public func appendNoteOn(midi: UInt8, velocity: UInt8, velocity16: UInt16, channel: UInt8) { … }
-    public func appendNoteOff(midi: UInt8, channel: UInt8) { … }
-    public func appendSustain(down: Bool, channel: UInt8) { … }
+    // Phase-2 mutations only. Each call must be inside the existing
+    // `Task { @MainActor in ... }` hop established by PlayTabViewModel v1.
+    // `onTimeSec` is captured *in Phase 1* from the MIDIInputEvent's hardware
+    // timestamp and forwarded into Phase 2; never sample Date() inside the Task.
+    public func appendNoteOn(midi: UInt8, velocity: UInt8, velocity16: UInt16,
+                             channel: UInt8, onTimeSec: TimeInterval) { … }
+    public func appendNoteOff(midi: UInt8, channel: UInt8, offTimeSec: TimeInterval) { … }
+    public func appendSustain(down: Bool, channel: UInt8, atTimeSec: TimeInterval) { … }
     public func undoLastNote() -> Bool { … }                  // pops latest closed note + bumps undoStack
     public func clear() { … }                                 // resets startedAt; flushes open notes first
     public func freezeForSave() -> (notes: [RecordedNote], sustain: [RecordedSustainEvent]) { … }
 }
 ```
+
+#### 5.2.1 Two-phase pipeline contract (latency-critical)
+
+This is the contract that preserves the v1 sub-frame highlight latency. Any plan task that wires scratchpad capture to MIDI input MUST honor it:
+
+| Phase | Thread / Actor | Allowed work | Forbidden work |
+|---|---|---|---|
+| **Phase 1** (sync) | CoreMIDI server thread | `highlightCoordinator.noteOn / noteOff / sustainDown / sustainUp` (already nonisolated, lock-protected). Capture `(midi, velocity, velocity16Bit, channel, onTimeSec)` as a Sendable tuple from `MIDIInputEvent`. `onTimeSec` is computed from `event.midiTimestamp` (host ticks → seconds) minus `scratchpad.startedAt` (which is itself snapshotted via a `nonisolated` accessor or a separate `Mutex<Date?>`-backed value). | Any `@MainActor` call. Any `Date()` sample (use the captured timestamp). Any heap-growing operation beyond stack-allocated tuple. |
+| **Phase 2** (async) | MainActor via `Task { @MainActor in ... }` | `scratchpad.appendNoteOn / appendNoteOff / appendSustain` (forwarding the Phase 1 tuple). UI bookkeeping (`activeMidiNotes`, `lastError`, recording-indicator state). | Allocations on the audio path. Synchronous calls that block the main runloop. |
+
+The `onTimeSec` precision (sub-frame, sample-accurate per §4.2) is *only* preserved if it is captured in Phase 1. Sampling `Date()` inside the Phase-2 closure would carry up to one frame of deferral jitter — losing the timing fidelity that B+ depends on for honest playback.
+
+**CC64 isolation invariant**: external MIDI CC64 input flows scratchpad → highlight only. It is **never** forwarded to any sampler slot via `sendControlChangeOnSlot`. That new method (§5.6) is reserved for take-playback dispatch, never for input echo.
+
+#### 5.2.2 Observation-isolation rule for ScratchpadState
+
+Per the precedent set by commit `d145269 perf(SurVibe): scope recordedNotes observation away from PlayTab.body`:
+
+- The live `notes` and `sustain` arrays MUST NOT be `@Bindable`-observed by any view that re-renders on every Phase-2 update. A 5,000-element array passing through SwiftUI invalidation per note-on would violate the Phase-2 ≤1 ms budget.
+- Toolbar + bottom-strip views bind only to `noteCount`, `durationSec`, `isAtSoftCap`, `isAtHardCap` — scalar derived values.
+- The Expanded Timeline Sheet (§5.4.2) is constructed *lazily* when the user taps `⤢`. It reads `scratchpad.freezeForSave()` (or the take's already-frozen snapshot) into a local `let` and renders against the snapshot — not against the live `@Observable`.
 
 ### 5.3 State machine — recording lifecycle
 
@@ -263,7 +296,7 @@ public final class ScratchpadState {
                                   READY
 ```
 
-Background transitions (decision 4.12): when `scenePhase` becomes `.background`, `ScratchpadState.startedAt` is preserved but new MIDI events are dropped at the input layer. On `.active`, capture resumes with no time-shift compensation (gap simply appears in the recording). Acceptable because the alternative — claiming the iOS audio background mode just for keystroke capture — is overkill.
+Background transitions (decision 4.12): when `scenePhase` becomes `.background`, `ScratchpadState.startedAt` is preserved but new MIDI events are dropped at the input layer (the Phase-2 dispatcher gates on `scenePhase == .active`). On `.active`, capture resumes with no time-shift compensation (gap simply appears in the recording). The `audio` UIBackgroundMode is declared at the entitlement level for other features, but Play tab does not actively use it for capture — keeping a foreground `AVAudioSession` open just to record key presses is overkill.
 
 ### 5.4 UI structure
 
@@ -293,12 +326,14 @@ The 16-note `RecordingStripView` from v1 is **removed from the default layout** 
 
 #### 5.4.2 Expanded Timeline Sheet
 
-Reached by tapping `⤢` on the strip. Full-screen sheet with `.presentationDetents([.large])` (per Apple iOS 26 guidance — no manual `.glassEffect`; system applies Liquid Glass via detents).
+Reached by tapping `⤢` on the strip. Full-screen sheet with `.presentationDetents([.large])`. iOS 26 sheets render with Liquid Glass chrome automatically — we don't apply `.glassEffect` to the sheet root.
 
 Top: 3 segmented tabs:
 - **Staff** — horizontal-scroll grand staff with playhead. Viewport-culled (only ±2 screens of notes layout-computed).
 - **Waterfall** — vertical bars per key, oldest at top, newest at bottom. Same playhead.
 - **Notes** *(takes only)* — title / raga / teacher-notes form.
+
+For the inline timeline strip in the default Play tab layout (§5.4.1), use `.glassEffect(in: RoundedRectangle(cornerRadius: 12))` (the `Shape`-typed argument; `.rect(...)` is not a `Shape` factory). For the sheet itself, do NOT apply `.glassEffect` manually — iOS 26 renders sheet chrome with Liquid Glass automatically.
 
 Bottom transport bar (always visible in this sheet):
 - **▶ Play / ⏸ Pause** + **Restart ↺**
@@ -310,7 +345,7 @@ Visual sync (decision 4.5) reuses `MIDINoteHighlightCoordinator` — `TakePlayba
 
 #### 5.4.3 Takes list
 
-Reached via ⋯ More → Takes…. `.presentationDetents([.medium, .large])` so iOS 26 applies Liquid Glass automatically.
+Reached via ⋯ More → Takes…. `.presentationDetents([.medium, .large])`. iOS 26 renders sheet chrome with Liquid Glass automatically; at `.medium` the glass is most visible.
 
 ```
 ┌──────────────────────────────────────────┐
@@ -371,14 +406,29 @@ If MusicXML or MXL is checked, tapping Continue shows the Quantize sheet:
 
 Default BPM = 80, time-sig = 4/4, grid = 1/16. The "Tap tempo" affordance lets the user tap 4 times to set BPM.
 
-Tap Export → background job runs Quantizer + serializers, writes files to a temp dir, presents iOS share sheet with all selected files attached.
+Tap Export → background job runs Quantizer + serializers, writes files to a temp dir, presents the system share sheet via SwiftUI `ShareLink(items: [URL])` with all selected files attached. (`URL` conforms to `Transferable`; `ShareLink` accepts a `RandomAccessCollection` of items, so multi-file attachment is native.)
 
 ### 5.5 Playback engine
+
+`TakePlaybackEngine` lives in SVAudio. Because SVAudio cannot import the SurVibe app target, the visual-sync hookup goes through a `HighlightSink` protocol declared in SVCore. The existing `MIDINoteHighlightCoordinator` (in `SurVibe/PlayAlong/`) gains a single conformance — additive, no behavior change for v1.
+
+```swift
+// SVCore/Sources/SVCore/Protocols/HighlightSink.swift
+public protocol HighlightSink: AnyObject, Sendable {
+    func noteOn(_ midi: Int)
+    func noteOff(_ midi: Int, channel: UInt8)
+    func sustainDown()
+    func sustainUp()
+}
+
+// SurVibe/PlayAlong/MIDINoteHighlightCoordinator.swift  (additive conformance)
+extension MIDINoteHighlightCoordinator: HighlightSink {}   // signatures already match
+```
 
 ```swift
 // SVAudio/Sources/SVAudio/Playback/TakePlaybackEngine.swift
 
-public protocol TakePlaybackProviding: Sendable {
+public protocol TakePlaybackProviding: AnyObject, Sendable {
     func schedule(snapshot: TakeSnapshot, speed: Double, handFilter: HandFilter, saMidi: UInt8) async
     func play()
     func pause()
@@ -389,11 +439,15 @@ public protocol TakePlaybackProviding: Sendable {
 @MainActor
 public final class TakePlaybackEngine: TakePlaybackProviding {
     private let multiChannel: MultiChannelEngineProtocol
-    private weak var highlightCoordinator: MIDINoteHighlightCoordinator?
-    private let playbackSlot: UInt32 = 2
+    private weak var highlightSink: HighlightSink?
+    private let playbackSlot: Int = 2                  // slot 2 reserved for take playback
+
+    private let sequencer: AVAudioSequencer            // sample-accurate audible dispatch
+    private var visualDisplayLink: CADisplayLink?      // visual-only ticking on main runloop
 
     public init(multiChannel: MultiChannelEngineProtocol,
-                highlightCoordinator: MIDINoteHighlightCoordinator?) { … }
+                highlightSink: HighlightSink?,
+                avEngine: AVAudioEngine) { … }
     …
 }
 
@@ -407,41 +461,57 @@ public struct TakeSnapshot: Sendable {
 public enum HandFilter: Sendable { case both, trebleOnly, bassOnly }
 ```
 
-`schedule(...)` precomputes a sorted event list (note-on, note-off, sustain-down, sustain-up) with their *playback* times = `recordedTime / speed`. `play()` arms a CADisplayLink-driven scheduler that fires events as their time arrives, calling `multiChannel.playNoteOnSlot(2, midi:, velocity:, channel:)` (new API, decision 5.6) and `highlightCoordinator?.noteOn(_:)`/`.noteOff(_:)`. `seek(to:)` re-arms with the post-seek tail. Hand filter rejects notes outside the chosen MIDI range (≥60 for treble, <60 for bass — matches v1 split).
+#### 5.5.1 Two-stream playback dispatch (audible vs visual)
+
+Per Apple's `CADisplayLink` and `AVAudioSequencer` docs, CADisplayLink runs on the main runloop and quantizes per-event dispatch to display-frame boundaries (~8.3–16.7 ms jitter at 60–120 Hz). For chord onsets that's audibly unacceptable — a 6-note chord could split into "flam" if its events straddle a frame.
+
+`TakePlaybackEngine` therefore uses **two parallel streams**:
+
+- **Audible stream — `AVAudioSequencer`.** `schedule(...)` builds an in-memory `MusicSequence` (Note-On / Note-Off / CC64 / Program-Change events at scaled `recordedTime / speed`), wires its destination to `samplers[2]` via the engine's `MIDIScheduler`, then `sequencer.start()` runs it on the audio render thread — sample-accurate to the device clock. `seek(to:)` is `sequencer.currentPositionInSeconds = ...`.
+- **Visual stream — `CADisplayLink`.** A single timer at the display refresh rate computes the current playhead position (`sequencer.currentPositionInSeconds`), queries which notes are "currently sounding", and calls `highlightSink?.noteOn / noteOff` for the diff against the previous frame. ≤16 ms visual lag is fine — the existing v1 highlight pipeline already operates at this cadence.
+
+Speed scaling = pre-baked into the sequence at `schedule(...)` time. Hand filter rejects notes outside the chosen MIDI range (≥60 for treble, <60 for bass — matches v1 split). Sustain CC64 events go to the same channel as the notes; the sequencer interleaves them in tick order.
+
+> **Latency invariant**: this design preserves v1's "live MIDI → highlight ≤16 ms" contract because the take-playback path is entirely separate. Live input still goes Phase 1 → highlight directly; playback dispatch runs on the audio render thread without touching the live-input lock except for the sub-µs `HighlightSink.noteOn` call (which contends with live input on `OSAllocatedUnfairLock` for hold times measured in nanoseconds — same invariant as v1 Practice/PlayAlong).
 
 > **Non-regression note**: `TakePlaybackEngine` is constructed only when the Expanded Timeline Sheet is opened. Live touch and live MIDI input continue to drive slot 0 unchanged.
 
-### 5.6 New `MultiChannelEngineProtocol` methods (additive only)
+### 5.6 `MultiChannelEngineProtocol` extension (additive)
+
+The actual existing protocol declaration is `@MainActor public protocol MultiChannelEngineProtocol: AnyObject` (`Packages/SVAudio/Sources/SVAudio/Protocols/MultiChannelEngineProtocol.swift:8`). Its current method set covers song loading and transport (`loadSong`, `play`, `pause`, `stop`, `currentPositionInSeconds`, `setRate`, etc.) plus `playTouchNote / stopTouchNote / stopAllTouchNotes`. **`loadProgram` is NOT on this protocol** — it lives on `PlayTabAudioEngine` (`Packages/SVAudio/Sources/SVAudio/Protocols/PlayTabAudioEngine.swift:36`) with the synchronous signature `func loadProgram(into index: Int, program: UInt8, isPercussion: Bool) throws`. Slot indices are `Int` throughout the engine — not `UInt32`.
+
+v2 adds the following methods to `MultiChannelEngineProtocol` (additive only — no signature or semantic change to existing methods):
 
 ```swift
+@MainActor
 public protocol MultiChannelEngineProtocol: AnyObject {
-    // existing API — unchanged
-    func playTouchNote(_ midi: UInt8, velocity: UInt8)
-    func stopTouchNote(_ midi: UInt8)
-    func stopAllTouchNotes()
-    func loadProgram(into slot: UInt32, program: UInt8, isPercussion: Bool) async throws
+    // ... existing methods preserved unchanged ...
 
-    // NEW v2 additions. Default implementations are provided so MockPlayTabAudioEngine
-    // and other test doubles do not have to spell out boilerplate they don't exercise.
-    // (Tests that *do* exercise multi-slot playback override these in the mock.)
-    func playNoteOnSlot(_ slot: UInt32, midi: UInt8, velocity: UInt8, channel: UInt8)
-    func stopNoteOnSlot(_ slot: UInt32, midi: UInt8, channel: UInt8)
-    func allNotesOffOnSlot(_ slot: UInt32)
-    func sendControlChangeOnSlot(_ slot: UInt32, controller: UInt8, value: UInt8, channel: UInt8)
+    // v2 additions — for take playback dispatching to slot 2.
+    func playNoteOnSlot(_ slot: Int, midi: UInt8, velocity: UInt8, channel: UInt8)
+    func stopNoteOnSlot(_ slot: Int, midi: UInt8, channel: UInt8)
+    func allNotesOffOnSlot(_ slot: Int)
+    func sendControlChangeOnSlot(_ slot: Int, controller: UInt8, value: UInt8, channel: UInt8)
 }
 
 extension MultiChannelEngineProtocol {
-    // Default no-ops so PlayTab v1 tests keep passing without touching mocks.
-    public func playNoteOnSlot(_ slot: UInt32, midi: UInt8, velocity: UInt8, channel: UInt8) {}
-    public func stopNoteOnSlot(_ slot: UInt32, midi: UInt8, channel: UInt8) {}
-    public func allNotesOffOnSlot(_ slot: UInt32) {}
-    public func sendControlChangeOnSlot(_ slot: UInt32, controller: UInt8, value: UInt8, channel: UInt8) {}
+    // Default no-op impls. Existing concrete conformer (ProductionMultiChannelEngine)
+    // overrides them. Default impls exist so future test doubles can adopt the
+    // protocol without spelling out boilerplate they don't exercise. (Existing
+    // PlayTab mocks conform to PlayTabAudioEngine, not MultiChannelEngineProtocol —
+    // so they're unaffected by this addition.)
+    public func playNoteOnSlot(_ slot: Int, midi: UInt8, velocity: UInt8, channel: UInt8) {}
+    public func stopNoteOnSlot(_ slot: Int, midi: UInt8, channel: UInt8) {}
+    public func allNotesOffOnSlot(_ slot: Int) {}
+    public func sendControlChangeOnSlot(_ slot: Int, controller: UInt8, value: UInt8, channel: UInt8) {}
 }
 ```
 
-`ProductionMultiChannelEngine` implements the new methods by calling `samplers[Int(slot)].startNote/stopNote/sendController(...)` directly (same internal pattern as `playTouchNote`).
+`ProductionMultiChannelEngine` implements the new methods by calling `samplers[slot].startNote(midi, withVelocity: velocity, onChannel: channel)`, `samplers[slot].stopNote(midi, onChannel: channel)`, and `samplers[slot].sendController(controller, withValue: value, onChannel: channel)` — the same direct-AudioToolbox pattern v1 uses for `playTouchNote` (verified at `ProductionMultiChannelEngine.swift:187–207`).
 
-> **Non-regression note**: `samplers` array is `public nonisolated(unsafe)` today (per AUD-033). The new methods follow the same memory-ordering invariant: read on main actor, but the underlying AudioToolbox call is itself thread-safe per Apple docs.
+> **Non-regression note**: `samplers` is `public nonisolated(unsafe) private(set) var samplers: [AVAudioUnitSampler]` (line 54). The thread-safety rationale is documented inline at lines 48–54 (not a separate "AUD-033" decision — the spec previously referred to a token that doesn't exist in the codebase). The new methods adopt the same invariant: protocol is `@MainActor`, but the `AVAudioUnitSampler.startNote/stopNote/sendController` calls are themselves thread-safe per Apple's documentation.
+
+> **Take-playback path uses `AVAudioSequencer` for audible dispatch (§5.5.1).** The `playNoteOnSlot` API exists for fallback / test scaffolding / cases where a one-shot note is needed without sequencer overhead — it is NOT the primary scheduling primitive for take playback.
 
 ### 5.7 Export pipeline
 
@@ -463,6 +533,9 @@ TakeSnapshot (notes + sustain + instrumentProgram + saPitchMidi)
    │       ├──→ MusicXMLSerializer.serialize(score) → String
    │       │       <!DOCTYPE score-partwise PUBLIC "-//Recordare//DTD MusicXML 4.0 Partwise//EN" "http://www.musicxml.org/dtds/partwise.dtd">
    │       │       <score-partwise version="4.0">  ← NO xmlns
+   │       │       (DTD is officially deprecated in favor of XSD in MusicXML 4.0,
+   │       │        but the DTD form is still accepted by MuseScore 4, Finale,
+   │       │        Sibelius, Dorico — we emit it for max consumer compatibility.)
    │       │       Two-staff piano part. Treble = staff 1, bass = staff 2.
    │       │       Voice: 1 (treble) and 2 (bass). Sargam labels in <lyric><text>.
    │       │       returns String → write .musicxml file
@@ -476,7 +549,7 @@ TakeSnapshot (notes + sustain + instrumentProgram + saPitchMidi)
 [.mid, .musicxml, .mxl] in temp dir
    │
    ▼
-UIActivityViewController via SwiftUI ShareLink — all selected files attached
+SwiftUI ShareLink (system share sheet) — all selected files attached as [URL]
 ```
 
 ### 5.8 Tab-change / New Session guard
@@ -527,8 +600,10 @@ Both call into the same guard. Cancel reverts. Save runs the materialize-take fl
 
 | Operation | Target | Notes |
 |---|---|---|
-| MIDI input → highlight visible | ≤ 16 ms | Same as v1 |
-| MIDI input → scratchpad append | ≤ 1 ms | Wall-clock-bounded; never on audio thread |
+| MIDI input → highlight visible | ≤ 16 ms | Same as v1; Phase 1 path unchanged |
+| MIDI input → scratchpad append | ≤ 1 ms | Phase 2 only (`Task { @MainActor in ... }`); never on the CoreMIDI thread |
+| Take playback chord-onset jitter | ≤ 1 ms (sample-accurate) | Audible dispatch via `AVAudioSequencer` on audio render thread (§5.5.1) — NOT CADisplayLink |
+| Take playback visual highlight jitter | ≤ 16 ms | CADisplayLink-driven on main runloop; acceptable for visual sync only |
 | 5,000-note staff render (Expanded sheet, Staff tab) | ≤ 200 ms first paint | Viewport culling — only ±2 screens' worth laid out |
 | Quantize (5,000 notes, 1/16 grid) | ≤ 500 ms on iPad A12 | Pure-Swift single pass |
 | MusicXML export (5,000 notes) | ≤ 1 s | XML string build dominated; no I/O on main |
@@ -563,16 +638,16 @@ All export work runs on a background `Task`. UI shows a progress sheet for any e
 
 Approximately 16 TDD tasks, ordered so each step is independently testable:
 
-1. **SVCore types**: rewrite `RecordedNote` (drop `timestamp: Date`; add velocity, velocity16Bit, onTimeSec, offTimeSec, channel) and update v1 call sites in the same commit. Add `RecordedSustainEvent`, `MusicalDuration`, `QuantizedNote`, `QuantizedScore`. Move `SargamLabeler` + `SargamLabel` from app target to SVCore (update imports).
+1. **SVCore types**: rewrite `RecordedNote` in `SVCore/Models/Play/` (drop `timestamp: Date`; add velocity, velocity16Bit, onTimeSec, offTimeSec, channel). Update v1 call sites — `PlayTabViewModel.swift:246, 352`, `RecordingStripView.swift` (file slated for deletion), `LiveHighlightStaffView.swift:169–222` (preview fixtures) — in the same commit. Add `RecordedSustainEvent`, `MusicalDuration`, `QuantizedNote`, `QuantizedScore`. Move `SargamLabeler` + `SargamLabel` from `SurVibe/Play/` to `SVCore/Music/`; update consumers (`LiveHighlightStaffView.swift:117, 138`) and tests (`SargamLabelerTests.swift`: drop `@testable`, switch to `import SVCore`). Add `HighlightSink` protocol in `SVCore/Protocols/`.
 2. **`RecordedTake` `@Model` in `SurVibe/Models/`** with `.externalStorage` blobs and `@Transient` caches; codable round-trip tests.
 3. **`ScratchpadState`** with append/undo/clear/cap behavior + tests.
-4. **Wire scratchpad to `MIDIInputManager` + touch path**; remove the v1 16-note strip; add toolbar recording dot + Undo button.
+4. **Wire scratchpad to `MIDIInputManager` + touch path** **respecting the §5.2.1 two-phase contract**: Phase 1 (CoreMIDI thread) captures `(midi, velocity, velocity16Bit, channel, onTimeSec)` from `MIDIInputEvent.midiTimestamp` and forwards into Phase 2 (`Task { @MainActor in ... }`) which calls `scratchpad.appendNoteOn / appendNoteOff / appendSustain`. Plus: remove the v1 16-note strip, add toolbar recording dot + Undo button. Verify §5.2.2 observation-isolation rule with a 5,000-note stress test (no SwiftUI invalidation per note-on).
 5. **Soft/hard cap UI** (banner + modal).
 6. **`Quantizer`** + golden tests.
 7. **`MusicXMLSerializer`** + `MXLPackager` (in SVAudio) + golden tests.
 8. **`MIDISerializer`** + round-trip tests.
-9. **`MultiChannelEngineProtocol` extension** with default no-op impls; `ProductionMultiChannelEngine.playNoteOnSlot` etc.
-10. **`TakePlaybackEngine`** + scheduler tests against mock multi-channel.
+9. **`MultiChannelEngineProtocol` extension** (additive `playNoteOnSlot / stopNoteOnSlot / allNotesOffOnSlot / sendControlChangeOnSlot` with `Int` slot indices, default no-op impls). `ProductionMultiChannelEngine` implements via `samplers[slot].startNote/stopNote/sendController`.
+10. **`TakePlaybackEngine`** with the §5.5.1 two-stream design: `AVAudioSequencer`-driven audible dispatch + CADisplayLink-driven visual sync via `HighlightSink`. Tests cover schedule/seek/pause/restart and verify chord-onset jitter ≤1 ms via offline-render measurement (audio render thread, not main).
 11. **Expanded Timeline Sheet — Staff tab** + visual sync.
 12. **Expanded Timeline Sheet — Waterfall tab.**
 13. **Takes list** (CRUD + delete-undo + rename).
