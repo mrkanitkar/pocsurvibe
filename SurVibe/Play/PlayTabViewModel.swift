@@ -1,6 +1,7 @@
 import Foundation
 import SVAudio
 import SVCore
+import SwiftData
 import os
 
 /// Notation display mode for the Play tab top staff and recording strip.
@@ -74,6 +75,10 @@ final class PlayTabViewModel {
 
     /// Most recent user-facing error message. `nil` when no error pending.
     private(set) var lastError: String?
+
+    /// Whether the Save Take sheet is currently presented. Toggled by the ⋯
+    /// menu's "Save take" action and cleared when the sheet dismisses.
+    var saveTakeSheetPresented: Bool = false
 
     /// Whether ``onAppear()`` has run since the last ``onDisappear()``.
     /// Guards against scenePhase double-fire — `.task` runs once and
@@ -368,5 +373,68 @@ final class PlayTabViewModel {
 
     private func recordNoteOffBookkeeping(note: UInt8) {
         activeMidiNotes.remove(note)
+    }
+
+    // MARK: - Save take
+
+    /// Materialise the current scratchpad into a persisted ``RecordedTake``.
+    ///
+    /// Freezes the live scratchpad (closing any open notes / sustains at the
+    /// current time), encodes the snapshot into a `RecordedTake`, inserts it
+    /// into the supplied `ModelContext`, and saves. On success the scratchpad
+    /// is cleared without overriding the active program or Sa pitch — the
+    /// performer keeps their current setup ready for the next take.
+    ///
+    /// `scratchpad` and `modelContext` are passed in rather than read from
+    /// VM properties because both are introduced by Task 6 (parallel branch);
+    /// keeping the dependency local lets Task 16a build standalone and lets
+    /// T6's merge thin this signature down without touching the call sites
+    /// inside `SaveTakeSheet`.
+    ///
+    /// - Parameters:
+    ///   - scratchpad: Live recording buffer to freeze and persist.
+    ///   - modelContext: SwiftData context that owns the `RecordedTake` model.
+    ///   - title: User-supplied take title (must be non-empty per the sheet).
+    ///   - ragaTagId: Optional raga catalog tag.
+    ///   - teacherNotes: Free-form notes for the teacher.
+    func saveTake(
+        scratchpad: ScratchpadState,
+        modelContext: ModelContext,
+        title: String,
+        ragaTagId: String?,
+        teacherNotes: String
+    ) async {
+        let frozen = scratchpad.freezeForSave()
+        let take = RecordedTake(
+            title: title,
+            instrumentProgram: scratchpad.instrumentProgram,
+            saPitchMidi: scratchpad.saPitchMidi,
+            ragaTagId: ragaTagId,
+            teacherNotes: teacherNotes,
+            notes: frozen.notes,
+            sustain: frozen.sustain
+        )
+        modelContext.insert(take)
+        do {
+            try modelContext.save()
+        } catch {
+            lastError = "Couldn't save: \(error.localizedDescription)"
+            log.error("RecordedTake save failed: \(String(describing: error))")
+            return
+        }
+        scratchpad.clear(programOverride: nil, saOverride: nil)
+        saveTakeSheetPresented = false
+    }
+
+    /// Number of `RecordedTake` rows currently persisted.
+    ///
+    /// Used by the Save Take sheet to seed the title placeholder
+    /// (`"Take N · <date>"`). On fetch failure returns 0 — the user just sees
+    /// `"Take 1"` until the next save succeeds.
+    ///
+    /// - Parameter modelContext: SwiftData context to query.
+    /// - Returns: Count of persisted takes.
+    func takesCount(in modelContext: ModelContext) -> Int {
+        (try? modelContext.fetchCount(FetchDescriptor<RecordedTake>())) ?? 0
     }
 }
