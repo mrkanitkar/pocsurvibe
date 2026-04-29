@@ -64,6 +64,11 @@ final class PlayTabViewModel {
     /// MIDI notes currently held down (touch + MIDI). Drives keyboard highlight.
     private(set) var activeMidiNotes: Set<UInt8> = []
 
+    /// Whether the Takes list sheet is currently presented. Bound from the
+    /// Play tab's overflow menu (T16b → T16c…); flipping to `true` brings up
+    /// `TakesListSheet`, flipping to `false` dismisses it.
+    var takesListSheetPresented: Bool = false
+
     /// Capped recording strip — last ``stripCap`` distinct note-ons.
     private(set) var recordedNotes: [RecordedNote] = []
 
