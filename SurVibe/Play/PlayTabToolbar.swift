@@ -72,11 +72,26 @@ struct PlayTabToolbar: View {
     @ViewBuilder
     private var midiStatusBadge: some View {
         if !connectedDeviceNames.isEmpty {
-            Image(systemName: "pianokeys.inverse")
-                .foregroundStyle(Color.green)
-                .accessibilityLabel("MIDI connected")
-                .accessibilityValue(connectedDeviceNames.joined(separator: ", "))
+            Label {
+                Text(midiBadgeText)
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            } icon: {
+                Image(systemName: "pianokeys.inverse")
+            }
+            .foregroundStyle(Color.green)
+            .accessibilityLabel("MIDI connected")
+            .accessibilityValue(connectedDeviceNames.joined(separator: ", "))
         }
+    }
+
+    /// Display string for the MIDI badge: first device name, with " +N more"
+    /// suffix when multiple devices are connected.
+    private var midiBadgeText: String {
+        if connectedDeviceNames.count <= 1 {
+            return connectedDeviceNames.first ?? ""
+        }
+        return "\(connectedDeviceNames[0]) +\(connectedDeviceNames.count - 1) more"
     }
 
     private func noteName(for midi: UInt8) -> String {
