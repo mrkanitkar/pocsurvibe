@@ -87,9 +87,9 @@ struct RecordingStripView: View {
 #Preview("3 notes") {
     RecordingStripView(
         recordedNotes: [
-            RecordedNote(midi: 60, timestamp: .now),
-            RecordedNote(midi: 64, timestamp: .now),
-            RecordedNote(midi: 67, timestamp: .now),
+            RecordedNote(midi: 60, velocity: 90, onTimeSec: 0.0, offTimeSec: 0.4),
+            RecordedNote(midi: 64, velocity: 90, onTimeSec: 0.5, offTimeSec: 0.9),
+            RecordedNote(midi: 67, velocity: 90, onTimeSec: 1.0, offTimeSec: 1.4),
         ],
         saPitch: 60,
         notationMode: .both,
@@ -100,7 +100,14 @@ struct RecordingStripView: View {
 
 #Preview("Full (16/16)") {
     RecordingStripView(
-        recordedNotes: (60..<76).map { RecordedNote(midi: UInt8($0), timestamp: .now) },
+        recordedNotes: (60..<76).enumerated().map { idx, midi in
+            RecordedNote(
+                midi: UInt8(midi),
+                velocity: 90,
+                onTimeSec: Double(idx) * 0.25,
+                offTimeSec: Double(idx) * 0.25 + 0.2
+            )
+        },
         saPitch: 60,
         notationMode: .both,
         onClear: {}

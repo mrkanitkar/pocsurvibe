@@ -167,9 +167,9 @@ private func previewHighlight(_ notes: Set<Int>) -> PlayTabHighlightState {
         saPitch: 60,
         notationMode: .both,
         recordedNotes: [
-            RecordedNote(midi: 60),
-            RecordedNote(midi: 64),
-            RecordedNote(midi: 67),
+            RecordedNote(midi: 60, velocity: 90, onTimeSec: 0.0, offTimeSec: 0.5),
+            RecordedNote(midi: 64, velocity: 90, onTimeSec: 0.5, offTimeSec: 1.0),
+            RecordedNote(midi: 67, velocity: 90, onTimeSec: 1.0, offTimeSec: 1.5),
         ]
     )
     .frame(height: 200)
@@ -193,9 +193,9 @@ private func previewHighlight(_ notes: Set<Int>) -> PlayTabHighlightState {
         saPitch: 60,
         notationMode: .both,
         recordedNotes: [
-            RecordedNote(midi: 43),
-            RecordedNote(midi: 60),
-            RecordedNote(midi: 67),
+            RecordedNote(midi: 43, velocity: 90, onTimeSec: 0.0, offTimeSec: 0.5),
+            RecordedNote(midi: 60, velocity: 90, onTimeSec: 0.5, offTimeSec: 1.0),
+            RecordedNote(midi: 67, velocity: 90, onTimeSec: 1.0, offTimeSec: 1.5),
         ]
     )
     .frame(height: 320)
@@ -220,7 +220,14 @@ private func previewHighlight(_ notes: Set<Int>) -> PlayTabHighlightState {
         highlightState: previewHighlight(midis),
         saPitch: 60,
         notationMode: .western,
-        recordedNotes: midis.sorted().map { RecordedNote(midi: UInt8($0)) }
+        recordedNotes: midis.sorted().enumerated().map { idx, midi in
+            RecordedNote(
+                midi: UInt8(midi),
+                velocity: 90,
+                onTimeSec: Double(idx) * 0.5,
+                offTimeSec: Double(idx) * 0.5 + 0.4
+            )
+        }
     )
     .frame(height: 480)
     .padding()

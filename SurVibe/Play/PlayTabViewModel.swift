@@ -20,18 +20,6 @@ enum NoteSource: Hashable, Sendable {
     case midi
 }
 
-/// One entry in the capped recording strip.
-struct RecordedNote: Identifiable, Equatable, Sendable {
-    let id = UUID()
-    let midi: UInt8
-    let timestamp: Date
-
-    init(midi: UInt8, timestamp: Date = Date()) {
-        self.midi = midi
-        self.timestamp = timestamp
-    }
-}
-
 /// Owns the Play tab's state: current instrument, Sa pitch, notation mode,
 /// active highlighted notes, and the capped recording strip.
 ///
@@ -243,7 +231,16 @@ final class PlayTabViewModel {
         }
         activeMidiNotes.insert(midi)
         if !wasAlreadyOn && !isStripFull {
-            recordedNotes.append(RecordedNote(midi: midi))
+            recordedNotes.append(
+                RecordedNote(
+                    midi: midi,
+                    velocity: velocity,
+                    velocity16Bit: 0,
+                    onTimeSec: 0,
+                    offTimeSec: 0,
+                    channel: 0
+                )
+            )
         } else if !wasAlreadyOn && isStripFull {
             log.debug("Strip full — note \(midi) is not recorded")
         }
@@ -339,17 +336,26 @@ final class PlayTabViewModel {
     /// or the audio engine (MIDI input never plays through the iPad sampler).
     private func dispatchMIDIBookkeeping(note: UInt8, velocity: UInt8) {
         if velocity > 0 {
-            recordNoteOnBookkeeping(note: note)
+            recordNoteOnBookkeeping(note: note, velocity: velocity)
         } else {
             recordNoteOffBookkeeping(note: note)
         }
     }
 
-    private func recordNoteOnBookkeeping(note: UInt8) {
+    private func recordNoteOnBookkeeping(note: UInt8, velocity: UInt8) {
         let wasAlreadyOn = activeMidiNotes.contains(note)
         activeMidiNotes.insert(note)
         if !wasAlreadyOn && !isStripFull {
-            recordedNotes.append(RecordedNote(midi: note))
+            recordedNotes.append(
+                RecordedNote(
+                    midi: note,
+                    velocity: velocity,
+                    velocity16Bit: 0,
+                    onTimeSec: 0,
+                    offTimeSec: 0,
+                    channel: 0
+                )
+            )
         } else if !wasAlreadyOn && isStripFull {
             log.debug("Strip full — note \(note) is not recorded")
         }
