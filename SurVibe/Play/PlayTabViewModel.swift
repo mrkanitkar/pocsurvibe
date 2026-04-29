@@ -101,6 +101,11 @@ final class PlayTabViewModel {
     /// menu's "Save take" action and cleared when the sheet dismisses.
     var saveTakeSheetPresented: Bool = false
 
+    /// Whether the Expanded Timeline Sheet (Staff / Waterfall / Notes) is
+    /// currently presented. Flipped to `true` by the bottom strip's expand
+    /// affordance and cleared when the sheet dismisses.
+    var expandedSheetPresented: Bool = false
+
     /// Whether the user has dismissed the soft-cap banner during the current
     /// scratchpad session. Reset by ``clearScratchpad(programOverride:saOverride:)``
     /// so that a new recording can show the banner again at 1500 notes.
