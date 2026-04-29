@@ -21,15 +21,14 @@ struct PlayTab: View {
     private var isPickerPresented = false
     @State
     private var connectedDeviceNames: [String] = []
-    /// Display-link-driven snapshot of currently-highlighted MIDI notes.
+    /// Isolated observable holding the display-link-driven highlight set.
     ///
-    /// Written by ``PlayTabViewModel/installHighlightObserver(_:)`` from
-    /// the `MIDINoteHighlightCoordinator`'s CADisplayLink callback. We
-    /// pass this to the visual surfaces (staff + on-screen keyboard) so
-    /// MIDI→highlight latency is bounded by the display refresh interval
-    /// (~8–16 ms) instead of an unbounded `Task { @MainActor }` hop.
+    /// PlayTab.body never reads `highlightState.activeMidiNotes`, so SwiftUI
+    /// does NOT re-render PlayTab when the MIDI thread updates the highlight
+    /// set. Only `LiveHighlightStaffView` and `LargePianoView` (which read
+    /// the property) re-render — matching PlayAlong's scoping path.
     @State
-    private var displayedActiveNotes: Set<Int> = []
+    private var highlightState = PlayTabHighlightState()
     @Environment(\.scenePhase)
     private var scenePhase
 
@@ -49,7 +48,7 @@ struct PlayTab: View {
                     .background(Color.orange)
             }
             LiveHighlightStaffView(
-                activeMidiNotes: displayedActiveNotes,
+                highlightState: highlightState,
                 saPitch: viewModel.saPitch,
                 notationMode: viewModel.notationMode,
                 recordedNotes: viewModel.recordedNotes
@@ -62,7 +61,7 @@ struct PlayTab: View {
                 onClear: { viewModel.clearStrip() }
             )
             LargePianoView(
-                activeMidiNotes: displayedActiveNotes,
+                highlightState: highlightState,
                 onNoteOn: { midi in
                     viewModel.handleNoteOn(UInt8(midi), velocity: 100, source: .touch)
                 },
@@ -90,9 +89,16 @@ struct PlayTab: View {
             // the display-link-driven coordinator so MIDI→highlight latency
             // is bounded by display refresh (~8–16 ms) instead of an
             // unbounded `Task { @MainActor }` hop in the bookkeeping path.
+            //
+            // Capture `highlightState` strongly: only the staff + keyboard
+            // observe `activeMidiNotes`, so PlayTab.body is NOT invalidated
+            // by writes here. This mirrors PlayAlong's HighlightState path.
+            //
             // VM bookkeeping (`activeMidiNotes`, `recordedNotes`) is unaffected.
-            viewModel.installHighlightObserver { notes in
-                displayedActiveNotes = notes
+            viewModel.installHighlightObserver { [hs = highlightState] notes in
+                let timestampMicros = DispatchTime.now().uptimeNanoseconds / 1_000
+                print("[PlayTab][displayLink] notes=\(notes.count) ts=\(timestampMicros)")
+                hs.activeMidiNotes = notes
             }
             // `MIDIInputManager.refreshSources()` yields the new connection
             // state on the connection stream BEFORE its `Task { @MainActor }`

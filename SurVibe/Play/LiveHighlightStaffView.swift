@@ -18,14 +18,19 @@ private let grandStaffSplitMidi: Int = 60
 /// When `notationMode` is `.sargam` or `.both`, a single-row Sargam strip
 /// renders the current note(s) as Sargam syllables relative to `saPitch`.
 struct LiveHighlightStaffView: View {
-    /// MIDI notes currently highlighted, sourced from the display-link-driven
-    /// `MIDINoteHighlightCoordinator` so the visual updates are bounded by
-    /// the display refresh rate (~8–16 ms) rather than the MIDI bookkeeping
-    /// `Task { @MainActor }` hop.
-    let activeMidiNotes: Set<Int>
+    /// Isolated observable that owns the currently-highlighted MIDI note set.
+    ///
+    /// Reading `highlightState.activeMidiNotes` inside `body` registers a
+    /// SwiftUI dependency on JUST this property; updates re-render this
+    /// view (and its child renderers) without invalidating `PlayTab.body`.
+    /// This mirrors PlayAlong's `HighlightState`-scoped re-render path.
+    let highlightState: PlayTabHighlightState
     let saPitch: UInt8
     let notationMode: PlayTabNotationMode
     let recordedNotes: [RecordedNote]
+
+    /// MIDI notes currently highlighted (touch + MIDI). Read once per body.
+    private var activeMidiNotes: Set<Int> { highlightState.activeMidiNotes }
 
     /// Recorded notes whose MIDI number is at or above middle C.
     @MainActor
@@ -136,9 +141,17 @@ struct LiveHighlightStaffView: View {
     }
 }
 
+/// Build a `PlayTabHighlightState` seeded with the given notes for previews.
+@MainActor
+private func previewHighlight(_ notes: Set<Int>) -> PlayTabHighlightState {
+    let hs = PlayTabHighlightState()
+    hs.activeMidiNotes = notes
+    return hs
+}
+
 #Preview("No notes") {
     LiveHighlightStaffView(
-        activeMidiNotes: [],
+        highlightState: previewHighlight([]),
         saPitch: 60,
         notationMode: .both,
         recordedNotes: []
@@ -149,7 +162,7 @@ struct LiveHighlightStaffView: View {
 
 #Preview("C major triad, Sa = C") {
     LiveHighlightStaffView(
-        activeMidiNotes: [60, 64, 67] as Set<Int>,
+        highlightState: previewHighlight([60, 64, 67]),
         saPitch: 60,
         notationMode: .both,
         recordedNotes: [
@@ -164,7 +177,7 @@ struct LiveHighlightStaffView: View {
 
 #Preview("Sargam-only, Sa = D") {
     LiveHighlightStaffView(
-        activeMidiNotes: [62, 64, 66] as Set<Int>,
+        highlightState: previewHighlight([62, 64, 66]),
         saPitch: 62,
         notationMode: .sargam,
         recordedNotes: []
@@ -175,7 +188,7 @@ struct LiveHighlightStaffView: View {
 
 #Preview("Bass + Treble chord (G2, C4, G4)") {
     LiveHighlightStaffView(
-        activeMidiNotes: [43, 60, 67] as Set<Int>,
+        highlightState: previewHighlight([43, 60, 67]),
         saPitch: 60,
         notationMode: .both,
         recordedNotes: [

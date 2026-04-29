@@ -24,10 +24,16 @@ import Tonic
 /// `activeMidiNotes` set fed from the display-link-bound highlight
 /// coordinator.
 struct LargePianoView: View {
-    /// MIDI notes currently highlighted (driven by the Play tab's display-
-    /// link-bound coordinator). Notes inside this set render with the touch
-    /// highlight color regardless of finger contact.
-    let activeMidiNotes: Set<Int>
+    /// Isolated observable that owns the currently-highlighted MIDI note set.
+    ///
+    /// Reading `highlightState.activeMidiNotes` inside `body` registers a
+    /// SwiftUI dependency on JUST this property; updates re-render this
+    /// view without invalidating `PlayTab.body`. Mirrors PlayAlong's
+    /// `HighlightState` pattern so MIDI→highlight latency stays sub-frame.
+    let highlightState: PlayTabHighlightState
+
+    /// MIDI notes currently highlighted (touch + MIDI). Read once per body.
+    private var activeMidiNotes: Set<Int> { highlightState.activeMidiNotes }
 
     /// Callback fired when a key is pressed. Optional so the parent can drop
     /// it when only display is needed.
@@ -195,14 +201,22 @@ struct LargePianoView: View {
     }
 }
 
+/// Build a `PlayTabHighlightState` seeded with the given notes for previews.
+@MainActor
+private func largePianoPreviewHighlight(_ notes: Set<Int>) -> PlayTabHighlightState {
+    let hs = PlayTabHighlightState()
+    hs.activeMidiNotes = notes
+    return hs
+}
+
 #Preview("Large Piano — Idle") {
-    LargePianoView(activeMidiNotes: [])
+    LargePianoView(highlightState: largePianoPreviewHighlight([]))
         .frame(height: 220)
         .padding(.vertical)
 }
 
 #Preview("Large Piano — C major triad") {
-    LargePianoView(activeMidiNotes: [60, 64, 67])
+    LargePianoView(highlightState: largePianoPreviewHighlight([60, 64, 67]))
         .frame(height: 220)
         .padding(.vertical)
 }
