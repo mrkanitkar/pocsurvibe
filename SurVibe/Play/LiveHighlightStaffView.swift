@@ -26,15 +26,21 @@ struct LiveHighlightStaffView: View {
                     detectedMidiNotes: Set(activeMidiNotes.map(Int.init)),
                     currentNoteMatchState: nil
                 )
+                // Staff is decorative for VoiceOver — the keyboard
+                // already announces individual notes.
+                .accessibilityHidden(true)
             }
             if notationMode == .sargam || notationMode == .both {
                 sargamRow
             }
         }
-        .accessibilityHidden(true)  // keyboard provides VoiceOver reach
     }
 
     /// One-line strip of Sargam syllables for currently-pressed notes.
+    ///
+    /// Exposed to VoiceOver as the only place chord syllables are accessible
+    /// while held — the staff renderer is hidden, and the keyboard surfaces
+    /// individual note names but not the Sargam labels.
     private var sargamRow: some View {
         HStack(spacing: 12) {
             ForEach(Array(activeMidiNotes).sorted(), id: \.self) { midi in
@@ -47,6 +53,21 @@ struct LiveHighlightStaffView: View {
             }
         }
         .frame(maxWidth: .infinity, minHeight: 32, alignment: .leading)
+        .accessibilityElement(children: .combine)
+        .accessibilityLabel(sargamAccessibilityLabel)
+    }
+
+    /// Comma-joined Sargam syllables for currently-pressed notes — read aloud
+    /// by VoiceOver. Empty active set yields "No notes".
+    private var sargamAccessibilityLabel: String {
+        if activeMidiNotes.isEmpty {
+            return String(localized: "No notes")
+        }
+        let syllables = Array(activeMidiNotes)
+            .sorted()
+            .map { SargamLabeler.label(midi: $0, saPitch: saPitch).display }
+            .joined(separator: ", ")
+        return String(localized: "Currently playing: \(syllables)")
     }
 }
 

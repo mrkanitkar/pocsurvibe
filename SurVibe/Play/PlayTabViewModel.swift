@@ -77,6 +77,12 @@ final class PlayTabViewModel {
     /// Most recent user-facing error message. `nil` when no error pending.
     private(set) var lastError: String?
 
+    /// Whether ``onAppear()`` has run since the last ``onDisappear()``.
+    /// Guards against scenePhase double-fire — `.task` runs once and
+    /// `scenePhase == .active` may fire again on every foreground transition,
+    /// which otherwise re-loads the SF2 program needlessly.
+    private var isAppeared: Bool = false
+
     /// Whether the recording strip has reached its cap.
     var isStripFull: Bool { recordedNotes.count >= Self.stripCap }
 
@@ -146,6 +152,12 @@ final class PlayTabViewModel {
             log.info("Loaded GM program \(program) — \(GMInstrumentCatalog.name(for: program))")
         } catch {
             currentInstrument = previous
+            // Re-load the previous program so the sampler's bank matches the
+            // rolled-back currentInstrument label. Without this, the sampler
+            // is left in an indeterminate state — the failed program may have
+            // partially loaded, and the user sees "Acoustic Grand" but hears
+            // whatever fragment leaked through.
+            try? engine.loadProgram(into: 0, program: previous, isPercussion: false)
             lastError = "Couldn't load \(GMInstrumentCatalog.name(for: program))"
             log.error("loadProgram failed for \(program): \(String(describing: error))")
         }
@@ -180,11 +192,6 @@ final class PlayTabViewModel {
     func setSaPitch(_ midi: UInt8) {
         saPitch = midi
         log.info("Sa pitch -> \(midi)")
-    }
-
-    /// Update the notation display mode.
-    func setNotationMode(_ mode: PlayTabNotationMode) {
-        notationMode = mode
     }
 
     /// Handle a note-on from either touch or MIDI.
@@ -244,6 +251,8 @@ final class PlayTabViewModel {
     ///    state (`activeMidiNotes`, `recordedNotes`, `highlightCoordinator`)
     ///    hops to the main actor — that is not latency-critical.
     func onAppear() {
+        guard !isAppeared else { return }
+        isAppeared = true
         midiInput.onNoteEvent = { [weak self] event in
             // Capture only `Sendable` scalars before crossing isolation.
             let note = event.noteNumber
@@ -273,6 +282,7 @@ final class PlayTabViewModel {
         allNotesOff()
         midiInput.onNoteEvent = nil
         highlightCoordinator.stop()
+        isAppeared = false
     }
 
     /// Phase-1 engine call — runs synchronously on the CoreMIDI callback
