@@ -17,6 +17,14 @@ struct PlayTab: View {
         return PlayTabViewModel(engine: engine, midiInput: midi, highlightCoordinator: coord)
     }()
 
+    /// Optional shared guard. ContentView injects the singleton instance so
+    /// AppRouter and the toolbar's New-session button speak to the same
+    /// guard. Defaulted for previews.
+    var scratchpadGuard: UnsavedScratchpadGuard?
+
+    @Environment(AppRouter.self)
+    private var router
+
     @State
     private var isPickerPresented = false
     @State
@@ -37,6 +45,7 @@ struct PlayTab: View {
             PlayTabToolbar(
                 viewModel: viewModel,
                 connectedDeviceNames: connectedDeviceNames,
+                scratchpadGuard: scratchpadGuard,
                 onTapInstrument: { isPickerPresented = true }
             )
             if let banner = viewModel.lastError {
@@ -80,6 +89,18 @@ struct PlayTab: View {
             // CoreMIDI client/port creation. Idempotent — safe if already started.
             MIDIInputManager.shared.start()
             viewModel.onAppear()
+            // Wire the unsaved-scratchpad guard hooks so AppRouter.switchTab(to:)
+            // can defer programmatic tab switches when the scratchpad has
+            // captured content. Cleared on disappear.
+            router.playTabHasUnsavedContent = { [vm = viewModel] in
+                vm.scratchpad.hasContent
+            }
+            router.clearPlayTabScratchpad = { [vm = viewModel] in
+                vm.clearScratchpad(programOverride: nil, saOverride: nil)
+            }
+            router.presentSaveTakeSheet = { [vm = viewModel] in
+                vm.saveTakeSheetPresented = true
+            }
             // Drive the visual highlight (staff + on-screen keyboard) from
             // the display-link-driven coordinator so MIDI→highlight latency
             // is bounded by display refresh (~8–16 ms) instead of an
@@ -119,6 +140,11 @@ struct PlayTab: View {
             // process and other features (Play-Along) may still need it.
             // `viewModel.onDisappear()` clears the onNoteEvent closure.
             viewModel.onDisappear()
+            // Drop guard hooks so a now-unmounted PlayTab doesn't keep the
+            // VM alive via router-held closures.
+            router.playTabHasUnsavedContent = nil
+            router.clearPlayTabScratchpad = nil
+            router.presentSaveTakeSheet = nil
         }
         .onChange(of: scenePhase) { _, newPhase in
             switch newPhase {
