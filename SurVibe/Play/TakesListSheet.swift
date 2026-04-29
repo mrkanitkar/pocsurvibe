@@ -27,6 +27,10 @@ struct TakesListSheet: View {
     @State private var pendingDelete: RecordedTake?
     @State private var undoTimer: Task<Void, Never>?
 
+    /// The take currently being exported, or `nil` when no export sheet is up.
+    /// Driven by the row-level "Export" action; presents ``ExportTakeSheet``.
+    @State private var exporting: RecordedTake?
+
     var body: some View {
         NavigationStack {
             content
@@ -50,6 +54,9 @@ struct TakesListSheet: View {
                     Text("Give this take a new title.")
                 }
                 .overlay(alignment: .bottom) { undoBanner }
+                .sheet(item: $exporting) { take in
+                    ExportTakeSheet(take: take)
+                }
         }
         .presentationDetents([.medium, .large])
         .onDisappear { finalizePendingDelete() }
@@ -77,12 +84,26 @@ struct TakesListSheet: View {
                             }
                             .accessibilityLabel("Delete \(take.title)")
                         }
+                        .swipeActions(edge: .leading) {
+                            Button {
+                                exporting = take
+                            } label: {
+                                Label("Export", systemImage: "square.and.arrow.up")
+                            }
+                            .tint(.accentColor)
+                            .accessibilityLabel("Export \(take.title)")
+                        }
                         .contextMenu {
                             Button {
                                 renaming = take
                                 renameTitle = take.title
                             } label: {
                                 Label("Rename", systemImage: "pencil")
+                            }
+                            Button {
+                                exporting = take
+                            } label: {
+                                Label("Export", systemImage: "square.and.arrow.up")
                             }
                             Button(role: .destructive) {
                                 scheduleDelete(take)
@@ -109,7 +130,7 @@ struct TakesListSheet: View {
         .opacity(isPendingDelete ? 0.4 : 1)
         .accessibilityElement(children: .combine)
         .accessibilityLabel(accessibilityLabel(for: take))
-        .accessibilityHint("Swipe left to delete. Long-press to rename.")
+        .accessibilityHint("Swipe left to delete, swipe right to export. Long-press for rename and export.")
     }
 
     @ViewBuilder
