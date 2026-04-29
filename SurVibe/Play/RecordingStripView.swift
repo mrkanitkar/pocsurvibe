@@ -60,6 +60,7 @@ struct RecordingStripView: View {
         VStack(spacing: 2) {
             Image(systemName: "music.note")
                 .font(.title2)
+                .accessibilityHidden(true)  // VStack combines into a single labeled element below
             Text(SargamLabeler.label(midi: note.midi, saPitch: saPitch).display)
                 .font(.caption2)
                 .monospaced()
