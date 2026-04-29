@@ -548,7 +548,10 @@ extension MIDIInputManager {
     /// Filters out IAC Driver, Network MIDI sessions, and offline devices.
     static func isPhysicalSource(_ endpoint: MIDIEndpointRef) -> Bool {
         let name = sourceName(endpoint).lowercased()
-        let virtualKeywords = ["iac", "network session", "network midi", "virtual", "loopback"]
+        // "network" (single word) catches the system Network MIDI Session that
+        // CoreMIDI reports as just "Network" on iOS — older filters with
+        // "network session" / "network midi" missed it.
+        let virtualKeywords = ["iac", "network", "virtual", "loopback"]
         if virtualKeywords.contains(where: { name.contains($0) }) {
             return false
         }
