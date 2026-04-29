@@ -8,6 +8,9 @@ struct PlayTabToolbar: View {
     @Bindable
     var viewModel: PlayTabViewModel
     let connectedDeviceNames: [String]
+    /// Optional guard for the ⋯ → "New session" entry. When `nil` (e.g.
+    /// previews) New session bypasses the dialog and clears immediately.
+    var scratchpadGuard: UnsavedScratchpadGuard?
     let onTapInstrument: () -> Void
 
     var body: some View {
@@ -58,15 +61,38 @@ struct PlayTabToolbar: View {
         .accessibilityHint("Removes the most recently completed note from the recording")
     }
 
-    /// Overflow stub — concrete entries (Save take, Takes…, New session, …)
-    /// land in Tasks 13 / 14 / 16.
+    /// Overflow menu. Currently exposes "New session" — additional entries
+    /// (Save take, Takes…, Export, …) populated by later tasks.
     private var overflowMenu: some View {
         Menu {
-            // Intentionally empty in T6 — populated by later tasks.
+            Button {
+                triggerNewSession()
+            } label: {
+                Label("New session", systemImage: "doc.badge.plus")
+            }
         } label: {
             Image(systemName: "ellipsis.circle")
         }
         .accessibilityLabel("More")
+    }
+
+    /// Route "New session" through the guard when the scratchpad has
+    /// content; otherwise clear immediately.
+    private func triggerNewSession() {
+        if viewModel.scratchpad.hasContent, let guardObj = scratchpadGuard {
+            guardObj.raise(.newSession) { outcome in
+                switch outcome {
+                case .save:
+                    viewModel.saveTakeSheetPresented = true
+                case .discard:
+                    viewModel.clearScratchpad(programOverride: nil, saOverride: nil)
+                case .cancel:
+                    break
+                }
+            }
+        } else {
+            viewModel.clearScratchpad(programOverride: nil, saOverride: nil)
+        }
     }
 
     private var instrumentButton: some View {
