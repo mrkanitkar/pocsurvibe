@@ -79,6 +79,15 @@ struct PlayTab: View {
             MIDIInputManager.shared.start()
             viewModel.onAppear()
             refreshDeviceList()
+            // React to hot-plug/unplug. `connectionStateStream` yields `true`
+            // when a source connects and `false` when all sources disconnect;
+            // either transition warrants refreshing the toolbar badge name.
+            // The `for await` is the LAST statement in `.task` — anything
+            // after it would be unreachable. SwiftUI auto-cancels this task
+            // (and the stream's continuation) on view disappear.
+            for await _ in MIDIInputManager.shared.connectionStateStream {
+                refreshDeviceList()
+            }
         }
         .onDisappear {
             // Don't stop the shared MIDIInputManager — it's owned by the
