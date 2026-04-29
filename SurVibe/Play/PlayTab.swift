@@ -95,6 +95,13 @@ struct PlayTab: View {
             viewModel.installHighlightObserver { notes in
                 displayedActiveNotes = notes
             }
+            // `MIDIInputManager.refreshSources()` yields the new connection
+            // state on the connection stream BEFORE its `Task { @MainActor }`
+            // setter that writes `connectedDeviceName` runs. Without yielding
+            // first we would read the previous (often nil) value and the
+            // toolbar badge would stay empty after a hot-plug. One yield is
+            // enough to drain the queued setter on the main actor.
+            await Task.yield()
             refreshDeviceList()
             // React to hot-plug/unplug. `connectionStateStream` yields `true`
             // when a source connects and `false` when all sources disconnect;
@@ -103,6 +110,11 @@ struct PlayTab: View {
             // after it would be unreachable. SwiftUI auto-cancels this task
             // (and the stream's continuation) on view disappear.
             for await _ in MIDIInputManager.shared.connectionStateStream {
+                // Same race as above: the stream fires on the CoreMIDI thread
+                // synchronously with `connectionBox.yield(...)`, but the
+                // `connectedDeviceName` setter is queued via
+                // `Task { @MainActor }`. Yield once to let it drain.
+                await Task.yield()
                 refreshDeviceList()
             }
         }
