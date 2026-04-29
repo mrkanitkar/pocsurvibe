@@ -61,9 +61,8 @@ struct PlayTab: View {
                 notationMode: viewModel.notationMode,
                 onClear: { viewModel.clearStrip() }
             )
-            InteractivePianoView(
+            LargePianoView(
                 activeMidiNotes: displayedActiveNotes,
-                activeCentsOffset: 0.0,
                 onNoteOn: { midi in
                     viewModel.handleNoteOn(UInt8(midi), velocity: 100, source: .touch)
                 },
