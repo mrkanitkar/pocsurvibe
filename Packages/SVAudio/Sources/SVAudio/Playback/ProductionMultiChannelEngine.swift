@@ -222,6 +222,61 @@ public final class ProductionMultiChannelEngine: MultiChannelEngineProtocol {
         MultiChannelLog.shared.log(.info, "stopAllTouchNotes")
     }
 
+    // MARK: - Direct slot dispatch (v2)
+
+    /// Trigger a note on `samplers[slot]`.
+    ///
+    /// Used by Play tab v2 take playback (slot 2) and other one-shot dispatch
+    /// paths that bypass `AVAudioSequencer`. Out-of-range slot indices and
+    /// calls made before the engine is running are silently ignored to keep
+    /// the audio thread free of throws.
+    ///
+    /// - Parameters:
+    ///   - slot: Sampler slot index (0...15).
+    ///   - midi: MIDI note number (0–127).
+    ///   - velocity: Key velocity (0–127).
+    ///   - channel: MIDI channel (0–15).
+    public func playNoteOnSlot(_ slot: Int, midi: UInt8, velocity: UInt8, channel: UInt8) {
+        guard slot >= 0, slot < samplers.count else { return }
+        samplers[slot].startNote(midi, withVelocity: velocity, onChannel: channel)
+    }
+
+    /// Stop a note on `samplers[slot]`.
+    ///
+    /// - Parameters:
+    ///   - slot: Sampler slot index (0...15).
+    ///   - midi: MIDI note number to stop (0–127).
+    ///   - channel: MIDI channel (0–15).
+    public func stopNoteOnSlot(_ slot: Int, midi: UInt8, channel: UInt8) {
+        guard slot >= 0, slot < samplers.count else { return }
+        samplers[slot].stopNote(midi, onChannel: channel)
+    }
+
+    /// Send All Notes Off (CC 123) on every channel of `samplers[slot]`.
+    ///
+    /// - Parameter slot: Sampler slot index (0...15).
+    public func allNotesOffOnSlot(_ slot: Int) {
+        guard slot >= 0, slot < samplers.count else { return }
+        // CC 123 = All Notes Off, fired on all channels we care about.
+        for ch: UInt8 in 0..<16 {
+            samplers[slot].sendController(123, withValue: 0, onChannel: ch)
+        }
+    }
+
+    /// Send a Control Change message to `samplers[slot]`.
+    ///
+    /// - Parameters:
+    ///   - slot: Sampler slot index (0...15).
+    ///   - controller: MIDI controller number (0–127).
+    ///   - value: Controller value (0–127).
+    ///   - channel: MIDI channel (0–15).
+    public func sendControlChangeOnSlot(
+        _ slot: Int, controller: UInt8, value: UInt8, channel: UInt8
+    ) {
+        guard slot >= 0, slot < samplers.count else { return }
+        samplers[slot].sendController(controller, withValue: value, onChannel: channel)
+    }
+
     // MARK: - Song lifecycle
 
     /// Load a song from raw MIDI or MusicXML bytes.
