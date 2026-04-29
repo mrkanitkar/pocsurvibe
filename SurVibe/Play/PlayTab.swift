@@ -47,18 +47,14 @@ struct PlayTab: View {
                     .frame(maxWidth: .infinity)
                     .background(Color.orange)
             }
-            LiveHighlightStaffView(
-                highlightState: highlightState,
-                saPitch: viewModel.saPitch,
-                notationMode: viewModel.notationMode,
-                recordedNotes: viewModel.recordedNotes
-            )
-            .frame(maxHeight: .infinity)
-            RecordingStripView(
-                recordedNotes: viewModel.recordedNotes,
-                saPitch: viewModel.saPitch,
-                notationMode: viewModel.notationMode,
-                onClear: { viewModel.clearStrip() }
+            // Staff + strip read viewModel.recordedNotes / saPitch /
+            // notationMode internally. Extracted so PlayTab.body never
+            // depends on these properties — keypresses no longer invalidate
+            // the parent body (which would re-evaluate LargePianoView
+            // and slow keypress reflection until recordedNotes hit its cap).
+            PlayTabRecordSection(
+                viewModel: viewModel,
+                highlightState: highlightState
             )
             LargePianoView(
                 highlightState: highlightState,
@@ -148,6 +144,33 @@ struct PlayTab: View {
             InstrumentPickerSheet(currentProgram: viewModel.currentInstrument) { program in
                 viewModel.setInstrument(program)
             }
+        }
+    }
+}
+
+/// Staff + recording-strip subview — owns the observation of
+/// `viewModel.recordedNotes`/`saPitch`/`notationMode` so frequent strip
+/// mutations never invalidate `PlayTab.body` (which contains the
+/// performance-critical `LargePianoView`).
+private struct PlayTabRecordSection: View {
+    let viewModel: PlayTabViewModel
+    let highlightState: PlayTabHighlightState
+
+    var body: some View {
+        VStack(spacing: 0) {
+            LiveHighlightStaffView(
+                highlightState: highlightState,
+                saPitch: viewModel.saPitch,
+                notationMode: viewModel.notationMode,
+                recordedNotes: viewModel.recordedNotes
+            )
+            .frame(maxHeight: .infinity)
+            RecordingStripView(
+                recordedNotes: viewModel.recordedNotes,
+                saPitch: viewModel.saPitch,
+                notationMode: viewModel.notationMode,
+                onClear: { viewModel.clearStrip() }
+            )
         }
     }
 }
