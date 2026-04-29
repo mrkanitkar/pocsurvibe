@@ -55,6 +55,7 @@ struct PlayTab: View {
                 viewModel: viewModel,
                 highlightState: highlightState
             )
+            PlayTabBottomStripContainer(viewModel: viewModel)
             LargePianoView(
                 highlightState: highlightState,
                 onNoteOn: { midi in
@@ -169,6 +170,39 @@ struct PlayTab: View {
         } message: {
             Text("You've reached the 5,000-note maximum. Save this take to keep recording.")
         }
+    }
+}
+
+/// Container that hosts `PlayTabBottomStrip` and the Expanded Timeline Sheet.
+///
+/// Wraps the strip in a view with `@Bindable var viewModel` so we can derive
+/// `$viewModel.expandedSheetPresented` for the `.sheet(isPresented:)` modifier
+/// without exposing a `@Bindable` shadow at the top of `PlayTab.body` (which
+/// would re-tag the parent body as observing the entire view model).
+///
+/// The sheet's `TakeSnapshot` is built lazily via `freezeForSave()` only when
+/// SwiftUI evaluates the sheet's content closure (sheet open path), so the
+/// freeze does not run on every body re-evaluation.
+private struct PlayTabBottomStripContainer: View {
+    @Bindable var viewModel: PlayTabViewModel
+
+    var body: some View {
+        PlayTabBottomStrip(viewModel: viewModel)
+            .padding(.horizontal)
+            .padding(.bottom, 4)
+            .sheet(isPresented: $viewModel.expandedSheetPresented) {
+                let frozen = viewModel.scratchpad.freezeForSave()
+                ExpandedTimelineSheet(
+                    snapshot: TakeSnapshot(
+                        notes: frozen.notes,
+                        sustain: frozen.sustain,
+                        instrumentProgram: viewModel.scratchpad.instrumentProgram,
+                        saPitchMidi: viewModel.scratchpad.saPitchMidi
+                    ),
+                    isTake: false,
+                    presented: $viewModel.expandedSheetPresented
+                )
+            }
     }
 }
 
