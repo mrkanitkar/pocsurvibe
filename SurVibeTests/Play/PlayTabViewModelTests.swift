@@ -1,5 +1,6 @@
 import Foundation
 import SVAudio
+import SVCore
 import Testing
 
 @testable import SurVibe
@@ -84,8 +85,10 @@ struct PlayTabViewModelTests {
             "Touch already plays via InteractivePianoView; VM must not duplicate"
         )
         #expect(vm.activeMidiNotes == [67])
-        #expect(vm.recordedNotes.count == 1)
-        #expect(vm.recordedNotes[0].midi == 67)
+        // Note-on opens a pending entry in the scratchpad; closed `notes`
+        // remain empty until a note-off arrives.
+        #expect(vm.scratchpad.notes.isEmpty)
+        #expect(vm.scratchpad.hasContent)
     }
 
     @Test
@@ -95,7 +98,9 @@ struct PlayTabViewModelTests {
         vm.handleNoteOff(67, source: .touch)
         #expect(engine.stopTouchNoteCalls.isEmpty)
         #expect(vm.activeMidiNotes.isEmpty)
-        #expect(vm.recordedNotes.count == 1)  // release does not record
+        // Note-off materialises the note into the scratchpad.
+        #expect(vm.scratchpad.notes.count == 1)
+        #expect(vm.scratchpad.notes[0].midi == 67)
     }
 
     // MARK: - MIDI path: VM never plays through the iPad sampler
@@ -109,7 +114,7 @@ struct PlayTabViewModelTests {
             "MIDI input must never echo through the iPad sampler — the external keyboard makes sound"
         )
         #expect(vm.activeMidiNotes == [67])
-        #expect(vm.recordedNotes.count == 1)
+        #expect(vm.scratchpad.hasContent)
     }
 
     @Test
@@ -121,65 +126,22 @@ struct PlayTabViewModelTests {
         #expect(vm.activeMidiNotes.isEmpty)
     }
 
-    // MARK: - Re-trigger guard
-
-    @Test
-    func reTriggerSameNoteDoesNotDuplicateStrip() {
-        let (vm, _, _) = makeVM()
-        vm.handleNoteOn(67, velocity: 100, source: .midi)
-        vm.handleNoteOn(67, velocity: 100, source: .midi)
-        #expect(vm.recordedNotes.count == 1)
-    }
-
-    // MARK: - Strip cap
-
-    @Test
-    func sixteenNotesFillsTheStrip() {
-        let (vm, _, _) = makeVM()
-        for n: UInt8 in 60..<76 {
-            vm.handleNoteOn(n, velocity: 100, source: .midi)
-            vm.handleNoteOff(n, source: .midi)
-        }
-        #expect(vm.recordedNotes.count == 16)
-        #expect(vm.isStripFull)
-    }
-
-    @Test
-    func seventeenthMidiNoteIsHighlightedButStripDoesNotGrow() {
-        let (vm, engine, _) = makeVM()
-        for n: UInt8 in 60..<76 {
-            vm.handleNoteOn(n, velocity: 100, source: .midi)
-            vm.handleNoteOff(n, source: .midi)
-        }
-        vm.handleNoteOn(80, velocity: 100, source: .midi)
-        #expect(vm.recordedNotes.count == 16)
-        // MIDI never plays through the iPad sampler; the strip overflow
-        // does not change that.
-        #expect(engine.playTouchNoteCalls.isEmpty)
-        #expect(vm.activeMidiNotes.contains(80))
-    }
-
-    // MARK: - Clear
-
-    @Test
-    func clearStripEmptiesStripWithoutTouchingActiveNotes() {
-        let (vm, _, _) = makeVM()
-        vm.handleNoteOn(60, velocity: 100, source: .midi)
-        vm.clearStrip()
-        #expect(vm.recordedNotes.isEmpty)
-        #expect(vm.activeMidiNotes == [60])
-    }
-
     // MARK: - Chords
 
     @Test
-    func threeSimultaneousMidiNotesProduceThreeStripEntries() {
+    func threeSimultaneousMidiNotesProduceThreeScratchpadEntries() {
         let (vm, _, _) = makeVM()
         vm.handleNoteOn(60, velocity: 100, source: .midi)
         vm.handleNoteOn(64, velocity: 100, source: .midi)
         vm.handleNoteOn(67, velocity: 100, source: .midi)
-        #expect(vm.activeMidiNotes == [60, 64, 67])
-        #expect(vm.recordedNotes.count == 3)
+        vm.handleNoteOff(60, source: .midi)
+        vm.handleNoteOff(64, source: .midi)
+        vm.handleNoteOff(67, source: .midi)
+        #expect(vm.activeMidiNotes.isEmpty)
+        // Each note materialises into scratchpad.notes once its note-off arrives.
+        #expect(vm.scratchpad.notes.count == 3)
+        let midis = Set(vm.scratchpad.notes.map { $0.midi })
+        #expect(midis == [60, 64, 67])
     }
 
     // MARK: - MIDI velocity 0 routing
@@ -304,6 +266,119 @@ struct PlayTabViewModelTests {
         // coordinator will call.
         coord.onActiveNotesChanged?([60, 64, 67])
         #expect(received == [60, 64, 67])
+    }
+
+    // MARK: - Phase 1 / Phase 2 scratchpad capture
+
+    @Test
+    func phase2CaptureAppendsToScratchpad() async throws {
+        let (vm, _, midi) = makeVM()
+        vm.onAppear()
+
+        // Fire a note-on then note-off via the mock — onNoteEvent runs
+        // synchronously on the test thread (mimicking the CoreMIDI thread
+        // pattern) and Phase 2 hops via Task { @MainActor in ... }.
+        let onEvt = MIDIInputEvent(
+            noteNumber: 60, velocity: 100, channel: 0,
+            midiTimestamp: 1_000_000, timestamp: Date(),
+            velocity16Bit: 12_800
+        )
+        let offEvt = MIDIInputEvent(
+            noteNumber: 60, velocity: 0, channel: 0,
+            midiTimestamp: 1_500_000, timestamp: Date(),
+            velocity16Bit: 0
+        )
+        midi.fire(onEvt)
+        midi.fire(offEvt)
+
+        // Drain queued main-actor tasks (one per fire).
+        try await Task.sleep(nanoseconds: 50_000_000)
+
+        #expect(vm.scratchpad.notes.count == 1)
+        #expect(vm.scratchpad.notes[0].midi == 60)
+        #expect(vm.scratchpad.notes[0].velocity == 100)
+        #expect(vm.scratchpad.notes[0].velocity16Bit == 12_800)
+        #expect(vm.scratchpad.notes[0].onTimeSec >= 0)
+    }
+
+    @Test
+    func ccChangeTriggersSustainCapture() async throws {
+        let (vm, _, midi) = makeVM()
+        vm.onAppear()
+
+        let cc = MIDIControlChangeEvent(
+            controller: 64, value: 100, channel: 0,
+            midiTimestamp: 1_000_000, timestamp: Date()
+        )
+        midi.onControlChangeEvent?(cc)
+        try await Task.sleep(nanoseconds: 50_000_000)
+
+        #expect(vm.scratchpad.sustain.contains(where: { $0.down }))
+    }
+
+    // MARK: - Soft / hard cap UI flags
+
+    @Test
+    func softCapBannerVisibleAt1500Notes() {
+        let (vm, _, _) = makeVM()
+        for i in 0..<1500 {
+            vm.scratchpad.appendNoteOn(
+                midi: 60, velocity: 90, velocity16: 0,
+                channel: 0, onTimeSec: Double(i) * 0.01
+            )
+            vm.scratchpad.appendNoteOff(
+                midi: 60, channel: 0,
+                offTimeSec: Double(i) * 0.01 + 0.005
+            )
+        }
+        #expect(vm.shouldShowSoftCapBanner)
+        #expect(!vm.shouldShowHardCapModal)
+    }
+
+    @Test
+    func softCapBannerHiddenWhenDismissed() {
+        let (vm, _, _) = makeVM()
+        for i in 0..<1500 {
+            vm.scratchpad.appendNoteOn(
+                midi: 60, velocity: 90, velocity16: 0,
+                channel: 0, onTimeSec: Double(i) * 0.01
+            )
+            vm.scratchpad.appendNoteOff(
+                midi: 60, channel: 0,
+                offTimeSec: Double(i) * 0.01 + 0.005
+            )
+        }
+        vm.softCapBannerDismissed = true
+        #expect(!vm.shouldShowSoftCapBanner)
+    }
+
+    @Test
+    func clearScratchpadResetsSoftCapDismissal() {
+        let (vm, _, _) = makeVM()
+        vm.softCapBannerDismissed = true
+        vm.clearScratchpad()
+        #expect(!vm.softCapBannerDismissed)
+    }
+
+    @Test
+    func hardCapModalShownAt5000Notes() {
+        let (vm, _, _) = makeVM()
+        // ScratchpadState pauses capture at the hard cap, so we have to fill
+        // up to (and including) the synthesised flush at 5000.
+        for i in 0..<5000 {
+            vm.scratchpad.appendNoteOn(
+                midi: 60, velocity: 90, velocity16: 0,
+                channel: 0, onTimeSec: Double(i) * 0.01
+            )
+            vm.scratchpad.appendNoteOff(
+                midi: 60, channel: 0,
+                offTimeSec: Double(i) * 0.01 + 0.005
+            )
+        }
+        #expect(vm.shouldShowHardCapModal)
+        // Soft-cap banner is suppressed once we cross into the hard cap so
+        // the modal owns the surface.
+        #expect(!vm.shouldShowSoftCapBanner)
     }
 
     @Test

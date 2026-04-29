@@ -37,6 +37,13 @@ struct ContentView: View {
     @State
     private var hasShownPostOnboarding = false
 
+    /// Shared guard for the Play tab's "unsaved scratchpad recording"
+    /// protection. Owned here (root view) so the same guard instance is
+    /// visible to both `AppRouter.switchTab(to:)` (programmatic switches,
+    /// deep links) and the user-driven `TabView` selection binding.
+    @State
+    private var scratchpadGuard = UnsavedScratchpadGuard()
+
     // MARK: - Body
 
     var body: some View {
@@ -50,7 +57,7 @@ struct ContentView: View {
             }
 
             Tab(AppTab.play.label, systemImage: AppTab.play.systemImage, value: AppTab.play) {
-                PlayTab()
+                PlayTab(scratchpadGuard: scratchpadGuard)
             }
 
             Tab(AppTab.songs.label, systemImage: AppTab.songs.systemImage, value: AppTab.songs) {
@@ -86,14 +93,46 @@ struct ContentView: View {
         }
         .onChange(of: selectedTab) { _, newTab in
             router.switchTab(to: newTab)
-            AnalyticsManager.shared.track(.tabSelected, properties: ["tab": newTab.label])
+            // If the router vetoed the switch (Play tab has unsaved
+            // scratchpad — guard is now showing the dialog), `currentTab`
+            // is unchanged. Roll the TabView selection back so the bar
+            // visually stays on the source tab until the user resolves
+            // Save / Discard / Cancel. (See spec §9-2: rollback approach.)
+            if router.currentTab != newTab {
+                selectedTab = router.currentTab
+            } else {
+                AnalyticsManager.shared.track(.tabSelected, properties: ["tab": newTab.label])
+            }
         }
         .onChange(of: router.currentTab) { _, newTab in
-            // Sync programmatic tab changes (e.g. from PostOnboardingWelcomeView)
-            // back to the TabView selection binding.
+            // Sync programmatic tab changes (e.g. from PostOnboardingWelcomeView,
+            // or the guard's Discard/Save advance) back to the TabView selection.
             if selectedTab != newTab {
                 selectedTab = newTab
             }
+        }
+        .confirmationDialog(
+            "You have an unsaved scratchpad recording. What would you like to do?",
+            isPresented: Binding(
+                get: { scratchpadGuard.pending != nil },
+                set: { presented in
+                    // Dismissal-by-tap-outside resolves as Cancel.
+                    if !presented, scratchpadGuard.pending != nil {
+                        scratchpadGuard.answer(.cancel)
+                    }
+                }
+            ),
+            titleVisibility: .visible
+        ) {
+            Button("Save take") { scratchpadGuard.answer(.save) }
+            Button("Discard", role: .destructive) { scratchpadGuard.answer(.discard) }
+            Button("Cancel", role: .cancel) { scratchpadGuard.answer(.cancel) }
+        }
+        .task {
+            // Wire the guard onto the router so AppRouter.switchTab(to:)
+            // (programmatic switches, deep links) goes through the same
+            // path as user-driven TabView changes.
+            router.scratchpadGuard = scratchpadGuard
         }
         .fullScreenCover(
             isPresented: showOnboarding,

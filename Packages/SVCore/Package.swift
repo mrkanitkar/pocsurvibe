@@ -22,7 +22,8 @@ let package = Package(
         ),
         .testTarget(
             name: "SVCoreTests",
-            dependencies: ["SVCore"]
+            dependencies: ["SVCore"],
+            resources: [.copy("Resources/Play")]
         ),
     ]
 )

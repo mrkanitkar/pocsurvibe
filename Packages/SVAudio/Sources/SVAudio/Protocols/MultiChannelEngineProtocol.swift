@@ -40,6 +40,52 @@ public protocol MultiChannelEngineProtocol: AnyObject {
     // MARK: - Memory pressure
     /// Reset samplers[1..15] (free their loaded SF2 program data). Only when no song playing.
     func flushSongPrograms()
+
+    // MARK: - Direct slot dispatch (v2 — take playback uses AVAudioSequencer; this
+    // surface is for fallback / one-shot dispatch scenarios.)
+
+    /// Trigger a note on `samplers[slot]`.
+    ///
+    /// Used by Play tab v2 take playback (slot 2) and other one-shot dispatch
+    /// scenarios that bypass `AVAudioSequencer`.
+    ///
+    /// - Parameters:
+    ///   - slot: Sampler slot index (0...15). Out-of-range values are ignored.
+    ///   - midi: MIDI note number (0–127).
+    ///   - velocity: Key velocity (0–127).
+    ///   - channel: MIDI channel (0–15).
+    func playNoteOnSlot(_ slot: Int, midi: UInt8, velocity: UInt8, channel: UInt8)
+
+    /// Stop a note on `samplers[slot]`.
+    ///
+    /// - Parameters:
+    ///   - slot: Sampler slot index (0...15). Out-of-range values are ignored.
+    ///   - midi: MIDI note number to stop (0–127).
+    ///   - channel: MIDI channel (0–15).
+    func stopNoteOnSlot(_ slot: Int, midi: UInt8, channel: UInt8)
+
+    /// Send All Notes Off (CC 123) across every channel on `samplers[slot]`.
+    ///
+    /// - Parameter slot: Sampler slot index (0...15). Out-of-range values are ignored.
+    func allNotesOffOnSlot(_ slot: Int)
+
+    /// Send a Control Change message to `samplers[slot]`.
+    ///
+    /// - Parameters:
+    ///   - slot: Sampler slot index (0...15). Out-of-range values are ignored.
+    ///   - controller: MIDI controller number (0–127, e.g. 64 = sustain).
+    ///   - value: Controller value (0–127).
+    ///   - channel: MIDI channel (0–15).
+    func sendControlChangeOnSlot(_ slot: Int, controller: UInt8, value: UInt8, channel: UInt8)
+}
+
+/// Default no-op implementations so existing conformers (mocks / test doubles)
+/// keep compiling without modification. Production conformers override these.
+public extension MultiChannelEngineProtocol {
+    func playNoteOnSlot(_ slot: Int, midi: UInt8, velocity: UInt8, channel: UInt8) {}
+    func stopNoteOnSlot(_ slot: Int, midi: UInt8, channel: UInt8) {}
+    func allNotesOffOnSlot(_ slot: Int) {}
+    func sendControlChangeOnSlot(_ slot: Int, controller: UInt8, value: UInt8, channel: UInt8) {}
 }
 
 /// Per-song metadata returned to callers.

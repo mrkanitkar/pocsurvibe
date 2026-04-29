@@ -86,6 +86,7 @@ struct SurVibeApp: App {
             NoteScoreEntry.self,
             MIDIEventEntry.self,
             PitchLogEntry.self,
+            RecordedTake.self,
         ])
     }
 
