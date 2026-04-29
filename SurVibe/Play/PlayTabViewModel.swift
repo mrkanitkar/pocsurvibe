@@ -4,6 +4,7 @@ import Foundation
 import SVAudio
 import SVCore
 import SwiftData
+import SwiftUI
 import Synchronization
 import os
 
@@ -99,6 +100,39 @@ final class PlayTabViewModel {
     /// Whether the Save Take sheet is currently presented. Toggled by the ⋯
     /// menu's "Save take" action and cleared when the sheet dismisses.
     var saveTakeSheetPresented: Bool = false
+
+    /// Whether the user has dismissed the soft-cap banner during the current
+    /// scratchpad session. Reset by ``clearScratchpad(programOverride:saOverride:)``
+    /// so that a new recording can show the banner again at 1500 notes.
+    var softCapBannerDismissed: Bool = false
+
+    /// Whether the soft-cap banner should be visible.
+    ///
+    /// True when the scratchpad has reached the 1500-note soft cap, has not
+    /// yet hit the 5000-note hard cap, and the user has not dismissed the
+    /// banner during the current session.
+    var shouldShowSoftCapBanner: Bool {
+        scratchpad.isAtSoftCap && !scratchpad.isAtHardCap && !softCapBannerDismissed
+    }
+
+    /// Whether the hard-cap modal alert should be presented.
+    ///
+    /// True when the scratchpad has reached the 5000-note hard cap. Capture
+    /// is paused inside `ScratchpadState` itself; the modal merely surfaces
+    /// the condition and offers Save / Discard actions.
+    var shouldShowHardCapModal: Bool { scratchpad.isAtHardCap }
+
+    /// Two-way `Binding` over ``shouldShowHardCapModal`` for the SwiftUI
+    /// `.alert(isPresented:)` API. Setting the binding to `false` (e.g. when
+    /// the user dismisses the alert without choosing Save or Discard) is a
+    /// no-op — the only way out of the hard-cap state is `clearScratchpad()`
+    /// or `saveTake(...)`, which both reset the scratchpad.
+    var shouldShowHardCapModalBinding: Binding<Bool> {
+        Binding(
+            get: { self.shouldShowHardCapModal },
+            set: { _ in /* dismissal handled by Save / Discard buttons */ }
+        )
+    }
 
     /// Whether ``onAppear()`` has run since the last ``onDisappear()``.
     /// Guards against scenePhase double-fire — `.task` runs once and
@@ -301,6 +335,7 @@ final class PlayTabViewModel {
     func clearScratchpad(programOverride: UInt8? = nil, saOverride: UInt8? = nil) {
         referenceMIDITicks.withLock { $0 = nil }
         scratchpad.clear(programOverride: programOverride, saOverride: saOverride)
+        softCapBannerDismissed = false
     }
 
     /// Deprecated v1 alias — kept so any pre-existing test or call site still

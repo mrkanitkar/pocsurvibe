@@ -316,6 +316,71 @@ struct PlayTabViewModelTests {
         #expect(vm.scratchpad.sustain.contains(where: { $0.down }))
     }
 
+    // MARK: - Soft / hard cap UI flags
+
+    @Test
+    func softCapBannerVisibleAt1500Notes() {
+        let (vm, _, _) = makeVM()
+        for i in 0..<1500 {
+            vm.scratchpad.appendNoteOn(
+                midi: 60, velocity: 90, velocity16: 0,
+                channel: 0, onTimeSec: Double(i) * 0.01
+            )
+            vm.scratchpad.appendNoteOff(
+                midi: 60, channel: 0,
+                offTimeSec: Double(i) * 0.01 + 0.005
+            )
+        }
+        #expect(vm.shouldShowSoftCapBanner)
+        #expect(!vm.shouldShowHardCapModal)
+    }
+
+    @Test
+    func softCapBannerHiddenWhenDismissed() {
+        let (vm, _, _) = makeVM()
+        for i in 0..<1500 {
+            vm.scratchpad.appendNoteOn(
+                midi: 60, velocity: 90, velocity16: 0,
+                channel: 0, onTimeSec: Double(i) * 0.01
+            )
+            vm.scratchpad.appendNoteOff(
+                midi: 60, channel: 0,
+                offTimeSec: Double(i) * 0.01 + 0.005
+            )
+        }
+        vm.softCapBannerDismissed = true
+        #expect(!vm.shouldShowSoftCapBanner)
+    }
+
+    @Test
+    func clearScratchpadResetsSoftCapDismissal() {
+        let (vm, _, _) = makeVM()
+        vm.softCapBannerDismissed = true
+        vm.clearScratchpad()
+        #expect(!vm.softCapBannerDismissed)
+    }
+
+    @Test
+    func hardCapModalShownAt5000Notes() {
+        let (vm, _, _) = makeVM()
+        // ScratchpadState pauses capture at the hard cap, so we have to fill
+        // up to (and including) the synthesised flush at 5000.
+        for i in 0..<5000 {
+            vm.scratchpad.appendNoteOn(
+                midi: 60, velocity: 90, velocity16: 0,
+                channel: 0, onTimeSec: Double(i) * 0.01
+            )
+            vm.scratchpad.appendNoteOff(
+                midi: 60, channel: 0,
+                offTimeSec: Double(i) * 0.01 + 0.005
+            )
+        }
+        #expect(vm.shouldShowHardCapModal)
+        // Soft-cap banner is suppressed once we cross into the hard cap so
+        // the modal owns the surface.
+        #expect(!vm.shouldShowSoftCapBanner)
+    }
+
     @Test
     func userDefaultsRoundTripSaPitch() {
         let (vm1, _, _) = makeVM()

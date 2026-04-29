@@ -134,6 +134,84 @@ struct PlayTab: View {
                 viewModel.setInstrument(program)
             }
         }
+        .overlay(alignment: .top) {
+            if viewModel.shouldShowSoftCapBanner {
+                SoftCapBanner(
+                    onDismiss: {
+                        withAnimation {
+                            viewModel.softCapBannerDismissed = true
+                        }
+                    },
+                    onSave: { viewModel.saveTakeSheetPresented = true }
+                )
+                .transition(.move(edge: .top).combined(with: .opacity))
+                .task {
+                    // Auto-dismiss after 6 seconds. Cancelled automatically
+                    // when SwiftUI tears the overlay down (e.g. user taps
+                    // Dismiss or Save first).
+                    try? await Task.sleep(nanoseconds: 6_000_000_000)
+                    if !Task.isCancelled {
+                        withAnimation {
+                            viewModel.softCapBannerDismissed = true
+                        }
+                    }
+                }
+            }
+        }
+        .alert(
+            "Maximum length reached",
+            isPresented: viewModel.shouldShowHardCapModalBinding
+        ) {
+            Button("Save take") { viewModel.saveTakeSheetPresented = true }
+            Button("Discard", role: .destructive) {
+                viewModel.clearScratchpad(programOverride: nil, saOverride: nil)
+            }
+        } message: {
+            Text("You've reached the 5,000-note maximum. Save this take to keep recording.")
+        }
+    }
+}
+
+/// Soft-cap notification surface. Shown as a top overlay when the scratchpad
+/// reaches 1500 notes; auto-dismisses after 6 seconds, or immediately when
+/// the user taps Dismiss / Save.
+private struct SoftCapBanner: View {
+    let onDismiss: () -> Void
+    let onSave: () -> Void
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .foregroundStyle(.yellow)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 2) {
+                Text("Long take")
+                    .font(.headline)
+                Text("You've recorded 1,500 notes. Save soon to keep going.")
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 8)
+            Button("Save", action: onSave)
+                .buttonStyle(.borderedProminent)
+                .accessibilityHint("Open the Save take sheet")
+            Button {
+                onDismiss()
+            } label: {
+                Image(systemName: "xmark")
+                    .imageScale(.medium)
+            }
+            .buttonStyle(.bordered)
+            .accessibilityLabel("Dismiss")
+            .accessibilityHint("Hide this banner")
+        }
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(.regularMaterial, in: RoundedRectangle(cornerRadius: 14))
+        .padding(.horizontal, 24)
+        .padding(.top, 12)
+        .accessibilityElement(children: .contain)
+        .accessibilityAddTraits(.isHeader)
     }
 }
 
