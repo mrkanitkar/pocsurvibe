@@ -218,6 +218,30 @@ struct PlayTabViewModelTests {
         #expect(midi.onNoteEvent != nil)
     }
 
+    // MARK: - attachEngine
+
+    @Test
+    func attachEngineSwapsAndReloadsProgram() {
+        let initial = MockPlayTabAudioEngine()
+        let real = MockPlayTabAudioEngine()
+        let (vm, _, _) = makeVM(engine: initial)
+        vm.attachEngine(real)
+        #expect(real.loadProgramCalls.count == 1)
+        #expect(real.loadProgramCalls[0].program == vm.currentInstrument)
+    }
+
+    @Test
+    func attachEngineRoutesSubsequentMIDINotes() {
+        let initial = MockPlayTabAudioEngine()
+        let real = MockPlayTabAudioEngine()
+        let (vm, _, _) = makeVM(engine: initial)
+        vm.attachEngine(real)
+        real.loadProgramCalls.removeAll()  // clear the attach-time reload
+        vm.handleNoteOn(60, velocity: 100, source: .midi)
+        #expect(real.playTouchNoteCalls.count == 1)
+        #expect(initial.playTouchNoteCalls.isEmpty)
+    }
+
     // MARK: - UserDefaults round-trip
 
     @Test

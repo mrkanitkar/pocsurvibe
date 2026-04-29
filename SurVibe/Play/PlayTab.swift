@@ -66,20 +66,31 @@ struct PlayTab: View {
         .task {
             do {
                 try AudioEngineManager.shared.startForPlayback()
+                if let realEngine = AudioEngineManager.shared.multiChannel
+                    as (any PlayTabAudioEngine)?
+                {
+                    viewModel.attachEngine(realEngine)
+                }
             } catch {
                 // VM's onAppear will surface engine failures via lastError.
-                return
             }
+            // CoreMIDI client/port creation. Idempotent — safe if already started.
+            MIDIInputManager.shared.start()
             viewModel.onAppear()
             refreshDeviceList()
         }
         .onDisappear {
+            // Don't stop the shared MIDIInputManager — it's owned by the
+            // process and other features (Play-Along) may still need it.
+            // `viewModel.onDisappear()` clears the onNoteEvent closure.
             viewModel.onDisappear()
         }
         .onChange(of: scenePhase) { _, newPhase in
             switch newPhase {
-            case .background, .inactive: viewModel.allNotesOff()
+            case .background: viewModel.allNotesOff()
             case .active: viewModel.onAppear()
+            // .inactive (control-center pull, banner) must NOT kill held notes.
+            case .inactive: break
             @unknown default: break
             }
         }

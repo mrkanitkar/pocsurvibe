@@ -82,7 +82,7 @@ final class PlayTabViewModel {
 
     // MARK: - Dependencies
 
-    private let engine: any PlayTabAudioEngine
+    private var engine: any PlayTabAudioEngine
     private let midiInput: any MIDIInputProviding
     private let highlightCoordinator: MIDINoteHighlightCoordinator
 
@@ -139,6 +139,31 @@ final class PlayTabViewModel {
             currentInstrument = previous
             lastError = "Couldn't load \(GMInstrumentCatalog.name(for: program))"
             log.error("loadProgram failed for \(program): \(String(describing: error))")
+        }
+    }
+
+    /// Replace the audio engine reference and force-reload the current GM
+    /// program on the new engine.
+    ///
+    /// Called from `PlayTab.task` after `AudioEngineManager.startForPlayback()`
+    /// succeeds — the VM is initialized with a `PlaceholderAudioEngine` because
+    /// `AudioEngineManager.shared.multiChannel` is `nil` at view-init time.
+    /// Without this swap the VM would route MIDI keypresses to the placeholder
+    /// forever and the user would hear silence.
+    ///
+    /// Idempotent: calling with the same engine instance still re-loads the
+    /// current program, which is harmless and keeps the touch sampler in a
+    /// known state.
+    ///
+    /// - Parameter engine: The real audio engine to use for subsequent
+    ///   `playTouchNote` / `loadProgram` calls.
+    func attachEngine(_ engine: any PlayTabAudioEngine) {
+        self.engine = engine
+        do {
+            try engine.loadProgram(into: 0, program: currentInstrument, isPercussion: false)
+        } catch {
+            log.error("attachEngine loadProgram failed: \(String(describing: error))")
+            lastError = "Audio unavailable — try restarting the app."
         }
     }
 
