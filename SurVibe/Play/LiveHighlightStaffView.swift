@@ -2,12 +2,21 @@
 import SVLearning
 import SwiftUI
 
-/// Static grand-staff view that highlights currently-pressed MIDI notes.
+/// MIDI cutoff that splits notes between the treble and bass staves.
 ///
-/// Used as the top half of the Play tab. The staff itself shows no notation;
-/// instead, key heads light up as the user plays. When `notationMode` is
-/// `.sargam` or `.both`, a single-row Sargam strip renders the current note(s)
-/// as Sargam syllables relative to `saPitch`.
+/// Middle C (MIDI 60) and above render on the treble staff; everything
+/// below renders on the bass staff. This matches the standard piano
+/// grand-staff convention and keeps low octaves out of the treble staff
+/// where they would clip with many ledger lines.
+private let grandStaffSplitMidi: Int = 60
+
+/// Live grand-staff view that highlights currently-pressed MIDI notes
+/// across treble and bass clefs.
+///
+/// Used as the top half of the Play tab. The staves themselves show
+/// recorded notes from the strip; key heads also light up as the user plays.
+/// When `notationMode` is `.sargam` or `.both`, a single-row Sargam strip
+/// renders the current note(s) as Sargam syllables relative to `saPitch`.
 struct LiveHighlightStaffView: View {
     /// MIDI notes currently highlighted, sourced from the display-link-driven
     /// `MIDINoteHighlightCoordinator` so the visual updates are bounded by
@@ -18,26 +27,57 @@ struct LiveHighlightStaffView: View {
     let notationMode: PlayTabNotationMode
     let recordedNotes: [RecordedNote]
 
-    /// Played notes mapped into the renderer's note model. Quarter-note
-    /// duration is used for everything because we don't track real timing —
-    /// SurVibe's recording strip is a sequence, not a tempo-aware capture.
+    /// Recorded notes whose MIDI number is at or above middle C.
     @MainActor
-    private var westernNotes: [WesternNote] {
-        recordedNotes.map(Self.westernNote(from:))
+    private var trebleNotes: [WesternNote] {
+        recordedNotes
+            .filter { $0.midi >= grandStaffSplitMidi }
+            .map(Self.westernNote(from:))
+    }
+
+    /// Recorded notes whose MIDI number is below middle C.
+    @MainActor
+    private var bassNotes: [WesternNote] {
+        recordedNotes
+            .filter { $0.midi < grandStaffSplitMidi }
+            .map(Self.westernNote(from:))
+    }
+
+    /// Currently-held notes routed to the treble staff for live highlight.
+    private var trebleHighlight: Set<Int> {
+        activeMidiNotes.filter { $0 >= grandStaffSplitMidi }
+    }
+
+    /// Currently-held notes routed to the bass staff for live highlight.
+    private var bassHighlight: Set<Int> {
+        activeMidiNotes.filter { $0 < grandStaffSplitMidi }
     }
 
     var body: some View {
-        VStack(spacing: 8) {
+        VStack(spacing: 4) {
             if notationMode == .western || notationMode == .both {
                 StaffNotationRenderer(
-                    notes: westernNotes,
+                    notes: trebleNotes,
                     currentNoteIndex: nil,
                     keySignature: .cMajor,
                     timeSignature: .fourFour,
                     zoomScale: 1.0,
                     detectedMidiNote: nil,
-                    detectedMidiNotes: activeMidiNotes,
-                    currentNoteMatchState: nil
+                    detectedMidiNotes: trebleHighlight,
+                    currentNoteMatchState: nil,
+                    clef: .treble
+                )
+                .accessibilityHidden(true)
+                StaffNotationRenderer(
+                    notes: bassNotes,
+                    currentNoteIndex: nil,
+                    keySignature: .cMajor,
+                    timeSignature: .fourFour,
+                    zoomScale: 1.0,
+                    detectedMidiNote: nil,
+                    detectedMidiNotes: bassHighlight,
+                    currentNoteMatchState: nil,
+                    clef: .bass
                 )
                 // Staff is decorative for VoiceOver — the keyboard
                 // already announces individual notes.
@@ -130,5 +170,20 @@ struct LiveHighlightStaffView: View {
         recordedNotes: []
     )
     .frame(height: 200)
+    .padding()
+}
+
+#Preview("Bass + Treble chord (G2, C4, G4)") {
+    LiveHighlightStaffView(
+        activeMidiNotes: [43, 60, 67] as Set<Int>,
+        saPitch: 60,
+        notationMode: .both,
+        recordedNotes: [
+            RecordedNote(midi: 43),
+            RecordedNote(midi: 60),
+            RecordedNote(midi: 67),
+        ]
+    )
+    .frame(height: 320)
     .padding()
 }

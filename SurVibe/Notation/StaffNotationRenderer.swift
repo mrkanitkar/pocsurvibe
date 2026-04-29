@@ -1,6 +1,21 @@
 import SVLearning
 import SwiftUI
 
+/// Clef used by ``StaffNotationRenderer`` for staff position math and the
+/// drawn clef glyph.
+///
+/// `staffYOffset` from `NoteLayoutEngine` is computed against treble clef's
+/// bottom line (E4). For bass clef the renderer adds 12 diatonic steps so
+/// G2 lands on the bass-clef bottom line, D3 on the middle line, A3 on the
+/// top line — matching standard bass clef placement.
+enum Clef: Sendable {
+    /// Treble clef. Bottom line = E4 (MIDI 64), middle line = B4 (MIDI 71).
+    case treble
+
+    /// Bass clef. Bottom line = G2 (MIDI 43), middle line = D3 (MIDI 50).
+    case bass
+}
+
 /// Canvas-based renderer for standard 5-line treble clef staff notation.
 ///
 /// Draws a complete staff from an array of `WesternNote` values:
@@ -52,6 +67,12 @@ struct StaffNotationRenderer: View {
     /// Overrides the default accent-color highlight when set.
     var currentNoteMatchState: FallingNotesLayoutEngine.NoteState?
 
+    /// Clef to render. Defaults to `.treble` so existing call sites are
+    /// unchanged. The renderer applies a per-clef offset to staff positions
+    /// and re-derives stem direction and ledger-line counts from the offset
+    /// position, since `NoteLayoutEngine` always emits treble-relative data.
+    var clef: Clef = .treble
+
     // MARK: - Environment
 
     @Environment(\.colorScheme)
@@ -98,8 +119,8 @@ struct StaffNotationRenderer: View {
                 // Draw staff lines
                 drawStaffLines(context: &context, staffTop: staffTop, width: size.width)
 
-                // Draw treble clef symbol
-                drawTrebleClef(context: &context, staffTop: staffTop)
+                // Draw clef symbol
+                drawClef(context: &context, staffTop: staffTop)
 
                 // Draw key signature
                 drawKeySignature(context: &context, staffTop: staffTop)
@@ -170,11 +191,21 @@ struct StaffNotationRenderer: View {
         }
     }
 
-    /// Draw the treble clef symbol at the left of the staff.
-    private func drawTrebleClef(context: inout GraphicsContext, staffTop: CGFloat) {
-        let text = Text("\u{1D11E}").font(.system(size: 42))
-        let point = CGPoint(x: 6, y: staffTop - 12)
-        context.draw(context.resolve(text), at: point, anchor: .topLeading)
+    /// Draw the clef symbol at the left of the staff.
+    private func drawClef(context: inout GraphicsContext, staffTop: CGFloat) {
+        switch clef {
+        case .treble:
+            let text = Text("\u{1D11E}").font(.system(size: 42))
+            let point = CGPoint(x: 6, y: staffTop - 12)
+            context.draw(context.resolve(text), at: point, anchor: .topLeading)
+        case .bass:
+            // Bass clef glyph U+1D122. Sits roughly aligned with the top
+            // half of the staff — anchor centre on the F3 line (position 6
+            // in bass-clef-shifted coords ≈ second line from top).
+            let text = Text("\u{1D122}").font(.system(size: 36))
+            let point = CGPoint(x: 8, y: staffTop + staffSpacing * 0.6)
+            context.draw(context.resolve(text), at: point, anchor: .topLeading)
+        }
     }
 
     /// Draw key signature accidentals after the treble clef.
@@ -381,11 +412,14 @@ struct StaffNotationRenderer: View {
     ) {
         guard noteInfo.noteheadType.hasStem else { return }
 
+        // Use clef-aware stem direction so bass-clef notes get the
+        // correct orientation around the bass middle line (D3).
+        let direction = stemDirection(forRawPosition: noteInfo.staffYOffset)
         drawStem(
             context: &context,
             centerX: centerX,
             centerY: centerY,
-            direction: noteInfo.stemDirection,
+            direction: direction,
             color: color
         )
 
@@ -458,7 +492,7 @@ extension StaffNotationRenderer {
         centerY: CGFloat,
         color: Color
     ) {
-        let dir = noteInfo.stemDirection
+        let dir = stemDirection(forRawPosition: noteInfo.staffYOffset)
         let stemX =
             dir == .up
             ? centerX + noteheadWidth / 2 - stemWidth / 2
@@ -484,12 +518,25 @@ extension StaffNotationRenderer {
         staffTop: CGFloat,
         centerX: CGFloat
     ) {
-        guard noteInfo.ledgerLines.count > 0 else { return }  // swiftlint:disable:this empty_count
+        // Use clef-aware ledger line counts so bass-clef notes outside the
+        // bass staff get the right number on the right side. The pre-computed
+        // `noteInfo.ledgerLines` is treble-only.
+        let info = ledgerLines(forRawPosition: noteInfo.staffYOffset)
+        guard info.count > 0 else { return }  // swiftlint:disable:this empty_count
         let halfWidth = noteheadWidth * 0.8
         let lineColor = staffColor
-        for i in 0..<noteInfo.ledgerLines.count {
-            let position = noteInfo.ledgerLines.isAbove ? 10 + (i * 2) : -2 - (i * 2)
-            let y = yForStaffPosition(position, staffTop: staffTop)
+        // Ledger-line positions are computed in clef-effective coordinates;
+        // pass them through `yForStaffPosition` after un-shifting so the
+        // helper applies its own shift consistently.
+        for i in 0..<info.count {
+            // Effective position of the i-th ledger line:
+            //   above the staff: 10, 12, 14, ... (effective coordinates)
+            //   below the staff: -2, -4, -6, ...
+            // Convert back to raw (treble-relative) so `yForStaffPosition`
+            // can re-apply the clef shift.
+            let effectivePosition = info.isAbove ? 10 + (i * 2) : -2 - (i * 2)
+            let rawPosition = effectivePosition - clefPositionShift
+            let y = yForStaffPosition(rawPosition, staffTop: staffTop)
             var path = Path()
             path.move(to: CGPoint(x: centerX - halfWidth, y: y))
             path.addLine(to: CGPoint(x: centerX + halfWidth, y: y))
@@ -521,7 +568,9 @@ extension StaffNotationRenderer {
         else { return }
         let first = notes[firstIdx]
         let last = notes[lastIdx]
-        let dir = first.stemDirection
+        // Use clef-aware stem direction so beams render on the correct side
+        // of the stems for bass-clef beam groups.
+        let dir = stemDirection(forRawPosition: first.staffYOffset)
         let beamColor = staffSwiftUIColor
         let fc = yForStaffPosition(first.staffYOffset, staffTop: staffTop)
         let lc = yForStaffPosition(last.staffYOffset, staffTop: staffTop)
