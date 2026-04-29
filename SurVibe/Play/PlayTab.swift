@@ -142,7 +142,6 @@ struct PlayTab: View {
             }
         }
     }
-
 }
 
 /// No-op engine placeholder used only during the brief window before

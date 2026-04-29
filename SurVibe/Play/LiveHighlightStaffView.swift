@@ -200,3 +200,27 @@ private func previewHighlight(_ notes: Set<Int>) -> PlayTabHighlightState {
     .frame(height: 320)
     .padding()
 }
+
+/// Both clefs across the full piano range — verifies clef-aware position math.
+///
+/// Expected layout (low → high):
+/// - C2 (36): two ledger lines BELOW the bass staff
+/// - G2 (43): bottom line of bass staff
+/// - D3 (50): middle line of bass staff
+/// - A3 (57): top line of bass staff
+/// - C4 (60, middle C): one ledger line above bass / one ledger line below treble
+/// - E4 (64): bottom line of treble staff
+/// - B4 (71): middle line of treble staff
+/// - F5 (77): top line of treble staff
+/// - C7 (96): many ledger lines ABOVE the treble staff
+#Preview("Both clefs — full piano range") {
+    let midis: Set<Int> = [36, 43, 50, 57, 60, 64, 71, 77, 96]
+    return LiveHighlightStaffView(
+        highlightState: previewHighlight(midis),
+        saPitch: 60,
+        notationMode: .western,
+        recordedNotes: midis.sorted().map { RecordedNote(midi: UInt8($0)) }
+    )
+    .frame(height: 480)
+    .padding()
+}

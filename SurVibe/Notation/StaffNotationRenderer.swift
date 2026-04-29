@@ -4,17 +4,12 @@ import SwiftUI
 /// Clef used by ``StaffNotationRenderer`` for staff position math and the
 /// drawn clef glyph.
 ///
-/// `staffYOffset` from `NoteLayoutEngine` is computed against treble clef's
-/// bottom line (E4). For bass clef the renderer adds 12 diatonic steps so
-/// G2 lands on the bass-clef bottom line, D3 on the middle line, A3 on the
-/// top line — matching standard bass clef placement.
-enum Clef: Sendable {
-    /// Treble clef. Bottom line = E4 (MIDI 64), middle line = B4 (MIDI 71).
-    case treble
-
-    /// Bass clef. Bottom line = G2 (MIDI 43), middle line = D3 (MIDI 50).
-    case bass
-}
+/// Renderer-local alias of `SVLearning.StaffClef` so the public surface of
+/// the renderer doesn't change. `NoteLayoutEngine` is now clef-aware: it
+/// computes `staffYOffset`, `stemDirection`, and `ledgerLines` directly
+/// against the clef's bottom line (treble = E4, bass = G2) — no post-hoc
+/// shift in the renderer.
+typealias Clef = StaffClef
 
 /// Canvas-based renderer for standard 5-line treble clef staff notation.
 ///
@@ -68,9 +63,10 @@ struct StaffNotationRenderer: View {
     var currentNoteMatchState: FallingNotesLayoutEngine.NoteState?
 
     /// Clef to render. Defaults to `.treble` so existing call sites are
-    /// unchanged. The renderer applies a per-clef offset to staff positions
-    /// and re-derives stem direction and ledger-line counts from the offset
-    /// position, since `NoteLayoutEngine` always emits treble-relative data.
+    /// unchanged. Forwarded to `NoteLayoutEngine.layout`, which anchors all
+    /// position math (`staffYOffset`, `stemDirection`, `ledgerLines`) to
+    /// this clef's bottom line. The renderer therefore reads
+    /// `noteInfo.staffYOffset` directly with no post-hoc shift.
     var clef: Clef = .treble
 
     // MARK: - Environment
@@ -178,13 +174,18 @@ struct StaffNotationRenderer: View {
     // MARK: - Layout
 
     /// Compute the full note layout from the input notes.
+    ///
+    /// Forwards `clef` to `NoteLayoutEngine` so emitted `staffYOffset`,
+    /// `stemDirection`, and `ledgerLines` are already correct for this
+    /// renderer's clef — no caller-side shift needed.
     private func computeLayout() -> NoteLayoutResult {
         NoteLayoutEngine.layout(
             midiNumbers: notes.map(\.midiNumber),
             noteNames: notes.map(\.note),
             durations: notes.map(\.duration),
             keySignature: keySignature,
-            timeSignature: timeSignature
+            timeSignature: timeSignature,
+            clef: clef
         )
     }
 
@@ -200,37 +201,34 @@ struct StaffNotationRenderer: View {
     /// - Returns: Extra `(top, bottom)` padding in points to add to the
     ///   baseline `topMargin` / `bottomMargin`.
     private func computeExtraVerticalPadding(layout: NoteLayoutResult) -> (top: CGFloat, bottom: CGFloat) {
-        // Effective staff position = raw treble-relative position + clef shift.
-        // Position 0 = bass-clef bottom line (G2) when clef = .bass, treble bottom
-        // line (E4) when clef = .treble. Position 8 = top line of the chosen staff.
-        var minEffective = 0
-        var maxEffective = 8
+        // Position 0 = clef's bottom line (E4 for treble, G2 for bass) per
+        // SVLearning's clef-aware position math. Position 8 = top line.
+        var minPosition = 0
+        var maxPosition = 8
 
         for note in layout.notes where !note.isRest {
-            let effective = note.staffYOffset + clefPositionShift
-            if effective < minEffective { minEffective = effective }
-            if effective > maxEffective { maxEffective = effective }
+            if note.staffYOffset < minPosition { minPosition = note.staffYOffset }
+            if note.staffYOffset > maxPosition { maxPosition = note.staffYOffset }
         }
 
         // Live MIDI input that hasn't been recorded yet — derive the position
-        // from the raw MIDI number through SVLearning's calculator.
+        // from the raw MIDI number through SVLearning's clef-aware calculator.
         var liveMidis = detectedMidiNotes
         if let det = detectedMidiNote { liveMidis.insert(det) }
         for midi in liveMidis {
-            let raw = StaffPositionCalculator.staffPosition(midi: midi)
-            let effective = raw + clefPositionShift
-            if effective < minEffective { minEffective = effective }
-            if effective > maxEffective { maxEffective = effective }
+            let position = StaffPositionCalculator.staffPosition(midi: midi, clef: clef)
+            if position < minPosition { minPosition = position }
+            if position > maxPosition { maxPosition = position }
         }
 
         let halfSpace = staffSpacing / 2
-        // Each unit of effective position = one half-space (5 pt @ default).
+        // Each unit of position = one half-space (5 pt @ default).
         // Above the staff: position 8 is the top line; positions 9, 10, 11...
         // sit progressively higher (smaller y). Required extra top padding is
         // the half-spaces gained beyond position 8, plus a small notehead+stem
         // margin so the topmost glyph isn't flush with the canvas edge.
-        let aboveSteps = max(0, maxEffective - 8)
-        let belowSteps = max(0, -minEffective)
+        let aboveSteps = max(0, maxPosition - 8)
+        let belowSteps = max(0, -minPosition)
         let glyphMargin: CGFloat = noteheadHeight + stemLength
         let extraTop = CGFloat(aboveSteps) * halfSpace + (aboveSteps > 0 ? glyphMargin : 0)
         let extraBottom = CGFloat(belowSteps) * halfSpace + (belowSteps > 0 ? glyphMargin : 0)
@@ -572,31 +570,27 @@ extension StaffNotationRenderer {
     }
 
     /// Draw ledger lines for notes above or below the staff.
+    ///
+    /// `noteInfo.staffYOffset` is already anchored to the active clef
+    /// (E4 for treble, G2 for bass) per SVLearning's clef-aware layout.
+    /// The helper inspects it directly and emits ledger-line positions in
+    /// the same space, which `yForStaffPosition` consumes verbatim.
     fileprivate func drawLedgerLines(
         context: inout GraphicsContext,
         noteInfo: StaffNoteInfo,
         staffTop: CGFloat,
         centerX: CGFloat
     ) {
-        // Use clef-aware ledger line counts so bass-clef notes outside the
-        // bass staff get the right number on the right side. The pre-computed
-        // `noteInfo.ledgerLines` is treble-only.
         let info = ledgerLines(forRawPosition: noteInfo.staffYOffset)
         guard info.count > 0 else { return }  // swiftlint:disable:this empty_count
         let halfWidth = noteheadWidth * 0.8
         let lineColor = staffColor
-        // Ledger-line positions are computed in clef-effective coordinates;
-        // pass them through `yForStaffPosition` after un-shifting so the
-        // helper applies its own shift consistently.
         for i in 0..<info.count {
-            // Effective position of the i-th ledger line:
-            //   above the staff: 10, 12, 14, ... (effective coordinates)
+            // i-th ledger line position:
+            //   above the staff: 10, 12, 14, ...
             //   below the staff: -2, -4, -6, ...
-            // Convert back to raw (treble-relative) so `yForStaffPosition`
-            // can re-apply the clef shift.
-            let effectivePosition = info.isAbove ? 10 + (i * 2) : -2 - (i * 2)
-            let rawPosition = effectivePosition - clefPositionShift
-            let y = yForStaffPosition(rawPosition, staffTop: staffTop)
+            let position = info.isAbove ? 10 + (i * 2) : -2 - (i * 2)
+            let y = yForStaffPosition(position, staffTop: staffTop)
             var path = Path()
             path.move(to: CGPoint(x: centerX - halfWidth, y: y))
             path.addLine(to: CGPoint(x: centerX + halfWidth, y: y))

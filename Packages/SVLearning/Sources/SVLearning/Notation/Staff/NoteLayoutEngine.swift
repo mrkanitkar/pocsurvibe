@@ -82,13 +82,17 @@ public enum NoteLayoutEngine {
     ///   - durations: Durations in beats for each note.
     ///   - keySignature: Key signature for accidental resolution.
     ///   - timeSignature: Time signature for measure assignment.
+    ///   - clef: Clef whose bottom line is the position-0 reference for
+    ///     `staffYOffset`, `stemDirection`, and `ledgerLines`. Defaults to
+    ///     `.treble` for source compatibility.
     /// - Returns: A complete layout result for rendering.
     public static func layout(
         midiNumbers: [Int],
         noteNames: [String],
         durations: [Double],
         keySignature: KeySignature,
-        timeSignature: TimeSignature
+        timeSignature: TimeSignature,
+        clef: StaffClef = .treble
     ) -> NoteLayoutResult {
         guard !midiNumbers.isEmpty else {
             return NoteLayoutResult(
@@ -105,7 +109,8 @@ public enum NoteLayoutEngine {
             midiNumbers: midiNumbers,
             noteNames: noteNames,
             durations: durations,
-            keySignature: keySignature
+            keySignature: keySignature,
+            clef: clef
         )
 
         // Step 2: Assign x-positions with proportional spacing
@@ -146,11 +151,16 @@ public enum NoteLayoutEngine {
     // MARK: - Private Methods
 
     /// Create initial StaffNoteInfo array from raw note data.
+    ///
+    /// Position math is anchored to `clef`'s bottom line: treble = E4, bass
+    /// = G2. The renderer can read `staffYOffset` directly without any
+    /// post-hoc clef shift.
     private static func createNoteInfos(
         midiNumbers: [Int],
         noteNames: [String],
         durations: [Double],
-        keySignature: KeySignature
+        keySignature: KeySignature,
+        clef: StaffClef
     ) -> [StaffNoteInfo] {
         let count = min(midiNumbers.count, min(noteNames.count, durations.count))
         var resolver = AccidentalResolver(keySignature: keySignature)
@@ -167,9 +177,9 @@ public enum NoteLayoutEngine {
                 duration: duration,
                 noteheadType: NoteheadType(duration: duration),
                 isDotted: DurationHelper.isDotted(duration: duration),
-                staffYOffset: StaffPositionCalculator.staffPosition(midi: midi),
-                stemDirection: StaffPositionCalculator.stemDirection(midi: midi),
-                ledgerLines: StaffPositionCalculator.ledgerLines(midi: midi),
+                staffYOffset: StaffPositionCalculator.staffPosition(midi: midi, clef: clef),
+                stemDirection: StaffPositionCalculator.stemDirection(midi: midi, clef: clef),
+                ledgerLines: StaffPositionCalculator.ledgerLines(midi: midi, clef: clef),
                 accidental: resolver.resolve(midiNumber: midi)
             )
             notes.append(noteInfo)

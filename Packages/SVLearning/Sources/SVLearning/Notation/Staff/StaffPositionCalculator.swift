@@ -9,6 +9,32 @@ public enum StemDirection: Sendable {
     case down
 }
 
+/// Clef whose bottom-line MIDI anchors all staff position math.
+///
+/// `staffPosition` and friends count diatonic steps from the clef's bottom
+/// line — treble = E4 (MIDI 64), bass = G2 (MIDI 43). Each clef yields its
+/// own correct vertical placement directly; no post-hoc shift is needed in
+/// the renderer.
+public enum StaffClef: Sendable {
+    /// Treble clef. Bottom line = E4 (MIDI 64), middle line = B4 (MIDI 71).
+    case treble
+    /// Bass clef. Bottom line = G2 (MIDI 43), middle line = D3 (MIDI 50).
+    case bass
+
+    /// MIDI number of the bottom staff line for this clef.
+    var bottomLineMIDI: Int {
+        switch self {
+        case .treble: return 64  // E4
+        case .bass: return 43    // G2
+        }
+    }
+
+    /// Diatonic-position of the middle line of this clef on the
+    /// 0-bottom..8-top staff coordinate system. Always 4 — both clefs are
+    /// 5 lines tall — but kept named for clarity at call sites.
+    var middleLinePosition: Int { 4 }
+}
+
 /// Information about ledger lines needed for a note.
 ///
 /// Notes above or below the staff require short horizontal lines
@@ -39,15 +65,6 @@ public struct LedgerLineInfo: Sendable, Equatable {
 public enum StaffPositionCalculator {
 
     // MARK: - Constants
-
-    /// MIDI number for E4 — the bottom line of the treble clef staff.
-    private static let bottomLineMIDI: Int = 64
-
-    /// MIDI number for B4 — the middle line of the treble clef staff.
-    private static let middleLineMIDI: Int = 71
-
-    /// Staff position of the middle line (B4).
-    private static let middleLinePosition: Int = 4
 
     /// Diatonic note names in chromatic order (C = 0).
     ///
@@ -83,17 +100,33 @@ public enum StaffPositionCalculator {
         return octave * 7 + chromaticToDiatonic[semitone]
     }
 
-    /// Calculate the staff Y-position for a given MIDI note number.
+    /// Calculate the staff Y-position for a given MIDI note number on the
+    /// chosen clef.
     ///
-    /// Position 0 is the bottom staff line (E4). Each increment moves
-    /// up one half-space. The five staff lines sit at positions 0, 2,
-    /// 4, 6, 8.
+    /// Position 0 is the bottom staff line of `clef` (E4 for treble, G2 for
+    /// bass). Each increment moves up one half-space. The five staff lines
+    /// sit at positions 0, 2, 4, 6, 8 regardless of clef.
     ///
-    /// - Parameter midi: MIDI note number (0–127).
+    /// Treble examples:
+    /// - C4 (60): -2 (one ledger line below the staff)
+    /// - F5 (77): 8 (top line)
+    /// - C6 (84): 12 (two ledger lines above)
+    ///
+    /// Bass examples:
+    /// - C2 (36): -4 (two ledger lines below the staff)
+    /// - G2 (43): 0 (bottom line)
+    /// - D3 (50): 4 (middle line)
+    /// - A3 (57): 8 (top line)
+    /// - C4 (60): 10 (one ledger line above; this is middle C above bass)
+    ///
+    /// - Parameters:
+    ///   - midi: MIDI note number (0–127).
+    ///   - clef: Clef whose bottom line is the position-0 reference.
+    ///     Defaults to `.treble` for source compatibility.
     /// - Returns: Staff position as an integer (may be negative for low notes).
-    public static func staffPosition(midi: Int) -> Int {
+    public static func staffPosition(midi: Int, clef: StaffClef = .treble) -> Int {
         let noteDiatonic = midiToDiatonic(midi)
-        let referenceDiatonic = midiToDiatonic(bottomLineMIDI)
+        let referenceDiatonic = midiToDiatonic(clef.bottomLineMIDI)
         return noteDiatonic - referenceDiatonic
     }
 
@@ -106,25 +139,32 @@ public enum StaffPositionCalculator {
     /// - Parameters:
     ///   - midi: MIDI note number (0–127).
     ///   - staffSpacing: Distance between adjacent staff lines in points. Default 10.
+    ///   - clef: Clef whose bottom line is the position-0 reference. Defaults to `.treble`.
     /// - Returns: Y offset in points from the top staff line.
-    public static func yOffset(midi: Int, staffSpacing: Double = 10.0) -> Double {
-        let position = staffPosition(midi: midi)
+    public static func yOffset(
+        midi: Int,
+        staffSpacing: Double = 10.0,
+        clef: StaffClef = .treble
+    ) -> Double {
+        let position = staffPosition(midi: midi, clef: clef)
         let halfSpace = staffSpacing / 2.0
-        // Position 8 = top line (F5), Y = 0. Position decreases → Y increases.
+        // Position 8 = top line, Y = 0. Position decreases → Y increases.
         let topLinePosition = 8
         return Double(topLinePosition - position) * halfSpace
     }
 
     /// Determine the stem direction for a note based on its staff position.
     ///
-    /// Notes below the middle line (B4, position 4) get stems pointing up.
-    /// Notes on or above the middle line get stems pointing down.
+    /// Notes below the clef's middle line (position 4) get stems pointing
+    /// up. Notes on or above the middle line get stems pointing down.
     ///
-    /// - Parameter midi: MIDI note number (0–127).
+    /// - Parameters:
+    ///   - midi: MIDI note number (0–127).
+    ///   - clef: Clef context. Defaults to `.treble`.
     /// - Returns: The stem direction.
-    public static func stemDirection(midi: Int) -> StemDirection {
-        let position = staffPosition(midi: midi)
-        return position < middleLinePosition ? .up : .down
+    public static func stemDirection(midi: Int, clef: StaffClef = .treble) -> StemDirection {
+        let position = staffPosition(midi: midi, clef: clef)
+        return position < clef.middleLinePosition ? .up : .down
     }
 
     /// Calculate ledger line requirements for a note.
@@ -132,10 +172,12 @@ public enum StaffPositionCalculator {
     /// Notes with staff positions below 0 or above 8 need ledger lines.
     /// Each line corresponds to an even position outside the staff range.
     ///
-    /// - Parameter midi: MIDI note number (0–127).
+    /// - Parameters:
+    ///   - midi: MIDI note number (0–127).
+    ///   - clef: Clef context. Defaults to `.treble`.
     /// - Returns: Ledger line information (count and direction).
-    public static func ledgerLines(midi: Int) -> LedgerLineInfo {
-        let position = staffPosition(midi: midi)
+    public static func ledgerLines(midi: Int, clef: StaffClef = .treble) -> LedgerLineInfo {
+        let position = staffPosition(midi: midi, clef: clef)
 
         if position < 0 {
             // Below staff: ledger lines at positions -2, -4, -6, etc.
@@ -156,10 +198,12 @@ public enum StaffPositionCalculator {
     /// Staff lines are at even positions: 0, 2, 4, 6, 8.
     /// This helps renderers decide whether to draw a line through the notehead.
     ///
-    /// - Parameter midi: MIDI note number (0–127).
+    /// - Parameters:
+    ///   - midi: MIDI note number (0–127).
+    ///   - clef: Clef context. Defaults to `.treble`.
     /// - Returns: `true` if the note sits on a line, `false` if in a space.
-    public static func isOnLine(midi: Int) -> Bool {
-        let position = staffPosition(midi: midi)
+    public static func isOnLine(midi: Int, clef: StaffClef = .treble) -> Bool {
+        let position = staffPosition(midi: midi, clef: clef)
         return position % 2 == 0
     }
 }
