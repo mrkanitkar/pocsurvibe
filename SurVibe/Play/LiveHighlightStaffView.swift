@@ -28,26 +28,15 @@ struct LiveHighlightStaffView: View {
     let highlightState: PlayTabHighlightState
     let saPitch: UInt8
     let notationMode: PlayTabNotationMode
-    let recordedNotes: [RecordedNote]
 
     /// MIDI notes currently highlighted (touch + MIDI). Read once per body.
     private var activeMidiNotes: Set<Int> { highlightState.activeMidiNotes }
 
-    /// Recorded notes whose MIDI number is at or above middle C.
-    @MainActor
-    private var trebleNotes: [WesternNote] {
-        recordedNotes
-            .filter { $0.midi >= grandStaffSplitMidi }
-            .map(Self.westernNote(from:))
-    }
-
-    /// Recorded notes whose MIDI number is below middle C.
-    @MainActor
-    private var bassNotes: [WesternNote] {
-        recordedNotes
-            .filter { $0.midi < grandStaffSplitMidi }
-            .map(Self.westernNote(from:))
-    }
+    /// Empty score for the live staff — scratchpad rendering moves to the
+    /// bottom strip / expanded sheet (Task 11+). Live staff just lights up
+    /// pressed key heads.
+    private let trebleNotes: [WesternNote] = []
+    private let bassNotes: [WesternNote] = []
 
     /// Currently-held notes routed to the treble staff for live highlight.
     private var trebleHighlight: Set<Int> {
@@ -93,18 +82,6 @@ struct LiveHighlightStaffView: View {
                 sargamRow
             }
         }
-    }
-
-    /// Convert a `RecordedNote` into the renderer's `WesternNote` shape.
-    /// Uses `WesternNoteHelper` for the note-name + octave calculation and
-    /// hard-codes a quarter-note duration (the strip has no real timing).
-    private static func westernNote(from recorded: RecordedNote) -> WesternNote {
-        let midi = Int(recorded.midi)
-        return WesternNote(
-            note: WesternNoteHelper.displayName(from: midi),
-            duration: 1.0,
-            midiNumber: midi
-        )
     }
 
     /// One-line strip of Sargam syllables for currently-pressed notes.
@@ -154,8 +131,7 @@ private func previewHighlight(_ notes: Set<Int>) -> PlayTabHighlightState {
     LiveHighlightStaffView(
         highlightState: previewHighlight([]),
         saPitch: 60,
-        notationMode: .both,
-        recordedNotes: []
+        notationMode: .both
     )
     .frame(height: 200)
     .padding()
@@ -165,12 +141,7 @@ private func previewHighlight(_ notes: Set<Int>) -> PlayTabHighlightState {
     LiveHighlightStaffView(
         highlightState: previewHighlight([60, 64, 67]),
         saPitch: 60,
-        notationMode: .both,
-        recordedNotes: [
-            RecordedNote(midi: 60, velocity: 90, onTimeSec: 0.0, offTimeSec: 0.5),
-            RecordedNote(midi: 64, velocity: 90, onTimeSec: 0.5, offTimeSec: 1.0),
-            RecordedNote(midi: 67, velocity: 90, onTimeSec: 1.0, offTimeSec: 1.5),
-        ]
+        notationMode: .both
     )
     .frame(height: 200)
     .padding()
@@ -180,8 +151,7 @@ private func previewHighlight(_ notes: Set<Int>) -> PlayTabHighlightState {
     LiveHighlightStaffView(
         highlightState: previewHighlight([62, 64, 66]),
         saPitch: 62,
-        notationMode: .sargam,
-        recordedNotes: []
+        notationMode: .sargam
     )
     .frame(height: 200)
     .padding()
@@ -191,43 +161,19 @@ private func previewHighlight(_ notes: Set<Int>) -> PlayTabHighlightState {
     LiveHighlightStaffView(
         highlightState: previewHighlight([43, 60, 67]),
         saPitch: 60,
-        notationMode: .both,
-        recordedNotes: [
-            RecordedNote(midi: 43, velocity: 90, onTimeSec: 0.0, offTimeSec: 0.5),
-            RecordedNote(midi: 60, velocity: 90, onTimeSec: 0.5, offTimeSec: 1.0),
-            RecordedNote(midi: 67, velocity: 90, onTimeSec: 1.0, offTimeSec: 1.5),
-        ]
+        notationMode: .both
     )
     .frame(height: 320)
     .padding()
 }
 
 /// Both clefs across the full piano range — verifies clef-aware position math.
-///
-/// Expected layout (low → high):
-/// - C2 (36): two ledger lines BELOW the bass staff
-/// - G2 (43): bottom line of bass staff
-/// - D3 (50): middle line of bass staff
-/// - A3 (57): top line of bass staff
-/// - C4 (60, middle C): one ledger line above bass / one ledger line below treble
-/// - E4 (64): bottom line of treble staff
-/// - B4 (71): middle line of treble staff
-/// - F5 (77): top line of treble staff
-/// - C7 (96): many ledger lines ABOVE the treble staff
 #Preview("Both clefs — full piano range") {
     let midis: Set<Int> = [36, 43, 50, 57, 60, 64, 71, 77, 96]
     return LiveHighlightStaffView(
         highlightState: previewHighlight(midis),
         saPitch: 60,
-        notationMode: .western,
-        recordedNotes: midis.sorted().enumerated().map { idx, midi in
-            RecordedNote(
-                midi: UInt8(midi),
-                velocity: 90,
-                onTimeSec: Double(idx) * 0.5,
-                offTimeSec: Double(idx) * 0.5 + 0.4
-            )
-        }
+        notationMode: .western
     )
     .frame(height: 480)
     .padding()

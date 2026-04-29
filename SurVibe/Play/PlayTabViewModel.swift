@@ -1,7 +1,10 @@
+import CoreMIDI
+import Darwin.Mach
 import Foundation
 import SVAudio
 import SVCore
 import SwiftData
+import Synchronization
 import os
 
 /// Notation display mode for the Play tab top staff and recording strip.
@@ -21,8 +24,22 @@ enum NoteSource: Hashable, Sendable {
     case midi
 }
 
+/// Type-erased shim that lets the Phase-1 timestamp helper accept either
+/// `MIDIInputEvent` or `MIDIControlChangeEvent` without copying.
+///
+/// The witness is `nonisolated` because Phase 1 runs on the CoreMIDI thread —
+/// the underlying structs are `Sendable` value types whose stored properties
+/// are inherently nonisolated, but the swift-6 default-MainActor-isolation
+/// app target needs the protocol requirement marked explicitly.
+protocol HasMIDITimestamp: Sendable {
+    nonisolated var midiTimestamp: MIDITimeStamp? { get }
+}
+
+extension MIDIInputEvent: HasMIDITimestamp {}
+extension MIDIControlChangeEvent: HasMIDITimestamp {}
+
 /// Owns the Play tab's state: current instrument, Sa pitch, notation mode,
-/// active highlighted notes, and the capped recording strip.
+/// active highlighted notes, and the always-on `ScratchpadState` recording.
 ///
 /// Touch events arrive via SwiftUI on the main thread (already played by
 /// `InteractivePianoView`). MIDI events arrive on a CoreMIDI thread; the
@@ -47,6 +64,7 @@ final class PlayTabViewModel {
     var currentInstrument: UInt8 {
         didSet {
             UserDefaults.standard.set(Int(currentInstrument), forKey: Self.kInstrument)
+            scratchpad.setInstrumentProgram(currentInstrument)
         }
     }
 
@@ -54,6 +72,7 @@ final class PlayTabViewModel {
     var saPitch: UInt8 {
         didSet {
             UserDefaults.standard.set(Int(saPitch), forKey: Self.kSaPitch)
+            scratchpad.setSaPitchMidi(saPitch)
         }
     }
 
@@ -70,8 +89,9 @@ final class PlayTabViewModel {
     /// `TakesListSheet`, flipping to `false` dismisses it.
     var takesListSheetPresented: Bool = false
 
-    /// Capped recording strip — last ``stripCap`` distinct note-ons.
-    private(set) var recordedNotes: [RecordedNote] = []
+    /// Always-on capture buffer. Replaces v1 `recordedNotes: [RecordedNote]`
+    /// (16-note strip). Wiped on tab change, New Session, or Save.
+    let scratchpad: ScratchpadState
 
     /// Most recent user-facing error message. `nil` when no error pending.
     private(set) var lastError: String?
@@ -85,9 +105,6 @@ final class PlayTabViewModel {
     /// `scenePhase == .active` may fire again on every foreground transition,
     /// which otherwise re-loads the SF2 program needlessly.
     private var isAppeared: Bool = false
-
-    /// Whether the recording strip has reached its cap.
-    var isStripFull: Bool { recordedNotes.count >= Self.stripCap }
 
     // MARK: - Dependencies
 
@@ -104,6 +121,12 @@ final class PlayTabViewModel {
     /// protected. Lifecycle (`start`/`stop`) is still invoked from MainActor.
     nonisolated private let highlightCoordinator: MIDINoteHighlightCoordinator
 
+    /// Reference host-tick captured at the first MIDI event after `onAppear()`
+    /// (or after `clearScratchpad()` resets it). Used by Phase 1 to compute
+    /// `onTimeSec` without a MainActor hop. `Mutex<UInt64?>` matches the
+    /// SoundAnalysisGate / MIDIDeJitterFilter pattern in SVAudio.
+    nonisolated private let referenceMIDITicks: Mutex<UInt64?>
+
     /// Snapshot the current engine. Cheap (uncontended unfair lock).
     private var engine: any PlayTabAudioEngine {
         engineLock.withLock { $0 }
@@ -111,7 +134,6 @@ final class PlayTabViewModel {
 
     private static let kInstrument = "playTab.lastInstrument"
     private static let kSaPitch = "playTab.saPitch"
-    private static let stripCap = 16
 
     private let log = Logger.survibe(category: "PlayTab")
 
@@ -123,8 +145,8 @@ final class PlayTabViewModel {
     ///   - engine: Audio engine surface used to load programs and play touch
     ///     notes. In production, the shared `ProductionMultiChannelEngine`.
     ///   - midiInput: Live MIDI source. Provider is owned by the caller; the
-    ///     VM only sets/clears the `onNoteEvent` closure on
-    ///     ``onAppear()``/``onDisappear()``.
+    ///     VM only sets/clears the `onNoteEvent` and `onControlChangeEvent`
+    ///     closures on ``onAppear()``/``onDisappear()``.
     ///   - highlightCoordinator: Display-link-driven coordinator that owns
     ///     the highlighted-keys state for the keyboard view.
     init(
@@ -135,11 +157,18 @@ final class PlayTabViewModel {
         self.engineLock = OSAllocatedUnfairLock(initialState: engine)
         self.midiInput = midiInput
         self.highlightCoordinator = highlightCoordinator
-        self.currentInstrument = UInt8(
+        self.referenceMIDITicks = Mutex<UInt64?>(nil)
+        let storedInstrument = UInt8(
             UserDefaults.standard.object(forKey: Self.kInstrument) as? Int ?? 0
         )
-        self.saPitch = UInt8(
+        let storedSa = UInt8(
             UserDefaults.standard.object(forKey: Self.kSaPitch) as? Int ?? 60
+        )
+        self.currentInstrument = storedInstrument
+        self.saPitch = storedSa
+        self.scratchpad = ScratchpadState(
+            instrumentProgram: storedInstrument,
+            saPitchMidi: storedSa
         )
     }
 
@@ -225,34 +254,21 @@ final class PlayTabViewModel {
     ///
     /// Neither source produces audio in this method:
     /// - Touch: `InteractivePianoView` already played the note.
-    /// - MIDI: the user's external keyboard already produced sound; we
-    ///   intentionally do not double-play through the iPad sampler.
-    ///
-    /// The MIDI hot path (see ``onAppear()``) flips the highlight bit on the
-    /// CoreMIDI thread for sub-frame latency, so by the time this MainActor
-    /// method runs for a MIDI event, `highlightCoordinator.noteOn` has
-    /// already been called. Re-calling it here would be redundant for MIDI;
-    /// it remains here so the touch path (which only enters via this method)
-    /// also lights up the keyboard.
+    /// - MIDI: this method is only entered for the touch path (the MIDI hot
+    ///   path runs through ``onAppear()`` → Phase 1 / Phase 2). Touch is
+    ///   human-paced so we sample `Date()` for `onTimeSec`.
     func handleNoteOn(_ midi: UInt8, velocity: UInt8, source: NoteSource) {
         let wasAlreadyOn = activeMidiNotes.contains(midi)
         if source == .touch {
             highlightCoordinator.noteOn(Int(midi))
         }
         activeMidiNotes.insert(midi)
-        if !wasAlreadyOn && !isStripFull {
-            recordedNotes.append(
-                RecordedNote(
-                    midi: midi,
-                    velocity: velocity,
-                    velocity16Bit: 0,
-                    onTimeSec: 0,
-                    offTimeSec: 0,
-                    channel: 0
-                )
+        if !wasAlreadyOn {
+            let onTime = currentTouchOnTimeSec()
+            scratchpad.appendNoteOn(
+                midi: midi, velocity: velocity, velocity16: 0,
+                channel: 0, onTimeSec: onTime
             )
-        } else if !wasAlreadyOn && isStripFull {
-            log.debug("Strip full — note \(midi) is not recorded")
         }
     }
 
@@ -265,13 +281,32 @@ final class PlayTabViewModel {
         if source == .touch {
             highlightCoordinator.noteOff(Int(midi))
         }
-        activeMidiNotes.remove(midi)
+        let wasOn = activeMidiNotes.remove(midi) != nil
+        if wasOn {
+            scratchpad.appendNoteOff(
+                midi: midi, channel: 0,
+                offTimeSec: currentTouchOnTimeSec()
+            )
+        }
     }
 
-    /// Empty the recording strip without affecting currently held notes.
-    func clearStrip() {
-        recordedNotes.removeAll()
+    /// Reset the scratchpad and the Phase-1 timestamp reference. Replaces
+    /// v1's `clearStrip()` (which only emptied the 16-note strip).
+    ///
+    /// - Parameters:
+    ///   - programOverride: When non-nil, replaces `scratchpad.instrumentProgram`.
+    ///     When nil the value is preserved (useful for the Save path which
+    ///     materialises the take with its own program snapshot).
+    ///   - saOverride: When non-nil, replaces `scratchpad.saPitchMidi`.
+    func clearScratchpad(programOverride: UInt8? = nil, saOverride: UInt8? = nil) {
+        referenceMIDITicks.withLock { $0 = nil }
+        scratchpad.clear(programOverride: programOverride, saOverride: saOverride)
     }
+
+    /// Deprecated v1 alias — kept so any pre-existing test or call site still
+    /// compiles with a deprecation warning.
+    @available(*, deprecated, renamed: "clearScratchpad")
+    func clearStrip() { clearScratchpad() }
 
     /// Stop everything and clear active-note state.
     func allNotesOff() {
@@ -287,18 +322,19 @@ final class PlayTabViewModel {
     /// Wire MIDI input, start the highlight coordinator, and force-reload the
     /// current program so we are not playing whatever the previous tab left.
     ///
-    /// The MIDI closure runs in two phases to keep MIDI→highlight latency at
-    /// the same level as PlayAlong (display-frame bound, ~8–16 ms):
+    /// The MIDI closure runs in two phases per spec §5.2.1:
     ///
-    /// 1. **Highlight bit flip (sync, MIDI thread).** `highlightCoordinator`
-    ///    is `nonisolated` and lock-protected — flipping its note bit on the
+    /// 1. **Phase 1 (sync, MIDI thread).** `highlightCoordinator` is
+    ///    `nonisolated` and lock-protected — flipping its note bit on the
     ///    CoreMIDI thread costs ~ns and is picked up by the next display-link
-    ///    frame. No MainActor hop on this path.
+    ///    frame. `onTimeSec` is computed *here* from the hardware
+    ///    `MIDIInputEvent.midiTimestamp` to preserve sub-frame accuracy. No
+    ///    MainActor hop on this path; no `Date()` sample.
     ///
-    /// 2. **Bookkeeping (async, MainActor).** `activeMidiNotes`,
-    ///    `recordedNotes`, and `lastError` are SwiftUI-observable; they hop
-    ///    to the main actor where their write triggers a re-render. Not
-    ///    latency-critical because the visual highlight already updated.
+    /// 2. **Phase 2 (async, MainActor).** `activeMidiNotes`, `scratchpad`,
+    ///    and `lastError` are SwiftUI-observable; they hop to the main actor
+    ///    where their write triggers a re-render. Not latency-critical
+    ///    because the visual highlight already updated.
     ///
     /// Audio is never produced from MIDI input — the user's external keyboard
     /// makes sound; doubling through the iPad sampler creates an echo.
@@ -307,9 +343,14 @@ final class PlayTabViewModel {
         isAppeared = true
         midiInput.onNoteEvent = { [weak self] event in
             guard let self else { return }
-            // Capture only `Sendable` scalars before crossing isolation.
+            // Capture only `Sendable` scalars + the hardware-derived onTime
+            // before crossing isolation. NEVER call @MainActor properties
+            // or sample Date() inside this closure.
             let note = event.noteNumber
             let velocity = event.velocity
+            let velocity16 = event.velocity16Bit
+            let channel = event.channel
+            let onTimeSec = self.computeOnTimeSec(from: event)
             // Phase 1: flip the highlight bit synchronously on the MIDI
             // thread. The display-link picks it up on the next frame.
             // Verified sub-100us on iPad Air; matches PlayAlong's NoteRouter.
@@ -318,9 +359,33 @@ final class PlayTabViewModel {
             } else {
                 self.highlightCoordinator.noteOff(Int(note))
             }
-            // Phase 2: non-latency-critical bookkeeping on MainActor.
+            // Phase 2: bookkeeping + scratchpad mutation on MainActor.
             Task { @MainActor [weak self] in
-                self?.dispatchMIDIBookkeeping(note: note, velocity: velocity)
+                self?.dispatchMIDIBookkeeping(
+                    note: note, velocity: velocity, velocity16: velocity16,
+                    channel: channel, onTimeSec: onTimeSec
+                )
+            }
+        }
+        midiInput.onControlChangeEvent = { [weak self] event in
+            guard let self else { return }
+            // Sustain pedal only — other CCs are not part of the v2 capture
+            // contract. (CC isolation invariant: never forward to a sampler.)
+            guard event.controller == 64 else { return }
+            let down = event.value >= 64
+            let channel = event.channel
+            let atTimeSec = self.computeOnTimeSec(from: event)
+            // Phase 1: highlight bit flip (sustain affects key release semantics).
+            if down {
+                self.highlightCoordinator.sustainDown()
+            } else {
+                self.highlightCoordinator.sustainUp()
+            }
+            // Phase 2: scratchpad mutation on MainActor.
+            Task { @MainActor [weak self] in
+                self?.scratchpad.appendSustain(
+                    down: down, channel: channel, atTimeSec: atTimeSec
+                )
             }
         }
         highlightCoordinator.start()
@@ -332,47 +397,87 @@ final class PlayTabViewModel {
         }
     }
 
-    /// Stop everything, clear the MIDI handler, and stop the highlight coordinator.
+    /// Stop everything, clear the MIDI handlers, and stop the highlight coordinator.
     func onDisappear() {
         allNotesOff()
         midiInput.onNoteEvent = nil
+        midiInput.onControlChangeEvent = nil
         highlightCoordinator.stop()
+        referenceMIDITicks.withLock { $0 = nil }
         isAppeared = false
     }
 
+    // MARK: - Phase 1 helpers (nonisolated)
+
+    /// Phase-1 helper: convert a hardware MIDI timestamp into seconds since
+    /// the first MIDI event of the current scratchpad recording.
+    ///
+    /// On the very first event the reference is unset; we snap it here and
+    /// return 0. Subsequent events return the host-tick delta converted to
+    /// seconds via `mach_timebase_info`. Events without a hardware timestamp
+    /// (e.g. test doubles) fall back to 0 — the Phase-2 hop will still record
+    /// the note, just without sub-frame precision.
+    ///
+    /// Safe to call from any thread: backed by a `Mutex<UInt64?>` snapshot.
+    nonisolated private func computeOnTimeSec<E: HasMIDITimestamp>(from event: E) -> TimeInterval {
+        guard let ts = event.midiTimestamp else { return 0 }
+        let snapshot = referenceMIDITicks.withLock { current -> UInt64? in
+            if current == nil {
+                current = ts
+                return nil   // signal "first event"
+            }
+            return current
+        }
+        guard let ref = snapshot else { return 0 }
+        // Use saturating subtraction in case a backdated event somehow arrives.
+        let delta = ts >= ref ? ts &- ref : 0
+        return Self.hostTicksToSeconds(delta)
+    }
+
+    /// Convert host ticks to seconds via `mach_timebase_info`.
+    nonisolated private static func hostTicksToSeconds(_ ticks: UInt64) -> TimeInterval {
+        var info = mach_timebase_info_data_t()
+        mach_timebase_info(&info)
+        let nanos = Double(ticks) * Double(info.numer) / Double(info.denom)
+        return nanos / 1_000_000_000.0
+    }
+
+    // MARK: - Phase 2 dispatcher (MainActor)
+
     /// Phase-2 MIDI bookkeeping — runs on the main actor. Updates the
-    /// SwiftUI-observable `activeMidiNotes` and `recordedNotes`. Does NOT
+    /// SwiftUI-observable `activeMidiNotes` and `scratchpad`. Does NOT
     /// touch the highlight coordinator (already flipped on the MIDI thread)
     /// or the audio engine (MIDI input never plays through the iPad sampler).
-    private func dispatchMIDIBookkeeping(note: UInt8, velocity: UInt8) {
+    private func dispatchMIDIBookkeeping(
+        note: UInt8, velocity: UInt8, velocity16: UInt16,
+        channel: UInt8, onTimeSec: TimeInterval
+    ) {
         if velocity > 0 {
-            recordNoteOnBookkeeping(note: note, velocity: velocity)
-        } else {
-            recordNoteOffBookkeeping(note: note)
-        }
-    }
-
-    private func recordNoteOnBookkeeping(note: UInt8, velocity: UInt8) {
-        let wasAlreadyOn = activeMidiNotes.contains(note)
-        activeMidiNotes.insert(note)
-        if !wasAlreadyOn && !isStripFull {
-            recordedNotes.append(
-                RecordedNote(
-                    midi: note,
-                    velocity: velocity,
-                    velocity16Bit: 0,
-                    onTimeSec: 0,
-                    offTimeSec: 0,
-                    channel: 0
+            let wasAlreadyOn = activeMidiNotes.contains(note)
+            activeMidiNotes.insert(note)
+            if !wasAlreadyOn {
+                scratchpad.appendNoteOn(
+                    midi: note, velocity: velocity, velocity16: velocity16,
+                    channel: channel, onTimeSec: onTimeSec
                 )
+            }
+        } else {
+            activeMidiNotes.remove(note)
+            scratchpad.appendNoteOff(
+                midi: note, channel: channel, offTimeSec: onTimeSec
             )
-        } else if !wasAlreadyOn && isStripFull {
-            log.debug("Strip full — note \(note) is not recorded")
         }
     }
 
-    private func recordNoteOffBookkeeping(note: UInt8) {
-        activeMidiNotes.remove(note)
+    // MARK: - Touch path helper (MainActor)
+
+    /// Touch-path `onTimeSec` source. Touch is human-paced so a `Date()`
+    /// sample is appropriate (no sub-frame requirement). Returns 0 before
+    /// the scratchpad has its `startedAt` snapped (i.e. the first event of
+    /// the recording session).
+    private func currentTouchOnTimeSec() -> TimeInterval {
+        guard let started = scratchpad.startedAt else { return 0 }
+        return Date().timeIntervalSince(started)
     }
 
     // MARK: - Save take
