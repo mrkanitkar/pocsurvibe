@@ -196,6 +196,25 @@ struct PlayTabViewModelTests {
         #expect(engine.stopTouchNoteCalls == [60])
     }
 
+    // MARK: - MIDI hot path: engine fires synchronously, bookkeeping hops async
+
+    @Test
+    func midiHandleNoteOnPlaysAudioSynchronouslyOnFire() async {
+        let (vm, engine, midi) = makeVM()
+        vm.onAppear()
+        engine.playTouchNoteCalls.removeAll()
+        midi.fire(MIDIInputEvent(noteNumber: 67, velocity: 80))
+        // Phase 1 (engine call) is synchronous on the MIDI thread —
+        // no actor hop required to observe it.
+        #expect(engine.playTouchNoteCalls.count == 1)
+        #expect(engine.playTouchNoteCalls[0].midi == 67)
+        #expect(engine.playTouchNoteCalls[0].velocity == 80)
+        // Phase 2 (bookkeeping) hops to MainActor — drain to observe.
+        await Task.yield()
+        await Task.yield()
+        #expect(vm.activeMidiNotes == [67])
+    }
+
     // MARK: - Lifecycle
 
     @Test

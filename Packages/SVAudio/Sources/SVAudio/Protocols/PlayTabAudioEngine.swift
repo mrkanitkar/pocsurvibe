@@ -17,12 +17,14 @@ import Foundation
 /// presence of SVAudio's GM SoundFont resource. Keeping the protocol in
 /// SVAudio also avoids a name collision with the existing
 /// `MIDIInputProviding` protocol used by Play-Along.
-@MainActor
-public protocol PlayTabAudioEngine: AnyObject {
+public protocol PlayTabAudioEngine: AnyObject, Sendable {
     /// Load a General MIDI program into the given sampler index.
     ///
     /// Used by the Play tab to swap the touch sampler's instrument when the
     /// user picks a new GM program from the instrument picker.
+    ///
+    /// MainActor-isolated: SF2 program loads touch the sampler graph and
+    /// must run on the main actor.
     ///
     /// - Parameters:
     ///   - index: Sampler index (0 = touch sampler; 1...15 = song slots).
@@ -30,21 +32,31 @@ public protocol PlayTabAudioEngine: AnyObject {
     ///   - isPercussion: When true, uses the percussion bank.
     /// - Throws: `MultiChannelEngineError.bankLoadFailed` on any SoundFont
     ///   resolution or sampler-load failure.
+    @MainActor
     func loadProgram(into index: Int, program: UInt8, isPercussion: Bool) throws
 
     /// Play a touch-input note on the touch sampler (sampler index 0).
     ///
+    /// `nonisolated`: SurVibe's touch-to-sound budget is 3–10 ms. The
+    /// concrete `ProductionMultiChannelEngine` calls
+    /// `AVAudioUnitSampler.startNote` (documented thread-safe) so this can
+    /// run on a CoreMIDI callback thread without a MainActor hop.
+    ///
     /// - Parameters:
     ///   - midiNote: MIDI note number (0–127).
     ///   - velocity: Key velocity (0–127).
-    func playTouchNote(_ midiNote: UInt8, velocity: UInt8)
+    nonisolated func playTouchNote(_ midiNote: UInt8, velocity: UInt8)
 
     /// Stop a single touch-input note on the touch sampler.
     ///
+    /// `nonisolated`: see `playTouchNote`.
+    ///
     /// - Parameter midiNote: MIDI note number to stop (0–127).
-    func stopTouchNote(_ midiNote: UInt8)
+    nonisolated func stopTouchNote(_ midiNote: UInt8)
 
     /// Stop every currently-ringing touch note. Used on tab disappear and
     /// instrument change to prevent stuck notes.
-    func stopAllTouchNotes()
+    ///
+    /// `nonisolated`: see `playTouchNote`.
+    nonisolated func stopAllTouchNotes()
 }

@@ -82,9 +82,18 @@ final class PlayTabViewModel {
 
     // MARK: - Dependencies
 
-    private var engine: any PlayTabAudioEngine
+    /// Engine reference held behind an unfair lock so MIDI-thread callbacks
+    /// (`engineSyncPlay` / `engineSyncStop`) can read it without a MainActor
+    /// hop. Initial value comes from `init`; ``attachEngine(_:)`` swaps it
+    /// when the real `ProductionMultiChannelEngine` becomes available.
+    private let engineLock: OSAllocatedUnfairLock<any PlayTabAudioEngine>
     private let midiInput: any MIDIInputProviding
     private let highlightCoordinator: MIDINoteHighlightCoordinator
+
+    /// Snapshot the current engine. Cheap (uncontended unfair lock).
+    private var engine: any PlayTabAudioEngine {
+        engineLock.withLock { $0 }
+    }
 
     private static let kInstrument = "playTab.lastInstrument"
     private static let kSaPitch = "playTab.saPitch"
@@ -109,7 +118,7 @@ final class PlayTabViewModel {
         midiInput: any MIDIInputProviding,
         highlightCoordinator: MIDINoteHighlightCoordinator
     ) {
-        self.engine = engine
+        self.engineLock = OSAllocatedUnfairLock(initialState: engine)
         self.midiInput = midiInput
         self.highlightCoordinator = highlightCoordinator
         self.currentInstrument = UInt8(
@@ -158,7 +167,7 @@ final class PlayTabViewModel {
     /// - Parameter engine: The real audio engine to use for subsequent
     ///   `playTouchNote` / `loadProgram` calls.
     func attachEngine(_ engine: any PlayTabAudioEngine) {
-        self.engine = engine
+        engineLock.withLock { $0 = engine }
         do {
             try engine.loadProgram(into: 0, program: currentInstrument, isPercussion: false)
         } catch {
@@ -223,13 +232,31 @@ final class PlayTabViewModel {
 
     /// Wire MIDI input, start the highlight coordinator, and force-reload the
     /// current program so we are not playing whatever the previous tab left.
+    ///
+    /// The MIDI closure runs in two phases to keep the touch-to-sound budget
+    /// under SurVibe's 3–10 ms target:
+    ///
+    /// 1. **Engine call (sync, MIDI thread).** `engineSyncPlay/Stop` invokes
+    ///    the nonisolated `playTouchNote` / `stopTouchNote` directly —
+    ///    `AVAudioUnitSampler` is documented thread-safe, so no MainActor hop.
+    ///
+    /// 2. **Bookkeeping (async, MainActor).** Only the SwiftUI-observable
+    ///    state (`activeMidiNotes`, `recordedNotes`, `highlightCoordinator`)
+    ///    hops to the main actor — that is not latency-critical.
     func onAppear() {
         midiInput.onNoteEvent = { [weak self] event in
-            // Capture only `Sendable` scalars before crossing the actor hop.
+            // Capture only `Sendable` scalars before crossing isolation.
             let note = event.noteNumber
             let velocity = event.velocity
+            // Phase 1: latency-critical engine call on the MIDI thread.
+            if velocity > 0 {
+                self?.engineSyncPlay(note: note, velocity: velocity)
+            } else {
+                self?.engineSyncStop(note: note)
+            }
+            // Phase 2: bookkeeping on main actor.
             Task { @MainActor [weak self] in
-                self?.dispatchMIDI(note: note, velocity: velocity)
+                self?.dispatchMIDIBookkeeping(note: note, velocity: velocity)
             }
         }
         highlightCoordinator.start()
@@ -248,11 +275,43 @@ final class PlayTabViewModel {
         highlightCoordinator.stop()
     }
 
-    private func dispatchMIDI(note: UInt8, velocity: UInt8) {
+    /// Phase-1 engine call — runs synchronously on the CoreMIDI callback
+    /// thread. Touches only the locked engine snapshot.
+    nonisolated private func engineSyncPlay(note: UInt8, velocity: UInt8) {
+        let snapshot = engineLock.withLock { $0 }
+        snapshot.playTouchNote(note, velocity: velocity)
+    }
+
+    /// Phase-1 engine stop — runs synchronously on the CoreMIDI callback thread.
+    nonisolated private func engineSyncStop(note: UInt8) {
+        let snapshot = engineLock.withLock { $0 }
+        snapshot.stopTouchNote(note)
+    }
+
+    /// Phase-2 MIDI bookkeeping — runs on the main actor. Updates the
+    /// SwiftUI-observable state but does NOT touch the engine (the engine
+    /// already played the note in phase 1).
+    private func dispatchMIDIBookkeeping(note: UInt8, velocity: UInt8) {
         if velocity > 0 {
-            handleNoteOn(note, velocity: velocity, source: .midi)
+            recordNoteOnBookkeeping(note: note)
         } else {
-            handleNoteOff(note, source: .midi)
+            recordNoteOffBookkeeping(note: note)
         }
+    }
+
+    private func recordNoteOnBookkeeping(note: UInt8) {
+        let wasAlreadyOn = activeMidiNotes.contains(note)
+        highlightCoordinator.noteOn(Int(note))
+        activeMidiNotes.insert(note)
+        if !wasAlreadyOn && !isStripFull {
+            recordedNotes.append(RecordedNote(midi: note))
+        } else if !wasAlreadyOn && isStripFull {
+            log.debug("Strip full — note \(note) plays but is not recorded")
+        }
+    }
+
+    private func recordNoteOffBookkeeping(note: UInt8) {
+        highlightCoordinator.noteOff(Int(note))
+        activeMidiNotes.remove(note)
     }
 }

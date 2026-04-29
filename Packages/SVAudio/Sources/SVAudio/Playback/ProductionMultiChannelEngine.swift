@@ -34,7 +34,8 @@ public final class ProductionMultiChannelEngine: MultiChannelEngineProtocol {
     /// Maximum number of song tracks supported (samplers[1..15]).
     public static let maxSongTracks = 15
     private static let totalSamplers = 16
-    private static let touchSamplerIndex = 0
+    /// `nonisolated`: read by the nonisolated touch hot-path methods.
+    nonisolated private static let touchSamplerIndex = 0
     private static let bankNameMuseScoreGeneral = "MuseScore_General"
 
     // MARK: - Public state
@@ -42,7 +43,15 @@ public final class ProductionMultiChannelEngine: MultiChannelEngineProtocol {
     /// All 16 sampler nodes attached to the engine.
     /// samplers[0] is reserved for touch input (Acoustic Grand).
     /// samplers[1..15] are used for song tracks.
-    public private(set) var samplers: [AVAudioUnitSampler]
+    ///
+    /// `nonisolated(unsafe)`: the array is built once in `init` and the
+    /// reference is never reassigned afterwards. `AVAudioUnitSampler`'s
+    /// `startNote(_:withVelocity:onChannel:)` / `stopNote(_:onChannel:)` are
+    /// documented thread-safe, so reading the array (and calling those two
+    /// methods) from a CoreMIDI callback thread is safe. Required for the
+    /// nonisolated `playTouchNote` / `stopTouchNote` / `stopAllTouchNotes`
+    /// methods that must avoid a MainActor hop on the MIDI hot path.
+    public nonisolated(unsafe) private(set) var samplers: [AVAudioUnitSampler]
 
     /// Metadata for the currently loaded song; nil before first load and after `unloadSong`.
     public private(set) var currentSong: SongHandle?
@@ -62,7 +71,14 @@ public final class ProductionMultiChannelEngine: MultiChannelEngineProtocol {
     // MARK: - Internal nodes
 
     /// The AVAudioEngine instance this engine manages.
-    let engine: AVAudioEngine
+    ///
+    /// `nonisolated(unsafe)`: `let`-bound reference — the AVAudioEngine
+    /// pointer never changes post-init. AVAudioEngine's `isRunning` is
+    /// documented safe to query from any thread; AVAudioEngine itself is
+    /// not declared `Sendable` by Apple, hence the `unsafe` qualifier.
+    /// Required so the nonisolated touch methods can guard on
+    /// `engine.isRunning` without a MainActor hop.
+    nonisolated(unsafe) let engine: AVAudioEngine
 
     /// Sub-mixer node that collects all sampler outputs before time-pitch processing.
     let subMixer: AVAudioMixerNode
@@ -159,12 +175,16 @@ public final class ProductionMultiChannelEngine: MultiChannelEngineProtocol {
 
     /// Trigger a note on `samplers[0]` (Acoustic Grand).
     ///
+    /// `nonisolated`: AVAudioUnitSampler's `startNote` is documented
+    /// thread-safe, and the touch hot path must not pay a MainActor hop —
+    /// the SurVibe latency budget is 3–10 ms.
+    ///
     /// No-op if the engine is not running; the event is logged at warning level.
     ///
     /// - Parameters:
     ///   - midiNote: MIDI note number (0–127).
     ///   - velocity: Key velocity (0–127, default: 100).
-    public func playTouchNote(_ midiNote: UInt8, velocity: UInt8 = 100) {
+    public nonisolated func playTouchNote(_ midiNote: UInt8, velocity: UInt8 = 100) {
         guard engine.isRunning else {
             MultiChannelLog.shared.log(.warning, "playTouchNote: engine not running, ignored")
             return
@@ -177,10 +197,12 @@ public final class ProductionMultiChannelEngine: MultiChannelEngineProtocol {
 
     /// Stop a note on `samplers[0]`.
     ///
+    /// `nonisolated`: see `playTouchNote` — same thread-safety guarantee.
+    ///
     /// No-op if the engine is not running.
     ///
     /// - Parameter midiNote: MIDI note number to stop (0–127).
-    public func stopTouchNote(_ midiNote: UInt8) {
+    public nonisolated func stopTouchNote(_ midiNote: UInt8) {
         guard engine.isRunning else { return }
         samplers[Self.touchSamplerIndex].stopNote(midiNote, onChannel: 0)
         MultiChannelLog.shared.log(.debug, "stopTouchNote: midi=\(midiNote)")
@@ -188,9 +210,11 @@ public final class ProductionMultiChannelEngine: MultiChannelEngineProtocol {
 
     /// Stop every active note on the touch sampler.
     ///
+    /// `nonisolated`: see `playTouchNote` — same thread-safety guarantee.
+    ///
     /// Sends note-off for all 128 MIDI note numbers on channel 0.
     /// No-op if the engine is not running.
-    public func stopAllTouchNotes() {
+    public nonisolated func stopAllTouchNotes() {
         guard engine.isRunning else { return }
         for note in 0...127 {
             samplers[Self.touchSamplerIndex].stopNote(UInt8(note), onChannel: 0)

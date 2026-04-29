@@ -108,11 +108,12 @@ struct PlayTab: View {
 
 /// No-op engine placeholder used only during the brief window before
 /// AudioEngineManager.startForPlayback() succeeds.
-private final class PlaceholderAudioEngine: PlayTabAudioEngine {
+private final class PlaceholderAudioEngine: PlayTabAudioEngine, @unchecked Sendable {
+    @MainActor
     func loadProgram(into index: Int, program: UInt8, isPercussion: Bool) throws {}
-    func playTouchNote(_ midiNote: UInt8, velocity: UInt8) {}
-    func stopTouchNote(_ midiNote: UInt8) {}
-    func stopAllTouchNotes() {}
+    nonisolated func playTouchNote(_ midiNote: UInt8, velocity: UInt8) {}
+    nonisolated func stopTouchNote(_ midiNote: UInt8) {}
+    nonisolated func stopAllTouchNotes() {}
 }
 
 #Preview {
