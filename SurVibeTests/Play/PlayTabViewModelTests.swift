@@ -15,7 +15,6 @@ struct PlayTabViewModelTests {
         // Clear UserDefaults to avoid bleed between tests.
         UserDefaults.standard.removeObject(forKey: "playTab.lastInstrument")
         UserDefaults.standard.removeObject(forKey: "playTab.saPitch")
-        UserDefaults.standard.removeObject(forKey: "playTab.playAudioOnMIDI")
         let coord = MIDINoteHighlightCoordinator()
         let vm = PlayTabViewModel(engine: engine, midiInput: midi, highlightCoordinator: coord)
         return (vm, engine, midi)
@@ -99,57 +98,27 @@ struct PlayTabViewModelTests {
         #expect(vm.recordedNotes.count == 1)  // release does not record
     }
 
-    // MARK: - MIDI path: VM produces audio
+    // MARK: - MIDI path: VM never plays through the iPad sampler
 
     @Test
-    func midiHandleNoteOnPlaysAudioWithVelocityPreserved() {
+    func midiHandleNoteOnNeverPlaysThroughIPadSampler() {
         let (vm, engine, _) = makeVM()
-        vm.setPlayAudioOnMIDI(true)
         vm.handleNoteOn(67, velocity: 80, source: .midi)
-        #expect(engine.playTouchNoteCalls.count == 1)
-        #expect(engine.playTouchNoteCalls[0].midi == 67)
-        #expect(engine.playTouchNoteCalls[0].velocity == 80)
-        #expect(vm.recordedNotes.count == 1)
-    }
-
-    @Test
-    func midiHandleNoteOffStopsAudio() {
-        let (vm, engine, _) = makeVM()
-        vm.setPlayAudioOnMIDI(true)
-        vm.handleNoteOn(67, velocity: 80, source: .midi)
-        vm.handleNoteOff(67, source: .midi)
-        #expect(engine.stopTouchNoteCalls == [67])
-        #expect(vm.activeMidiNotes.isEmpty)
-    }
-
-    // MARK: - playAudioOnMIDI toggle
-
-    @Test
-    func midiAudioOffByDefault() {
-        let (vm, _, _) = makeVM()
-        #expect(vm.playAudioOnMIDI == false)
-    }
-
-    @Test
-    func midiAudioOffSilencesEngineButKeepsHighlight() async {
-        let (vm, engine, _) = makeVM()
-        vm.onAppear()
-        vm.handleNoteOn(60, velocity: 100, source: .midi)
         #expect(
             engine.playTouchNoteCalls.isEmpty,
-            "MIDI input must not echo through iPad sampler when toggle is off"
+            "MIDI input must never echo through the iPad sampler — the external keyboard makes sound"
         )
-        #expect(vm.activeMidiNotes == [60])
+        #expect(vm.activeMidiNotes == [67])
         #expect(vm.recordedNotes.count == 1)
     }
 
     @Test
-    func midiAudioOnRoutesEngineCall() async {
+    func midiHandleNoteOffNeverStopsThroughIPadSampler() {
         let (vm, engine, _) = makeVM()
-        vm.setPlayAudioOnMIDI(true)
-        vm.onAppear()
-        vm.handleNoteOn(60, velocity: 100, source: .midi)
-        #expect(engine.playTouchNoteCalls.count == 1)
+        vm.handleNoteOn(67, velocity: 80, source: .midi)
+        vm.handleNoteOff(67, source: .midi)
+        #expect(engine.stopTouchNoteCalls.isEmpty)
+        #expect(vm.activeMidiNotes.isEmpty)
     }
 
     // MARK: - Re-trigger guard
@@ -176,17 +145,18 @@ struct PlayTabViewModelTests {
     }
 
     @Test
-    func seventeenthNoteAudioPlaysButStripDoesNotGrow() {
+    func seventeenthMidiNoteIsHighlightedButStripDoesNotGrow() {
         let (vm, engine, _) = makeVM()
-        vm.setPlayAudioOnMIDI(true)
         for n: UInt8 in 60..<76 {
             vm.handleNoteOn(n, velocity: 100, source: .midi)
             vm.handleNoteOff(n, source: .midi)
         }
-        let playCallsBefore = engine.playTouchNoteCalls.count
         vm.handleNoteOn(80, velocity: 100, source: .midi)
         #expect(vm.recordedNotes.count == 16)
-        #expect(engine.playTouchNoteCalls.count == playCallsBefore + 1)
+        // MIDI never plays through the iPad sampler; the strip overflow
+        // does not change that.
+        #expect(engine.playTouchNoteCalls.isEmpty)
+        #expect(vm.activeMidiNotes.contains(80))
     }
 
     // MARK: - Clear
@@ -217,35 +187,33 @@ struct PlayTabViewModelTests {
     @Test
     func midiVelocityZeroRoutesAsNoteOff() async {
         let (vm, engine, midi) = makeVM()
-        vm.setPlayAudioOnMIDI(true)
         vm.onAppear()
         engine.playTouchNoteCalls.removeAll()
         engine.stopTouchNoteCalls.removeAll()
         midi.fire(MIDIInputEvent(noteNumber: 60, velocity: 100))
         midi.fire(MIDIInputEvent(noteNumber: 60, velocity: 0))
-        // The MIDI closure hops via Task { @MainActor } — yield twice so both
-        // queued main-actor tasks have a chance to run.
+        // Bookkeeping runs via Task { @MainActor } — drain twice so both
+        // queued main-actor tasks complete.
         await Task.yield()
         await Task.yield()
-        #expect(engine.playTouchNoteCalls.count == 1)
-        #expect(engine.stopTouchNoteCalls == [60])
+        // MIDI input must never produce iPad audio.
+        #expect(engine.playTouchNoteCalls.isEmpty)
+        #expect(engine.stopTouchNoteCalls.isEmpty)
+        #expect(vm.activeMidiNotes.isEmpty)
     }
 
-    // MARK: - MIDI hot path: engine fires synchronously, bookkeeping hops async
+    // MARK: - MIDI hot path: highlight bit flips on the MIDI thread
 
     @Test
-    func midiHandleNoteOnPlaysAudioSynchronouslyOnFire() async {
+    func midiOnNoteEventNeverCallsEngine() async {
         let (vm, engine, midi) = makeVM()
-        vm.setPlayAudioOnMIDI(true)
         vm.onAppear()
         engine.playTouchNoteCalls.removeAll()
         midi.fire(MIDIInputEvent(noteNumber: 67, velocity: 80))
-        // Phase 1 (engine call) is synchronous on the MIDI thread —
-        // no actor hop required to observe it.
-        #expect(engine.playTouchNoteCalls.count == 1)
-        #expect(engine.playTouchNoteCalls[0].midi == 67)
-        #expect(engine.playTouchNoteCalls[0].velocity == 80)
-        // Phase 2 (bookkeeping) hops to MainActor — drain to observe.
+        // The MIDI hot path must NOT play through the iPad sampler — the
+        // external MIDI keyboard already produces sound.
+        #expect(engine.playTouchNoteCalls.isEmpty)
+        // Phase 2 (bookkeeping) hops to MainActor — drain to observe state.
         await Task.yield()
         await Task.yield()
         #expect(vm.activeMidiNotes == [67])
@@ -286,15 +254,16 @@ struct PlayTabViewModelTests {
     }
 
     @Test
-    func attachEngineRoutesSubsequentMIDINotes() {
+    func attachEngineDoesNotRouteMIDIThroughSampler() {
         let initial = MockPlayTabAudioEngine()
         let real = MockPlayTabAudioEngine()
         let (vm, _, _) = makeVM(engine: initial)
-        vm.setPlayAudioOnMIDI(true)
         vm.attachEngine(real)
         real.loadProgramCalls.removeAll()  // clear the attach-time reload
         vm.handleNoteOn(60, velocity: 100, source: .midi)
-        #expect(real.playTouchNoteCalls.count == 1)
+        // MIDI never plays through the iPad sampler regardless of which
+        // engine is attached.
+        #expect(real.playTouchNoteCalls.isEmpty)
         #expect(initial.playTouchNoteCalls.isEmpty)
     }
 

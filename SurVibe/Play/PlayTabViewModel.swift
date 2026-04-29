@@ -37,7 +37,12 @@ struct RecordedNote: Identifiable, Equatable, Sendable {
 ///
 /// Touch events arrive via SwiftUI on the main thread (already played by
 /// `InteractivePianoView`). MIDI events arrive on a CoreMIDI thread; the
-/// `onNoteEvent` closure hops to MainActor before touching VM state.
+/// VM flips the highlight bit synchronously on that thread (see ``onAppear()``)
+/// and only the non-latency-critical bookkeeping hops to MainActor.
+///
+/// MIDI input never plays through the iPad's built-in sampler — the user's
+/// external MIDI keyboard is expected to produce its own sound, and doubling
+/// would only create an unwanted echo.
 @MainActor
 @Observable
 final class PlayTabViewModel {
@@ -60,21 +65,6 @@ final class PlayTabViewModel {
     var saPitch: UInt8 {
         didSet {
             UserDefaults.standard.set(Int(saPitch), forKey: Self.kSaPitch)
-        }
-    }
-
-    /// Whether external MIDI input should also play through the iPad's
-    /// built-in sampler. Default is `false` because most users have a MIDI
-    /// keyboard with its own sound — doubling produces an unwanted echo.
-    ///
-    /// The hot-path snapshot (`playAudioOnMIDIRead`) is kept in sync via
-    /// ``setPlayAudioOnMIDI(_:)`` so the CoreMIDI thread can read the toggle
-    /// state without a MainActor hop.
-    var playAudioOnMIDI: Bool {
-        didSet {
-            let newValue = playAudioOnMIDI
-            UserDefaults.standard.set(newValue, forKey: Self.kPlayAudioOnMIDI)
-            playAudioOnMIDIRead.withLock { $0 = newValue }
         }
     }
 
@@ -103,18 +93,18 @@ final class PlayTabViewModel {
 
     // MARK: - Dependencies
 
-    /// Engine reference held behind an unfair lock so MIDI-thread callbacks
-    /// (`engineSyncPlay` / `engineSyncStop`) can read it without a MainActor
-    /// hop. Initial value comes from `init`; ``attachEngine(_:)`` swaps it
-    /// when the real `ProductionMultiChannelEngine` becomes available.
+    /// Engine reference held behind an unfair lock so MIDI-thread callers
+    /// could read it without a MainActor hop. The MIDI path no longer routes
+    /// audio through the iPad sampler, but the lock stays in place for the
+    /// touch path's `playTouchNote` / `loadProgram` calls.
     private let engineLock: OSAllocatedUnfairLock<any PlayTabAudioEngine>
     private let midiInput: any MIDIInputProviding
-    private let highlightCoordinator: MIDINoteHighlightCoordinator
 
-    /// Hot-path mirror of ``playAudioOnMIDI`` for the CoreMIDI callback
-    /// thread. Updated together with the published property so MIDI-thread
-    /// reads never require a MainActor hop.
-    private let playAudioOnMIDIRead: OSAllocatedUnfairLock<Bool>
+    /// Highlight coordinator. `nonisolated` so the MIDI-thread `onNoteEvent`
+    /// closure can call `noteOn`/`noteOff` directly without an actor hop —
+    /// the coordinator's note bit-flip is itself `nonisolated` and lock-
+    /// protected. Lifecycle (`start`/`stop`) is still invoked from MainActor.
+    nonisolated private let highlightCoordinator: MIDINoteHighlightCoordinator
 
     /// Snapshot the current engine. Cheap (uncontended unfair lock).
     private var engine: any PlayTabAudioEngine {
@@ -123,7 +113,6 @@ final class PlayTabViewModel {
 
     private static let kInstrument = "playTab.lastInstrument"
     private static let kSaPitch = "playTab.saPitch"
-    private static let kPlayAudioOnMIDI = "playTab.playAudioOnMIDI"
     private static let stripCap = 16
 
     private let log = Logger.survibe(category: "PlayTab")
@@ -154,10 +143,6 @@ final class PlayTabViewModel {
         self.saPitch = UInt8(
             UserDefaults.standard.object(forKey: Self.kSaPitch) as? Int ?? 60
         )
-        let initialPlayAudioOnMIDI =
-            UserDefaults.standard.object(forKey: Self.kPlayAudioOnMIDI) as? Bool ?? false
-        self.playAudioOnMIDI = initialPlayAudioOnMIDI
-        self.playAudioOnMIDIRead = OSAllocatedUnfairLock(initialState: initialPlayAudioOnMIDI)
     }
 
     // MARK: - Public actions
@@ -238,45 +223,41 @@ final class PlayTabViewModel {
         highlightCoordinator.onActiveNotesChanged = callback
     }
 
-    /// Toggle whether external MIDI input plays through the iPad's sampler.
-    ///
-    /// Updates both the published `playAudioOnMIDI` property (so SwiftUI
-    /// re-renders the toolbar button) and the `playAudioOnMIDIRead` snapshot
-    /// (so the next CoreMIDI callback sees the new value without a MainActor
-    /// hop). The published `didSet` already syncs the snapshot — the explicit
-    /// lock write below is redundant but kept for clarity.
-    ///
-    /// - Parameter on: `true` to route MIDI input through the iPad sampler;
-    ///   `false` (default) to leave audio to the external keyboard.
-    func setPlayAudioOnMIDI(_ on: Bool) {
-        playAudioOnMIDI = on
-        log.info("playAudioOnMIDI -> \(on)")
-    }
-
     /// Handle a note-on from either touch or MIDI.
     ///
-    /// Touch path: VM observes only — `InteractivePianoView` produces audio.
-    /// MIDI path: VM produces audio with the supplied velocity.
+    /// Neither source produces audio in this method:
+    /// - Touch: `InteractivePianoView` already played the note.
+    /// - MIDI: the user's external keyboard already produced sound; we
+    ///   intentionally do not double-play through the iPad sampler.
+    ///
+    /// The MIDI hot path (see ``onAppear()``) flips the highlight bit on the
+    /// CoreMIDI thread for sub-frame latency, so by the time this MainActor
+    /// method runs for a MIDI event, `highlightCoordinator.noteOn` has
+    /// already been called. Re-calling it here would be redundant for MIDI;
+    /// it remains here so the touch path (which only enters via this method)
+    /// also lights up the keyboard.
     func handleNoteOn(_ midi: UInt8, velocity: UInt8, source: NoteSource) {
         let wasAlreadyOn = activeMidiNotes.contains(midi)
-        if source == .midi && playAudioOnMIDI {
-            engine.playTouchNote(midi, velocity: velocity)
+        if source == .touch {
+            highlightCoordinator.noteOn(Int(midi))
         }
-        highlightCoordinator.noteOn(Int(midi))
         activeMidiNotes.insert(midi)
         if !wasAlreadyOn && !isStripFull {
             recordedNotes.append(RecordedNote(midi: midi))
         } else if !wasAlreadyOn && isStripFull {
-            log.debug("Strip full — note \(midi) plays but is not recorded")
+            log.debug("Strip full — note \(midi) is not recorded")
         }
     }
 
     /// Handle a note-off from either touch or MIDI.
+    ///
+    /// Mirrors ``handleNoteOn(_:velocity:source:)`` — the MIDI path already
+    /// cleared the highlight bit on the CoreMIDI thread, so we only flip it
+    /// here for touch.
     func handleNoteOff(_ midi: UInt8, source: NoteSource) {
-        if source == .midi && playAudioOnMIDI {
-            engine.stopTouchNote(midi)
+        if source == .touch {
+            highlightCoordinator.noteOff(Int(midi))
         }
-        highlightCoordinator.noteOff(Int(midi))
         activeMidiNotes.remove(midi)
     }
 
@@ -299,30 +280,37 @@ final class PlayTabViewModel {
     /// Wire MIDI input, start the highlight coordinator, and force-reload the
     /// current program so we are not playing whatever the previous tab left.
     ///
-    /// The MIDI closure runs in two phases to keep the touch-to-sound budget
-    /// under SurVibe's 3–10 ms target:
+    /// The MIDI closure runs in two phases to keep MIDI→highlight latency at
+    /// the same level as PlayAlong (display-frame bound, ~8–16 ms):
     ///
-    /// 1. **Engine call (sync, MIDI thread).** `engineSyncPlay/Stop` invokes
-    ///    the nonisolated `playTouchNote` / `stopTouchNote` directly —
-    ///    `AVAudioUnitSampler` is documented thread-safe, so no MainActor hop.
+    /// 1. **Highlight bit flip (sync, MIDI thread).** `highlightCoordinator`
+    ///    is `nonisolated` and lock-protected — flipping its note bit on the
+    ///    CoreMIDI thread costs ~ns and is picked up by the next display-link
+    ///    frame. No MainActor hop on this path.
     ///
-    /// 2. **Bookkeeping (async, MainActor).** Only the SwiftUI-observable
-    ///    state (`activeMidiNotes`, `recordedNotes`, `highlightCoordinator`)
-    ///    hops to the main actor — that is not latency-critical.
+    /// 2. **Bookkeeping (async, MainActor).** `activeMidiNotes`,
+    ///    `recordedNotes`, and `lastError` are SwiftUI-observable; they hop
+    ///    to the main actor where their write triggers a re-render. Not
+    ///    latency-critical because the visual highlight already updated.
+    ///
+    /// Audio is never produced from MIDI input — the user's external keyboard
+    /// makes sound; doubling through the iPad sampler creates an echo.
     func onAppear() {
         guard !isAppeared else { return }
         isAppeared = true
         midiInput.onNoteEvent = { [weak self] event in
+            guard let self else { return }
             // Capture only `Sendable` scalars before crossing isolation.
             let note = event.noteNumber
             let velocity = event.velocity
-            // Phase 1: latency-critical engine call on the MIDI thread.
+            // Phase 1: flip the highlight bit synchronously on the MIDI
+            // thread. The display-link picks it up on the next frame.
             if velocity > 0 {
-                self?.engineSyncPlay(note: note, velocity: velocity)
+                self.highlightCoordinator.noteOn(Int(note))
             } else {
-                self?.engineSyncStop(note: note)
+                self.highlightCoordinator.noteOff(Int(note))
             }
-            // Phase 2: bookkeeping on main actor.
+            // Phase 2: non-latency-critical bookkeeping on MainActor.
             Task { @MainActor [weak self] in
                 self?.dispatchMIDIBookkeeping(note: note, velocity: velocity)
             }
@@ -344,27 +332,10 @@ final class PlayTabViewModel {
         isAppeared = false
     }
 
-    /// Phase-1 engine call — runs synchronously on the CoreMIDI callback
-    /// thread. Touches only the locked engine snapshot. Gated by
-    /// ``playAudioOnMIDIRead`` so the iPad sampler stays silent when the user
-    /// has the toggle off (default).
-    nonisolated private func engineSyncPlay(note: UInt8, velocity: UInt8) {
-        guard playAudioOnMIDIRead.withLock({ $0 }) else { return }
-        let snapshot = engineLock.withLock { $0 }
-        snapshot.playTouchNote(note, velocity: velocity)
-    }
-
-    /// Phase-1 engine stop — runs synchronously on the CoreMIDI callback thread.
-    /// Gated by ``playAudioOnMIDIRead`` for symmetry with ``engineSyncPlay``.
-    nonisolated private func engineSyncStop(note: UInt8) {
-        guard playAudioOnMIDIRead.withLock({ $0 }) else { return }
-        let snapshot = engineLock.withLock { $0 }
-        snapshot.stopTouchNote(note)
-    }
-
     /// Phase-2 MIDI bookkeeping — runs on the main actor. Updates the
-    /// SwiftUI-observable state but does NOT touch the engine (the engine
-    /// already played the note in phase 1).
+    /// SwiftUI-observable `activeMidiNotes` and `recordedNotes`. Does NOT
+    /// touch the highlight coordinator (already flipped on the MIDI thread)
+    /// or the audio engine (MIDI input never plays through the iPad sampler).
     private func dispatchMIDIBookkeeping(note: UInt8, velocity: UInt8) {
         if velocity > 0 {
             recordNoteOnBookkeeping(note: note)
@@ -375,17 +346,15 @@ final class PlayTabViewModel {
 
     private func recordNoteOnBookkeeping(note: UInt8) {
         let wasAlreadyOn = activeMidiNotes.contains(note)
-        highlightCoordinator.noteOn(Int(note))
         activeMidiNotes.insert(note)
         if !wasAlreadyOn && !isStripFull {
             recordedNotes.append(RecordedNote(midi: note))
         } else if !wasAlreadyOn && isStripFull {
-            log.debug("Strip full — note \(note) plays but is not recorded")
+            log.debug("Strip full — note \(note) is not recorded")
         }
     }
 
     private func recordNoteOffBookkeeping(note: UInt8) {
-        highlightCoordinator.noteOff(Int(note))
         activeMidiNotes.remove(note)
     }
 }
