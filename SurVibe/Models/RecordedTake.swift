@@ -12,8 +12,10 @@ import SwiftData
 /// `cachedSustain` are `@Transient` decoded caches populated lazily on access.
 @Model
 public final class RecordedTake {
-    /// Stable unique identifier for the take.
-    @Attribute(.unique) public var id: UUID = UUID()
+    /// Stable identifier for the take. Not marked `.unique` because CloudKit
+    /// integration does not support unique constraints; UUIDs are unique by
+    /// construction so app-level dedup is sufficient.
+    public var id: UUID = UUID()
     /// User-visible title (e.g., "Take 5 · 29 Apr 19:42").
     public var title: String = ""
     /// Wall-clock timestamp of when the take was saved.
