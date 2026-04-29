@@ -12,8 +12,16 @@ import SwiftUI
 ///
 /// Tab + transport state is owned here (not on the view model) because the
 /// sheet is ephemeral; closing and reopening should not preserve seek/speed.
-/// Wave 4 / Task 15 fills in `TimelineWaterfallView` and wires the
-/// `MIDINoteHighlightCoordinator` as the visual sink.
+///
+/// **Visual sync (Task 15).** The sheet owns a dedicated
+/// `MIDINoteHighlightCoordinator` and hands it to `TakePlaybackEngine` as the
+/// `HighlightSink`. The engine's `CADisplayLink` calls
+/// `noteOn`/`noteOff` from the main thread; the coordinator's own display
+/// link enforces the 80 ms minimum visual hold and publishes the active-set
+/// via `onActiveNotesChanged`. The coordinator is sheet-scoped so highlight
+/// state cannot leak back into the live PlayTab keyboard underneath the
+/// sheet — the two streams (audible-via-AVAudioSequencer, visual-via-
+/// HighlightSink) stay decoupled even though both are driven by the engine.
 struct ExpandedTimelineSheet: View {
     /// Tabs presented inside the sheet. `notes` is filtered out for the live
     /// scratchpad case (`isTake == false`); annotations only make sense once
@@ -37,6 +45,16 @@ struct ExpandedTimelineSheet: View {
     @State private var speed: Double = 1.0
     @State private var hand: HandFilter = .both
 
+    /// Sheet-scoped highlight coordinator. Acts as the `HighlightSink` for
+    /// `TakePlaybackEngine` and republishes the active-note set into
+    /// `activeHighlightedNotes` for `TimelineWaterfallView` to render.
+    @State private var highlightCoordinator: MIDINoteHighlightCoordinator = .init()
+
+    /// MIDI note numbers currently being highlighted by the engine's visual
+    /// link, after the coordinator's minimum-hold has been applied. Driven
+    /// by `highlightCoordinator.onActiveNotesChanged`.
+    @State private var activeHighlightedNotes: Set<Int> = []
+
     private var maxPositionSec: TimeInterval {
         max(snapshot.notes.last?.offTimeSec ?? 1, 1)
     }
@@ -51,20 +69,17 @@ struct ExpandedTimelineSheet: View {
             .pickerStyle(.segmented)
             .padding()
 
-            switch tab {
-            case .staff:
-                TimelineStaffView(snapshot: snapshot, positionSec: positionSec)
-            case .waterfall:
-                // Filled in by Task 15 (TimelineWaterfallView + visual sync).
-                ContentUnavailableView(
-                    "Waterfall view coming soon",
-                    systemImage: "rectangle.stack.fill",
-                    description: Text("Wave 4 / Task 15 lands the falling-note view.")
-                )
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-            case .notes:
-                Text("Notes editing in Task 16")
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            // Frame-paced playhead: TimelineView re-evaluates the inner
+            // closure every display frame, pulling `currentPositionSec`
+            // off the (main-thread) sequencer. This drives both the staff
+            // and waterfall views without any work on the audio thread.
+            TimelineView(.animation(minimumInterval: 1.0 / 60.0, paused: !isPlaying)) { _ in
+                tabContent
+                    .onChange(of: shouldSampleNow) { _, _ in
+                        if let engine = playbackEngine, engine.isPlaying {
+                            positionSec = min(engine.currentPositionSec, maxPositionSec)
+                        }
+                    }
             }
 
             Spacer(minLength: 0)
@@ -73,7 +88,34 @@ struct ExpandedTimelineSheet: View {
         }
         .presentationDetents([.large])
         .onAppear { setUpPlaybackEngine() }
-        .onDisappear { playbackEngine?.stop() }
+        .onDisappear { tearDownPlaybackEngine() }
+    }
+
+    /// Tracks `playbackEngine?.isPlaying` so the `TimelineView` can pause
+    /// frame ticks when stopped (avoids burning a display frame for the
+    /// no-op sample).
+    private var isPlaying: Bool { playbackEngine?.isPlaying ?? false }
+
+    /// Read-only wrapper used as a `.onChange` trigger inside the
+    /// `TimelineView` closure — its value changes every frame while
+    /// playing, which is what drives the position sample.
+    private var shouldSampleNow: Date { Date() }
+
+    @ViewBuilder
+    private var tabContent: some View {
+        switch tab {
+        case .staff:
+            TimelineStaffView(snapshot: snapshot, positionSec: positionSec)
+        case .waterfall:
+            TimelineWaterfallView(
+                snapshot: snapshot,
+                positionSec: positionSec,
+                activeNotes: activeHighlightedNotes
+            )
+        case .notes:
+            Text("Notes editing in Task 16")
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
     }
 
     // MARK: - Transport bar
@@ -137,10 +179,17 @@ struct ExpandedTimelineSheet: View {
     // MARK: - Playback engine wiring
 
     private func setUpPlaybackEngine() {
+        // Coordinator must be running before the engine starts firing
+        // `noteOn` / `noteOff` so the display link sees the events.
+        highlightCoordinator.onActiveNotesChanged = { newSet in
+            activeHighlightedNotes = newSet
+        }
+        highlightCoordinator.start()
+
         guard let multiChannel = AudioEngineManager.shared.multiChannel else { return }
         let engine = TakePlaybackEngine(
             multiChannel: multiChannel,
-            highlightSink: nil,                     // wired in Task 15
+            highlightSink: highlightCoordinator,
             engine: AudioEngineManager.shared.engine
         )
         playbackEngine = engine
@@ -152,6 +201,13 @@ struct ExpandedTimelineSheet: View {
                 saMidi: snapshot.saPitchMidi
             )
         }
+    }
+
+    private func tearDownPlaybackEngine() {
+        playbackEngine?.stop()
+        highlightCoordinator.onActiveNotesChanged = nil
+        highlightCoordinator.stop()
+        activeHighlightedNotes = []
     }
 
     private func reschedule(speed: Double, hand: HandFilter) async {
