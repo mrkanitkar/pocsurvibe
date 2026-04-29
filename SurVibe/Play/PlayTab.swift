@@ -92,8 +92,6 @@ struct PlayTab: View {
             //
             // VM bookkeeping (`activeMidiNotes`, `recordedNotes`) is unaffected.
             viewModel.installHighlightObserver { [hs = highlightState] notes in
-                let timestampMicros = DispatchTime.now().uptimeNanoseconds / 1_000
-                print("[PlayTab][displayLink] notes=\(notes.count) ts=\(timestampMicros)")
                 hs.activeMidiNotes = notes
             }
             // Poll `connectedDeviceName` every 250ms instead of consuming
@@ -109,19 +107,11 @@ struct PlayTab: View {
             //
             // 250ms is fine for badge UX: hot-plug visibility within ~250ms.
             // SwiftUI auto-cancels this task on view disappear.
-            var pollCount = 0
             while !Task.isCancelled {
-                let raw = MIDIInputManager.shared.connectedDeviceName
-                let isConnected = MIDIInputManager.shared.isConnected
-                let names = [raw].compactMap { $0 }
-                if pollCount % 4 == 0 || names != connectedDeviceNames {
-                    print("[PlayTab][polling] tick=\(pollCount) isConnected=\(isConnected) name=\(raw ?? "<nil>")")
-                }
+                let names = [MIDIInputManager.shared.connectedDeviceName].compactMap { $0 }
                 if names != connectedDeviceNames {
                     connectedDeviceNames = names
-                    print("[PlayTab][polling] PUSHED names=\(names)")
                 }
-                pollCount += 1
                 try? await Task.sleep(for: .milliseconds(250))
             }
         }

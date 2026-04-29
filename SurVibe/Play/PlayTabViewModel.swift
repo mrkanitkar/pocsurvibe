@@ -305,21 +305,12 @@ final class PlayTabViewModel {
             let velocity = event.velocity
             // Phase 1: flip the highlight bit synchronously on the MIDI
             // thread. The display-link picks it up on the next frame.
-            let phase1Start = DispatchTime.now().uptimeNanoseconds
+            // Verified sub-100us on iPad Air; matches PlayAlong's NoteRouter.
             if velocity > 0 {
                 self.highlightCoordinator.noteOn(Int(note))
             } else {
                 self.highlightCoordinator.noteOff(Int(note))
             }
-            let phase1End = DispatchTime.now().uptimeNanoseconds
-            // Verbose latency instrumentation — pulled live via
-            // `xcrun devicectl device process launch --console`. Tagged
-            // `[PlayTab][MIDI-thread]` for grep. Remove once latency is
-            // verified on hardware.
-            print(
-                "[PlayTab][MIDI-thread] note=\(note) vel=\(velocity) "
-                + "coord=\((phase1End - phase1Start) / 1_000)us"
-            )
             // Phase 2: non-latency-critical bookkeeping on MainActor.
             Task { @MainActor [weak self] in
                 self?.dispatchMIDIBookkeeping(note: note, velocity: velocity)
