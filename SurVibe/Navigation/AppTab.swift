@@ -1,16 +1,18 @@
 import SwiftUI
 
-/// Represents the four main tabs in SurVibe's tab bar.
+/// Represents the five main tabs in SurVibe's tab bar.
 ///
 /// Each tab case provides its display label and SF Symbol for consistent
 /// rendering across the tab bar and any tab-related UI.
 ///
 /// Real-instrument pitch detection lives inside the play-along experience
-/// (`SongPlayAlongView`) and the Sing/Exercise lesson steps; there is no
-/// standalone practice tab.
+/// (`SongPlayAlongView`) and the Sing/Exercise lesson steps; the standalone
+/// Play tab provides a free-form practice surface with live MIDI/keyboard
+/// input.
 enum AppTab: String, CaseIterable, Hashable {
     case home
     case learn
+    case play
     case songs
     case profile
 
@@ -19,6 +21,7 @@ enum AppTab: String, CaseIterable, Hashable {
         switch self {
         case .home: "Home"
         case .learn: "Learn"
+        case .play: "Play"
         case .songs: "Songs"
         case .profile: "Profile"
         }
@@ -29,6 +32,7 @@ enum AppTab: String, CaseIterable, Hashable {
         switch self {
         case .home: "house.fill"
         case .learn: "book.fill"
+        case .play: "pianokeys"
         case .songs: "music.note.list"
         case .profile: "person.circle.fill"
         }
@@ -38,13 +42,14 @@ enum AppTab: String, CaseIterable, Hashable {
 // MARK: - Keyboard Shortcuts
 
 extension AppTab {
-    /// Keyboard-shortcut digit for ⌘1–⌘4 tab switching.
+    /// Keyboard-shortcut digit for ⌘1–⌘5 tab switching.
     var keyEquivalent: KeyEquivalent {
         switch self {
         case .home: "1"
         case .learn: "2"
-        case .songs: "3"
-        case .profile: "4"
+        case .play: "3"
+        case .songs: "4"
+        case .profile: "5"
         }
     }
 }

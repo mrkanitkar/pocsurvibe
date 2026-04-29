@@ -49,6 +49,10 @@ struct ContentView: View {
                 LearnTab()
             }
 
+            Tab(AppTab.play.label, systemImage: AppTab.play.systemImage, value: AppTab.play) {
+                PlayTab()
+            }
+
             Tab(AppTab.songs.label, systemImage: AppTab.songs.systemImage, value: AppTab.songs) {
                 SongsTab()
             }
