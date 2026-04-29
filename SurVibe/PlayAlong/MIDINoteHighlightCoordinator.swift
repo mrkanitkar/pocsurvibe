@@ -2,6 +2,7 @@ import Foundation
 import os
 import QuartzCore
 import SVAudio
+import SVCore
 
 /// Decouples MIDI key-highlight state from the SwiftUI render cycle.
 ///
@@ -235,3 +236,12 @@ private final class DisplayLinkTarget: NSObject {
         )
     }
 }
+
+// MARK: - HighlightSink conformance
+
+/// Conformance to the SVCore `HighlightSink` protocol so `TakePlaybackEngine`
+/// can drive the existing key-highlight pipeline without importing the app
+/// target. The four required methods (`noteOn(_:)`, `noteOff(_:channel:)`,
+/// `sustainDown(channel:)`, `sustainUp(channel:)`) are already declared above
+/// with matching signatures (and `channel: UInt8 = 0` defaults).
+extension MIDINoteHighlightCoordinator: HighlightSink {}
