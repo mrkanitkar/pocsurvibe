@@ -1,6 +1,5 @@
 import Testing
-
-@testable import SurVibe
+import SVCore
 
 struct SargamLabelerTests {
     // MARK: - Identity (Sa = C, played C → "Sa")

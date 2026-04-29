@@ -1,4 +1,5 @@
 // SurVibe/Play/RecordingStripView.swift
+import SVCore
 import SwiftUI
 
 /// Bottom strip showing the user's recorded notes (last up to 16) plus a
