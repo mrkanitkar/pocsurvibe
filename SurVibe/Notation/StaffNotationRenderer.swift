@@ -88,10 +88,14 @@ struct StaffNotationRenderer: View {
     /// Height of the staff (4 spaces × spacing).
     private var staffHeight: CGFloat { staffSpacing * 4 }
 
-    /// Top margin above the staff for ledger lines and symbols.
+    /// Baseline top margin above the staff for ledger lines and symbols.
+    /// Auto-fit padding for notes that extend further above the staff is
+    /// added on top of this — see ``extraTopPadding``.
     private let topMargin: CGFloat = 40.0
 
-    /// Bottom margin below the staff.
+    /// Baseline bottom margin below the staff. Auto-fit padding for notes
+    /// that extend further below is added on top of this — see
+    /// ``extraBottomPadding``.
     private let bottomMargin: CGFloat = 40.0
 
     /// Notehead width (horizontal diameter).
@@ -110,11 +114,18 @@ struct StaffNotationRenderer: View {
 
     var body: some View {
         let layout = computeLayout()
-        let totalHeight = topMargin + staffHeight + bottomMargin
+        // Auto-fit vertical room so notes extending beyond the staff (88-key
+        // piano range can reach ~10 ledger lines below the bass clef and
+        // ~10 above the treble clef) are not clipped. The extra padding is
+        // computed from the actual notes being rendered (recorded strip +
+        // live-highlighted MIDI notes), so the canvas only grows tall when
+        // needed.
+        let extras = computeExtraVerticalPadding(layout: layout)
+        let totalHeight = extras.top + topMargin + staffHeight + bottomMargin + extras.bottom
 
         ScrollView(.horizontal, showsIndicators: false) {
             Canvas { context, size in
-                let staffTop = topMargin
+                let staffTop = extras.top + topMargin
 
                 // Draw staff lines
                 drawStaffLines(context: &context, staffTop: staffTop, width: size.width)
@@ -175,6 +186,55 @@ struct StaffNotationRenderer: View {
             keySignature: keySignature,
             timeSignature: timeSignature
         )
+    }
+
+    /// Compute the extra top/bottom padding needed so that notes far above
+    /// or below the staff (full 88-key piano range — A0 to C8) render with
+    /// all their ledger lines visible instead of being clipped.
+    ///
+    /// Considers both the laid-out `notes` (recorded strip on the Play tab)
+    /// and the live-highlighted `detectedMidiNote` / `detectedMidiNotes` so
+    /// the staff grows even when nothing has been recorded yet.
+    ///
+    /// - Parameter layout: The computed layout for the input notes.
+    /// - Returns: Extra `(top, bottom)` padding in points to add to the
+    ///   baseline `topMargin` / `bottomMargin`.
+    private func computeExtraVerticalPadding(layout: NoteLayoutResult) -> (top: CGFloat, bottom: CGFloat) {
+        // Effective staff position = raw treble-relative position + clef shift.
+        // Position 0 = bass-clef bottom line (G2) when clef = .bass, treble bottom
+        // line (E4) when clef = .treble. Position 8 = top line of the chosen staff.
+        var minEffective = 0
+        var maxEffective = 8
+
+        for note in layout.notes where !note.isRest {
+            let effective = note.staffYOffset + clefPositionShift
+            if effective < minEffective { minEffective = effective }
+            if effective > maxEffective { maxEffective = effective }
+        }
+
+        // Live MIDI input that hasn't been recorded yet — derive the position
+        // from the raw MIDI number through SVLearning's calculator.
+        var liveMidis = detectedMidiNotes
+        if let det = detectedMidiNote { liveMidis.insert(det) }
+        for midi in liveMidis {
+            let raw = StaffPositionCalculator.staffPosition(midi: midi)
+            let effective = raw + clefPositionShift
+            if effective < minEffective { minEffective = effective }
+            if effective > maxEffective { maxEffective = effective }
+        }
+
+        let halfSpace = staffSpacing / 2
+        // Each unit of effective position = one half-space (5 pt @ default).
+        // Above the staff: position 8 is the top line; positions 9, 10, 11...
+        // sit progressively higher (smaller y). Required extra top padding is
+        // the half-spaces gained beyond position 8, plus a small notehead+stem
+        // margin so the topmost glyph isn't flush with the canvas edge.
+        let aboveSteps = max(0, maxEffective - 8)
+        let belowSteps = max(0, -minEffective)
+        let glyphMargin: CGFloat = noteheadHeight + stemLength
+        let extraTop = CGFloat(aboveSteps) * halfSpace + (aboveSteps > 0 ? glyphMargin : 0)
+        let extraBottom = CGFloat(belowSteps) * halfSpace + (belowSteps > 0 ? glyphMargin : 0)
+        return (top: extraTop, bottom: extraBottom)
     }
 
     // MARK: - Staff Drawing
