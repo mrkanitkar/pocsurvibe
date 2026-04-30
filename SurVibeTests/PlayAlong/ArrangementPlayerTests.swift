@@ -23,6 +23,16 @@ struct ArrangementPlayerTests {
     /// is a 14-byte SMF header — it is stored on the player but never
     /// loaded into a real `AVAudioSequencer` because the mock graph
     /// records `loadMIDICalled` without parsing the bytes.
+    /// Build a `PartSplit` with a learner score of `measureCount`
+    /// measures of empty 4/4. Used by C3 loop tests.
+    private func makeSplitWithMeasures(_ measureCount: Int) -> PartSplit {
+        _ = measureCount
+        // The learner note list is irrelevant for loop-controller tests —
+        // only `learner.beatsPerMeasure` is consulted by `setLoop(_:)`.
+        // The accompaniment SMF is the same 14-byte minimal header.
+        return makeSplit()
+    }
+
     private func makeSplit() -> PartSplit {
         // Minimal SMF header: "MThd" + length(6) + format(0) + tracks(0) + division(480)
         let bytes: [UInt8] = [
@@ -152,6 +162,62 @@ struct ArrangementPlayerTests {
         player.stop()
         #expect(player.isPlaying == false)
         #expect(mock.stopCalled)
+    }
+
+    // MARK: - C3: Section Loop
+
+    @Test func setLoopMakesPlayerSeekBackAtEndOfRegion() async throws {
+        let mock = MockGraph()
+        let player = ArrangementPlayer(graph: mock)
+        try await player.load(makeSplitWithMeasures(20))
+        player.setLoop(LoopRegion(startMeasure: 5, endMeasure: 8))
+        player.start()
+        // Simulate the playback driver advancing past the end of measure 8.
+        player.simulateBeatTick(beatsPerMeasure: 4, currentBeat: 32.5)
+        // Player should have called graph.seek to start of measure 5
+        // (beat (5-1)*4 = 16).
+        #expect(mock.lastSeekBeat == 16)
+        #expect(player.currentBeat == 16)
+    }
+
+    @Test func loopFirstIterationPlaysCountInOnly() async throws {
+        let mock = MockGraph()
+        let player = ArrangementPlayer(graph: mock)
+        try await player.load(makeSplitWithMeasures(20))
+        player.setLoop(LoopRegion(startMeasure: 5, endMeasure: 8))
+        player.start()
+        let initialClicks = mock.scheduledMetronomeClicks.count
+        // Trigger loop wraparound — no NEW count-in clicks should be scheduled.
+        player.simulateBeatTick(beatsPerMeasure: 4, currentBeat: 32.5)
+        let afterWrap = mock.scheduledMetronomeClicks.count
+        #expect(afterWrap == initialClicks)
+    }
+
+    @Test func setLoopNilClearsLooping() async throws {
+        let mock = MockGraph()
+        let player = ArrangementPlayer(graph: mock)
+        try await player.load(makeSplitWithMeasures(20))
+        player.setLoop(LoopRegion(startMeasure: 5, endMeasure: 8))
+        player.setLoop(nil)
+        player.start()
+        // With looping cleared, advancing past the former endBeat must NOT
+        // trigger a seek.
+        player.simulateBeatTick(beatsPerMeasure: 4, currentBeat: 32.5)
+        #expect(mock.lastSeekBeat == nil)
+        #expect(player.currentBeat == 32.5)
+    }
+
+    @Test func setLoopBeforeLoadIsNoOp() async throws {
+        let mock = MockGraph()
+        let player = ArrangementPlayer(graph: mock)
+        // No load — setLoop must be a no-op rather than crashing.
+        player.setLoop(LoopRegion(startMeasure: 5, endMeasure: 8))
+        // Subsequent ticks (post-load, post-start) should not seek because
+        // the loop never installed.
+        try await player.load(makeSplitWithMeasures(20))
+        player.start()
+        player.simulateBeatTick(beatsPerMeasure: 4, currentBeat: 32.5)
+        #expect(mock.lastSeekBeat == nil)
     }
 }
 

@@ -44,6 +44,16 @@ public final class ArrangementPlayer {
     /// or the originating split source.
     private var split: PartSplit?
 
+    /// Active section-loop controller, or `nil` when looping is disabled.
+    /// Set via `setLoop(_:)`.
+    private var loopController: SectionLoopController?
+
+    /// Tracks whether the loop has wrapped at least once. The first
+    /// iteration of a loop plays whatever count-in was scheduled by
+    /// `start(...)`; subsequent iterations skip count-in (no new clicks
+    /// are scheduled on wrap).
+    private var firstLoopIterationDone = false
+
     // MARK: - Initialization
 
     /// Create an `ArrangementPlayer` over a graph instance.
@@ -159,5 +169,73 @@ public final class ArrangementPlayer {
     /// - Parameter rate: Tempo multiplier (1.0 = original tempo).
     public func setTempoScale(_ rate: Float) {
         graph.setTempoScale(rate)
+    }
+
+    // MARK: - Section Loop (C3)
+
+    /// Enable or disable section looping.
+    ///
+    /// When a non-nil `region` is supplied, playback will seek back to
+    /// the start of `region` once `currentBeat` reaches or passes the
+    /// end of `region`. Passing `nil` clears looping. Loop boundaries
+    /// are computed from the loaded `PartSplit`'s
+    /// `learner.beatsPerMeasure`; calling `setLoop` before `load(_:)`
+    /// is a no-op.
+    ///
+    /// The first loop iteration plays whatever count-in was scheduled
+    /// by `start(...)`; subsequent iterations skip count-in (no new
+    /// metronome clicks are scheduled when wrapping).
+    ///
+    /// - Parameter region: The loop region, or `nil` to disable looping.
+    public func setLoop(_ region: LoopRegion?) {
+        guard let split else {
+            loopController = nil
+            return
+        }
+        if let region {
+            loopController = SectionLoopController(
+                region: region,
+                beatsPerMeasure: split.learner.beatsPerMeasure
+            )
+            firstLoopIterationDone = false
+        } else {
+            loopController = nil
+        }
+    }
+
+    /// Per-tick wrap check. Called from a display-link-driven beat
+    /// updater (Task C5) and from the test seam `simulateBeatTick`.
+    ///
+    /// If looping is enabled and `currentBeat` has reached the end of
+    /// the loop region, seek the graph back to the start of the region
+    /// and update `currentBeat` to match. No new count-in is scheduled
+    /// on wrap.
+    private func tick() {
+        guard isPlaying else { return }
+        if let lc = loopController, lc.shouldWrap(currentBeat: currentBeat) {
+            graph.seek(toBeat: lc.startBeat)
+            currentBeat = lc.startBeat
+            firstLoopIterationDone = true
+        }
+    }
+
+    // MARK: - Test Seam
+
+    /// Test-only seam used by `ArrangementPlayerTests` to simulate the
+    /// playback driver advancing `currentBeat`. Production code uses
+    /// the C5 display-link driver instead.
+    ///
+    /// `beatsPerMeasure` is accepted for parity with the plan signature
+    /// but is unused by the seam — the active `SectionLoopController`
+    /// already carries the bpm captured from the loaded `PartSplit`.
+    ///
+    /// - Parameters:
+    ///   - beatsPerMeasure: Unused; accepted for plan-signature parity.
+    ///   - newBeat: The beat to set as `currentBeat` before running the
+    ///     loop wrap check.
+    internal func simulateBeatTick(beatsPerMeasure: Int, currentBeat newBeat: Double) {
+        _ = beatsPerMeasure
+        self.currentBeat = newBeat
+        tick()
     }
 }
