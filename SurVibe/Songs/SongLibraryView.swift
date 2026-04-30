@@ -96,8 +96,10 @@ struct SongLibraryView: View {
             NavigationStack {
                 SongDetailView(song: song)
             }
-            .presentationDetents([.medium, .large])
-            .presentationDragIndicator(.visible)
+            // Note: presentationDetents removed — resizable detents on iPad
+            // caused fullScreenCover (Play Along) presented from inside this
+            // sheet to remount every ~720ms before its `.task` could run.
+            // Stable full-height sheet keeps Play Along's view tree stable.
         }
         .sheet(isPresented: $showImportSheet) {
             SongImportSheet()

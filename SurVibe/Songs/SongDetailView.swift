@@ -97,6 +97,7 @@ struct SongDetailView: View {
 
                 // Practice button
                 Button {
+                    MultiChannelLog.shared.log(.info, "==> SongDetailView: Practice button tapped, presenting cover")
                     showPractice = true
                 } label: {
                     Label("Practice This Song", systemImage: "music.note.list")

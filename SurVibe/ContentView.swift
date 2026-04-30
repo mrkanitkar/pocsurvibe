@@ -72,7 +72,12 @@ struct ContentView: View {
                 ProfileTab()
             }
         }
-        .tabViewStyle(.sidebarAdaptable)
+        // .tabViewStyle(.sidebarAdaptable) removed — on iPadOS 18+ the
+        // sidebar layout reflows the TabView body whenever any reactive
+        // state ticks (e.g. inline preview currentTime), which propagates
+        // into presented sheets/covers and causes Play Along's
+        // SongPlayAlongView to remount every ~720ms before its `.task`
+        // can run, hanging the feature. iPad now uses the standard tab bar.
         .sensoryFeedback(.selection, trigger: selectedTab)
         .tint(themeManager.resolved.accentColor)
         .onChange(of: colorScheme) { _, newScheme in

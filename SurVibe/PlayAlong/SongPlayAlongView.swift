@@ -160,6 +160,7 @@ struct SongPlayAlongView: View {
     // MARK: - Body
 
     var body: some View {
+        let _ = MultiChannelLog.shared.log(.info, "BODY-EVAL SongPlayAlongView body recomputed (song=\(song.title))")
         ZStack {
             // Layer 1 — theme gradient background
             LinearGradient(
@@ -231,7 +232,10 @@ struct SongPlayAlongView: View {
             MicPermissionPrePrompt(onContinue: {})
         }
         .task {
-            MultiChannelLog.shared.log(.info, ">>> SongPlayAlongView.task song=\(song.title)")
+            MultiChannelLog.shared.log(.info, ">>> SongPlayAlongView.task ENTERED song=\(song.title) cancelled=\(Task.isCancelled)")
+            defer {
+                MultiChannelLog.shared.log(.info, "<<< SongPlayAlongView.task EXITING song=\(song.title) cancelled=\(Task.isCancelled)")
+            }
             viewModel.modelContext = modelContext
             // Derive view mode and notation from the active theme preset
             viewModel.viewMode = themeManager.currentPreset.viewMode
