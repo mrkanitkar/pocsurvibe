@@ -47,37 +47,32 @@ struct ContentView: View {
     // MARK: - Body
 
     var body: some View {
+        // Legacy .tabItem + .tag syntax used intentionally instead of the
+        // iOS 18+ `Tab(... value:)` API. The new API auto-adopts a sidebar
+        // layout on iPad regular-width which (a) the user does not want and
+        // (b) reflows the TabView body on every reactive tick, remounting
+        // presented sheets/covers (Play Along hung — see commit aaa6270).
         TabView(selection: $selectedTab) {
-            Tab(AppTab.home.label, systemImage: AppTab.home.systemImage, value: AppTab.home) {
-                HomeTab()
-            }
+            HomeTab()
+                .tabItem { Label(AppTab.home.label, systemImage: AppTab.home.systemImage) }
+                .tag(AppTab.home)
 
-            Tab(AppTab.learn.label, systemImage: AppTab.learn.systemImage, value: AppTab.learn) {
-                LearnTab()
-            }
+            LearnTab()
+                .tabItem { Label(AppTab.learn.label, systemImage: AppTab.learn.systemImage) }
+                .tag(AppTab.learn)
 
-            Tab(AppTab.play.label, systemImage: AppTab.play.systemImage, value: AppTab.play) {
-                PlayTab(scratchpadGuard: scratchpadGuard)
-            }
+            PlayTab(scratchpadGuard: scratchpadGuard)
+                .tabItem { Label(AppTab.play.label, systemImage: AppTab.play.systemImage) }
+                .tag(AppTab.play)
 
-            Tab(AppTab.songs.label, systemImage: AppTab.songs.systemImage, value: AppTab.songs) {
-                SongsTab()
-            }
+            SongsTab()
+                .tabItem { Label(AppTab.songs.label, systemImage: AppTab.songs.systemImage) }
+                .tag(AppTab.songs)
 
-            Tab(
-                AppTab.profile.label,
-                systemImage: AppTab.profile.systemImage,
-                value: AppTab.profile
-            ) {
-                ProfileTab()
-            }
+            ProfileTab()
+                .tabItem { Label(AppTab.profile.label, systemImage: AppTab.profile.systemImage) }
+                .tag(AppTab.profile)
         }
-        // .tabViewStyle(.sidebarAdaptable) removed — on iPadOS 18+ the
-        // sidebar layout reflows the TabView body whenever any reactive
-        // state ticks (e.g. inline preview currentTime), which propagates
-        // into presented sheets/covers and causes Play Along's
-        // SongPlayAlongView to remount every ~720ms before its `.task`
-        // can run, hanging the feature. iPad now uses the standard tab bar.
         .sensoryFeedback(.selection, trigger: selectedTab)
         .tint(themeManager.resolved.accentColor)
         .onChange(of: colorScheme) { _, newScheme in
