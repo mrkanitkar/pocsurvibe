@@ -85,6 +85,17 @@ final class PlayAlongViewModel {
     /// XP earned, computed at session completion. Delegates to `scoring.xpEarned`.
     var xpEarned: Int { scoring.xpEarned }
 
+    /// Percentage of expected notes the user pressed correctly (0.0–1.0).
+    ///
+    /// Populated by `scoring.finalize`. Zero until session completion.
+    /// Delegates to `scoring.notesCorrectPercent`.
+    var notesCorrectPercent: Double { scoring.notesCorrectPercent }
+
+    /// Weighted timing accuracy (0.0–1.0). Zero until session completion.
+    ///
+    /// Populated by `scoring.finalize`. Delegates to `scoring.timingAccuracyPercent`.
+    var timingAccuracyPercent: Double { scoring.timingAccuracyPercent }
+
     /// Human-readable error message — delegates to `playback.errorMessage`.
     var errorMessage: String? { playback.errorMessage }
 

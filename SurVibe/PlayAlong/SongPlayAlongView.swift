@@ -307,6 +307,8 @@ struct SongPlayAlongView: View {
             PlayAlongResultsOverlay(
                 songTitle: song.title,
                 accuracy: viewModel.accuracy,
+                notesCorrectPercent: viewModel.notesCorrectPercent,
+                timingAccuracyPercent: viewModel.timingAccuracyPercent,
                 notesHit: viewModel.notesHit,
                 totalNotes: viewModel.noteEvents.count,
                 streak: viewModel.longestStreak,

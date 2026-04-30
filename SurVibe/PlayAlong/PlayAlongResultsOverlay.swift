@@ -30,6 +30,18 @@ struct PlayAlongResultsOverlay: View {
     /// Final accuracy as a fraction (0.0 to 1.0).
     let accuracy: Double
 
+    /// Percentage of expected notes pressed correctly (0.0 to 1.0).
+    ///
+    /// Shown as the primary "Notes correct" headline in the split-score section.
+    /// Pass `0` when session data is not yet available.
+    let notesCorrectPercent: Double
+
+    /// Weighted timing accuracy as a fraction (0.0 to 1.0).
+    ///
+    /// Shown as the primary "Timing" headline in the split-score section.
+    /// Pass `0` when session data is not yet available.
+    let timingAccuracyPercent: Double
+
     /// Number of notes the player hit correctly.
     let notesHit: Int
 
@@ -71,6 +83,7 @@ struct PlayAlongResultsOverlay: View {
             VStack(spacing: 24) {
                 headerSection
                 starsSection
+                splitScoreSection
                 statsSection
                 xpSection
                 actionsSection
@@ -122,24 +135,13 @@ struct PlayAlongResultsOverlay: View {
         .accessibilityLabel("\(starRating) out of 5 stars")
     }
 
-    /// Accuracy, notes hit, and streak statistics.
+    /// Notes hit, streak, and composite score statistics.
+    ///
+    /// The composite accuracy score is shown in a smaller font here, below the
+    /// split-score headline section (`splitScoreSection`), so users see
+    /// "Notes correct" and "Timing" as the two primary result numbers.
     private var statsSection: some View {
         VStack(spacing: 16) {
-            // Accuracy — prominent display
-            VStack(spacing: 4) {
-                Text(CompactScoringHUD.formatAccuracy(accuracy))
-                    .font(.system(size: 48, weight: .bold, design: .rounded))
-                    .foregroundStyle(.primary)
-                    .accessibilityLabel(
-                        "Accuracy \(CompactScoringHUD.formatAccuracy(accuracy))"
-                    )
-
-                Text("Accuracy")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .accessibilityHidden(true)
-            }
-
             HStack(spacing: 32) {
                 statItem(
                     value: "\(notesHit)/\(totalNotes)",
@@ -151,6 +153,21 @@ struct PlayAlongResultsOverlay: View {
                     label: "Best Streak",
                     accessibilityLabel: "Best streak of \(streak) notes"
                 )
+            }
+
+            // Composite score — secondary display, smaller than split metrics
+            VStack(spacing: 2) {
+                Text(CompactScoringHUD.formatAccuracy(accuracy))
+                    .font(.subheadline.weight(.semibold))
+                    .foregroundStyle(.secondary)
+                    .monospacedDigit()
+                    .accessibilityLabel(
+                        "Composite score \(CompactScoringHUD.formatAccuracy(accuracy))"
+                    )
+                Text("Score")
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
+                    .accessibilityHidden(true)
             }
         }
     }
@@ -272,6 +289,8 @@ struct PlayAlongResultsOverlay: View {
     PlayAlongResultsOverlay(
         songTitle: "Raag Yaman — Aaroha",
         accuracy: 0.92,
+        notesCorrectPercent: 0.88,
+        timingAccuracyPercent: 0.76,
         notesHit: 46,
         totalNotes: 50,
         streak: 23,
@@ -287,11 +306,30 @@ struct PlayAlongResultsOverlay: View {
     PlayAlongResultsOverlay(
         songTitle: "Twinkle Twinkle Little Star",
         accuracy: 0.32,
+        notesCorrectPercent: 0.32,
+        timingAccuracyPercent: 0.25,
         notesHit: 8,
         totalNotes: 25,
         streak: 3,
         starRating: 1,
         xpEarned: 15,
+        onReplay: {},
+        onDone: {}
+    )
+    .environment(AppThemeManager())
+}
+
+#Preview("Results — Zero data") {
+    PlayAlongResultsOverlay(
+        songTitle: "Raag Bhairav",
+        accuracy: 0,
+        notesCorrectPercent: 0,
+        timingAccuracyPercent: 0,
+        notesHit: 0,
+        totalNotes: 0,
+        streak: 0,
+        starRating: 1,
+        xpEarned: 0,
         onReplay: {},
         onDone: {}
     )
