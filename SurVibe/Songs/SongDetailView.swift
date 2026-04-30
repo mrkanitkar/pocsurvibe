@@ -123,6 +123,17 @@ struct SongDetailView: View {
                 PlayAlongSceneHost(song: song)
             }
         }
+        .onChange(of: showPlayAlong) { _, presenting in
+            // Pause the inline preview engine while Play Along is on
+            // screen — its currentTime ticks at the audio buffer rate
+            // and reactively recomputed SongDetailView's body, which
+            // cascaded into the presented cover and starved touch events
+            // on the inner SongPlayAlongView.
+            if presenting {
+                MultiChannelLog.shared.log(.info, "==> SongDetailView: stopping inline engine for Play Along")
+                engine.stop()
+            }
+        }
         .navigationTitle(song.title)
         .navigationBarTitleDisplayMode(.inline)
         .task {
