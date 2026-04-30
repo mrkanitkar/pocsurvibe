@@ -1,3 +1,4 @@
+import SVAudio
 import SVCore
 import SVLearning
 import SwiftUI
@@ -244,6 +245,11 @@ struct SongLibraryView: View {
                 SongCardView(song: song)
             }
             .buttonStyle(.plain)
+            .simultaneousGesture(
+                TapGesture().onEnded {
+                    MultiChannelLog.shared.log(.info, "==> SongLibraryView: NavigationLink tap on '\(song.title)' (slug=\(song.slugId))")
+                }
+            )
             .focused($focusedSongID, equals: song.id)
             .focusRing(
                 itemID: song.id,

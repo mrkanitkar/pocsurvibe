@@ -91,8 +91,16 @@ final class SeedContentLoader {
         let context = ModelContext(container)
         for entry in bundledMXLImports {
             do {
-                if try existingSong(slug: entry.slug, in: context) != nil {
-                    logger.info("Bundled MXL '\(entry.resource, privacy: .public)' already imported; skipping")
+                if let existing = try existingSong(slug: entry.slug, in: context) {
+                    // Upgrade-in-place: ensure existing rows have isFree=true
+                    // (older seeds shipped before isFree was set).
+                    if !existing.isFree {
+                        existing.isFree = true
+                        try context.save()
+                        logger.info("Bundled MXL '\(entry.resource, privacy: .public)': flipped isFree=true")
+                    } else {
+                        logger.info("Bundled MXL '\(entry.resource, privacy: .public)' already imported; skipping")
+                    }
                     continue
                 }
                 guard let url = Bundle.main.url(forResource: entry.resource, withExtension: "mxl") else {
@@ -109,6 +117,7 @@ final class SeedContentLoader {
                 imported.slugId = entry.slug
                 imported.title = displayTitle(forResource: entry.resource)
                 imported.source = "bundled"
+                imported.isFree = true  // Bundled MXLs are free-to-play (no premium gate).
                 try context.save()
                 logger.info(
                     "Imported bundled MXL '\(entry.resource, privacy: .public)' as Song slug=\(entry.slug, privacy: .public)"
