@@ -161,6 +161,82 @@ struct VerovioBridgeTests {
         )
     }
 
+    // MARK: - RenderOptions / Lyric Tests (Wave 3 C6)
+
+    /// Trivial MusicXML containing a single `<lyric>` so we can assert
+    /// Verovio surfaces or strips the lyric depending on `RenderOptions`.
+    private static let scoreWithLyric = """
+        <?xml version="1.0"?>
+        <score-partwise version="3.1">
+          <part-list>
+            <score-part id="P1"><part-name>Voice</part-name></score-part>
+          </part-list>
+          <part id="P1">
+            <measure number="1">
+              <attributes>
+                <divisions>1</divisions>
+                <key><fifths>0</fifths></key>
+                <time><beats>4</beats><beat-type>4</beat-type></time>
+                <clef><sign>G</sign><line>2</line></clef>
+              </attributes>
+              <note>
+                <pitch><step>C</step><octave>4</octave></pitch>
+                <duration>1</duration><type>quarter</type>
+                <lyric number="1"><syllabic>single</syllabic><text>Sukh</text></lyric>
+              </note>
+            </measure>
+          </part>
+        </score-partwise>
+        """
+
+    @Test("RenderOptions defaults preserve lyrics and voice staff")
+    func renderOptionsDefaultsAreLyricFriendly() {
+        let opts = VerovioBridge.RenderOptions()
+        #expect(opts.includeLyrics == true)
+        #expect(opts.includeVoiceStaffWhenLyricsPresent == true)
+    }
+
+    @Test("RenderOptions is Sendable and Equatable")
+    func renderOptionsAreSendable() {
+        let _: any Sendable = VerovioBridge.RenderOptions()
+        let a = VerovioBridge.RenderOptions(includeLyrics: true, includeVoiceStaffWhenLyricsPresent: true)
+        let b = VerovioBridge.RenderOptions(includeLyrics: true, includeVoiceStaffWhenLyricsPresent: true)
+        #expect(a == b)
+    }
+
+    @Test("Default render keeps lyric text in SVG")
+    func renderWithDefaultOptionsKeepsLyrics() throws {
+        let bridge = VerovioBridge()
+        let rendered = try bridge.render(musicXML: Self.scoreWithLyric, options: .init())
+        let svg = rendered.svgPages.joined()
+        // Verovio emits <g class="lyrics"> nodes when lyrics are present
+        // and the lyric text itself ("Sukh") appears in the rendered SVG.
+        #expect(
+            svg.contains("class=\"lyric") || svg.contains("Sukh"),
+            "Default render should include lyrics in SVG output"
+        )
+    }
+
+    @Test("includeLyrics:false strips lyric text from SVG")
+    func renderWithIncludeLyricsFalseStripsLyrics() throws {
+        let bridge = VerovioBridge()
+        let rendered = try bridge.render(
+            musicXML: Self.scoreWithLyric,
+            options: .init(includeLyrics: false)
+        )
+        let svg = rendered.svgPages.joined()
+        #expect(!svg.contains("Sukh"), "includeLyrics:false should strip lyric text")
+    }
+
+    @Test("RenderedScore exposes MIDI data for the same input")
+    func renderedScoreCarriesMIDI() throws {
+        let bridge = VerovioBridge()
+        let rendered = try bridge.render(musicXML: Self.scoreWithLyric, options: .init())
+        #expect(!rendered.midi.data.isEmpty)
+        #expect(rendered.midi.trackCount >= 1)
+        #expect(!rendered.svgPages.isEmpty)
+    }
+
     @Test("Multi-part score emits track names for each part")
     func multiPartTrackNames() throws {
         let duetScore = """

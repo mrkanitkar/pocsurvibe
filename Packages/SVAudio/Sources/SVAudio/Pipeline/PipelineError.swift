@@ -86,6 +86,27 @@ public struct RenderedMIDI: Equatable, Sendable {
     }
 }
 
+/// Output of `VerovioBridge.render(musicXML:options:)` — the rendered MIDI
+/// summary plus one SVG string per Verovio page (in page order).
+///
+/// Used by the Learn-a-Song pipeline to display lyric-bearing notation
+/// alongside playback. `svgPages` may be empty if Verovio emits zero pages
+/// for the input (degenerate scores).
+public struct RenderedScore: Equatable, Sendable {
+    /// MIDI data and track summary, identical in shape to what the
+    /// MIDI-only `render(musicXML:)` method returns.
+    public let midi: RenderedMIDI
+    /// One SVG document per Verovio page, in page order. Each entry is a
+    /// complete standalone `<svg>...</svg>` string suitable for embedding
+    /// in a `WKWebView` or rendering to an image.
+    public let svgPages: [String]
+
+    public init(midi: RenderedMIDI, svgPages: [String]) {
+        self.midi = midi
+        self.svgPages = svgPages
+    }
+}
+
 /// Per-track MIDI metadata extracted by walking the SMF byte stream.
 public struct TrackInfo: Equatable, Sendable {
     /// First MIDI channel observed on the track (0-indexed; 9 = percussion).
