@@ -14,14 +14,14 @@ import Synchronization
 /// token.stamp(.dspComplete)     // after pitch detection
 /// token.stamp(.matchComplete)   // after note matching
 /// token.stamp(.framePresented)  // at CADisplayLink
-/// LatencyProbe.shared.record(token)
+/// PracticeLatencyProbe.shared.record(token)
 /// ```
-public final class LatencyProbe: Sendable {
+public final class PracticeLatencyProbe: Sendable {
 
     // MARK: - Singleton
 
     /// Shared instance for pipeline-wide latency collection.
-    public static let shared = LatencyProbe()
+    public static let shared = PracticeLatencyProbe()
 
     // MARK: - State
 
@@ -39,7 +39,7 @@ public final class LatencyProbe: Sendable {
     /// Intervals are compiled to no-ops when not profiling (zero runtime cost).
     private static let signposter = OSSignposter(
         subsystem: "com.survibe",
-        category: "LatencyProbe"
+        category: "PracticeLatencyProbe"
     )
 
     // MARK: - Initialization

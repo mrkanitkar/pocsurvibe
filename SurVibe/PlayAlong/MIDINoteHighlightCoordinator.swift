@@ -168,7 +168,7 @@ final class MIDINoteHighlightCoordinator {
     func recordProbe(_ token: ProbeToken?) {
         guard var token else { return }
         token.stamp(.framePresented)
-        LatencyProbe.shared.record(token)
+        PracticeLatencyProbe.shared.record(token)
     }
 
     // MARK: - Display Link Callback — main thread only

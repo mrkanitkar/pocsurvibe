@@ -26,6 +26,9 @@ public struct PartSplit: Sendable {
     public let learnerStaves: [StaffSpec]
     /// Track index containing `<lyric>` events (SMF meta-0x05); `nil` when
     /// no lyrics are present.
+    ///
+    /// TODO(Wave 5+): consume this in the score renderer to keep the voice
+    /// staff visible when the learner is on a non-vocal part.
     public let lyricsStaffTrackIndex: Int?
 
     public init(

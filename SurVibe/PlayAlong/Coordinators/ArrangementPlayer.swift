@@ -63,12 +63,6 @@ public final class ArrangementPlayer {
     /// Set via `setLoop(_:)`.
     private var loopController: SectionLoopController?
 
-    /// Tracks whether the loop has wrapped at least once. The first
-    /// iteration of a loop plays whatever count-in was scheduled by
-    /// `start(...)`; subsequent iterations skip count-in (no new clicks
-    /// are scheduled on wrap).
-    private var firstLoopIterationDone = false
-
     /// Display-link proxy that forwards `CADisplayLink` callbacks to
     /// `handleDisplayLinkTick()` on the main run loop. Created lazily on
     /// the first `start(...)` and invalidated on `stop()` / `deinit`.
@@ -234,10 +228,6 @@ public final class ArrangementPlayer {
     /// `learner.beatsPerMeasure`; calling `setLoop` before `load(_:)`
     /// is a no-op.
     ///
-    /// The first loop iteration plays whatever count-in was scheduled
-    /// by `start(...)`; subsequent iterations skip count-in (no new
-    /// metronome clicks are scheduled when wrapping).
-    ///
     /// - Parameter region: The loop region, or `nil` to disable looping.
     public func setLoop(_ region: LoopRegion?) {
         guard let split else {
@@ -249,7 +239,6 @@ public final class ArrangementPlayer {
                 region: region,
                 beatsPerMeasure: split.learner.beatsPerMeasure
             )
-            firstLoopIterationDone = false
         } else {
             loopController = nil
         }
@@ -267,7 +256,6 @@ public final class ArrangementPlayer {
         if let lc = loopController, lc.shouldWrap(currentBeat: currentBeat) {
             graph.seek(toBeat: lc.startBeat)
             currentBeat = lc.startBeat
-            firstLoopIterationDone = true
         }
     }
 

@@ -189,18 +189,17 @@ struct VerovioBridgeTests {
         </score-partwise>
         """
 
-    @Test("RenderOptions defaults preserve lyrics and voice staff")
+    @Test("RenderOptions defaults preserve lyrics")
     func renderOptionsDefaultsAreLyricFriendly() {
         let opts = VerovioBridge.RenderOptions()
         #expect(opts.includeLyrics == true)
-        #expect(opts.includeVoiceStaffWhenLyricsPresent == true)
     }
 
     @Test("RenderOptions is Sendable and Equatable")
     func renderOptionsAreSendable() {
         let _: any Sendable = VerovioBridge.RenderOptions()
-        let a = VerovioBridge.RenderOptions(includeLyrics: true, includeVoiceStaffWhenLyricsPresent: true)
-        let b = VerovioBridge.RenderOptions(includeLyrics: true, includeVoiceStaffWhenLyricsPresent: true)
+        let a = VerovioBridge.RenderOptions(includeLyrics: true)
+        let b = VerovioBridge.RenderOptions(includeLyrics: true)
         #expect(a == b)
     }
 

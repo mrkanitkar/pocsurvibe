@@ -193,6 +193,10 @@ struct PlayAlongToolbar: View {
         }
         .pickerStyle(.segmented)
         .frame(width: 160)
+        // The whole picker is disabled (rather than per-option) for a single-
+        // staff arrangement: a segmented picker with one greyed segment reads
+        // as broken, whereas a fully-disabled picker plus a clear hint
+        // ("requires a multi-staff arrangement") communicates intent cleanly.
         .disabled(!viewModel.hasMultipleStaves)
         .accessibilityLabel("Hand isolation mode")
         .accessibilityHint(

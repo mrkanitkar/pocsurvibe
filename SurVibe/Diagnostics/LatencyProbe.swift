@@ -1,12 +1,14 @@
 #if DEBUG
-import os.signpost
+import OSLog
+import SVCore
 
 /// DEBUG-only rolling-window latency probe for the Learn-a-Song pipeline.
 ///
 /// Records ``latencyMs`` samples in a capped ring buffer of 1024 entries.
 /// When the window is full the oldest sample is evicted to make room for the
-/// new one. Emits an ``os_signpost`` `.event` on every recording so Instruments
-/// can visualize the distribution in the Points of Interest timeline.
+/// new one. Emits an ``OSSignposter`` `.event` on every recording so Instruments
+/// can visualize the distribution in the Points of Interest timeline, and logs
+/// a structured info-level entry via `Logger.survibe(category: "Latency")`.
 ///
 /// ## Usage
 /// ```swift
@@ -24,11 +26,15 @@ final class AppLatencyProbe {
 
     // MARK: - Properties
 
-    /// OSLog handle for os_signpost events.
+    /// Structured logger for info-level latency samples.
+    private let logger = Logger.survibe(category: "Latency")
+
+    /// Modern signposter used to emit Instruments Points-of-Interest events.
     ///
-    /// Uses `OSLog` (not the newer `Logger`) because `os_signpost` requires an
-    /// `OSLog` object; `Logger` does not expose a compatible interface.
-    private let log = OSLog(subsystem: "com.survibe", category: "Latency")
+    /// `OSSignposter` (iOS 15+) is the modern replacement for `os_signpost`
+    /// free functions. It accepts a `Logger`-style subsystem/category and
+    /// preserves the same Instruments visualization semantics.
+    private let signposter = OSSignposter(subsystem: "com.survibe", category: "Latency")
 
     /// Recorded latency samples in milliseconds, oldest-first.
     private var samples: [Double] = []
@@ -49,7 +55,8 @@ final class AppLatencyProbe {
         if samples.count > window {
             samples.removeFirst(samples.count - window)
         }
-        os_signpost(.event, log: log, name: "LatencySample", "%{public}.2f ms", latencyMs)
+        signposter.emitEvent("LatencySample", "\(latencyMs, format: .fixed(precision: 2)) ms")
+        logger.info("LatencySample \(latencyMs, format: .fixed(precision: 2), privacy: .public) ms")
     }
 
     // MARK: - Percentiles

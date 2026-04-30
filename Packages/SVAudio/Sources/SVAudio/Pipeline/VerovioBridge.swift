@@ -19,8 +19,11 @@ public final class VerovioBridge {
     /// before rendering a score to SVG + MIDI.
     ///
     /// The defaults are tuned for the Learn-a-Song pipeline: lyrics are
-    /// preserved and the voice-bearing staff is kept visible whenever a
-    /// lyric is present, so learners can sing along.
+    /// preserved so learners can sing along.
+    ///
+    /// Voice-staff-always-visible behavior is handled at the score-renderer
+    /// level (Wave 5+), not here — Verovio doesn't expose a clean filter
+    /// for "keep this part visible regardless of selection".
     public struct RenderOptions: Sendable, Equatable {
         /// When `true` (default), lyric `<text>` syllables that appear in
         /// the source MusicXML are surfaced in Verovio's SVG output as
@@ -31,19 +34,8 @@ public final class VerovioBridge {
         /// (trade-off: an extra regex pass on the XML, no toolkit churn).
         public var includeLyrics: Bool
 
-        /// When `true` (default) and the score contains lyrics, the
-        /// voice-bearing staff is kept visible. Verovio includes every
-        /// part by default; this flag is a forward-looking hook for
-        /// future part filtering and is currently honored by *not*
-        /// stripping the voice staff anywhere downstream.
-        public var includeVoiceStaffWhenLyricsPresent: Bool
-
-        public init(
-            includeLyrics: Bool = true,
-            includeVoiceStaffWhenLyricsPresent: Bool = true
-        ) {
+        public init(includeLyrics: Bool = true) {
             self.includeLyrics = includeLyrics
-            self.includeVoiceStaffWhenLyricsPresent = includeVoiceStaffWhenLyricsPresent
         }
     }
 

@@ -168,7 +168,9 @@ public final class ScoringAdapter {
     ///
     /// - Parameters:
     ///   - midiNote: MIDI note number played by the user (0–127).
-    ///   - velocity: MIDI velocity (0–127). Currently unused for scoring.
+    ///   - velocity: MIDI velocity (0–127). Threaded into `NoteScoreCalculator` as
+    ///     `playedVelocity` for dynamics scoring; expected velocity is `nil` for
+    ///     play-along (no expected dynamics in MusicXML import yet).
     ///   - hostTime: Host-clock timestamp captured at the input event.
     ///   - sequencerStartHostTime: Host-clock timestamp at sequencer start.
     ///   - currentTempoScale: Sequencer tempo scale (0.5...1.5).
@@ -181,7 +183,6 @@ public final class ScoringAdapter {
         sequencerStartHostTime: HostTime,
         currentTempoScale: Float
     ) -> NoteVerdict? {
-        _ = velocity  // reserved for v2 dynamics scoring on MIDI input
         let elapsedSec = hostTime.seconds(since: sequencerStartHostTime)
         let tempoScale = max(0.0001, Double(currentTempoScale))
         let currentBeat = elapsedSec * (score.originalBPM / 60.0) * tempoScale
@@ -213,7 +214,9 @@ public final class ScoringAdapter {
             pitchDeviationCents: pitchDevCents,
             timingDeviationSeconds: abs(secDelta),
             durationDeviation: 0,
-            ragaContext: nil
+            ragaContext: nil,
+            playedVelocity: velocity,
+            expectedVelocity: nil
         )
 
         consumed.insert(candidate.id)

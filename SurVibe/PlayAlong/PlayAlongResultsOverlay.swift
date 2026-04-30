@@ -12,6 +12,8 @@ import SwiftUI
 /// PlayAlongResultsOverlay(
 ///     songTitle: "Raag Yaman",
 ///     accuracy: 0.92,
+///     notesCorrectPercent: 0.92,
+///     timingAccuracyPercent: 0.84,
 ///     notesHit: 46,
 ///     totalNotes: 50,
 ///     streak: 23,
