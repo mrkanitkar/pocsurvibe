@@ -93,18 +93,26 @@ public final class VerovioBridge {
         )
         for (idx, info) in summary.trackInfo.enumerated() {
             let progStr = info.program.map { String($0) } ?? "nil"
+            let nameStr = info.trackName ?? "nil"
+            let instrStr = info.instrumentName ?? "nil"
             PipelineFileLog.shared.log(
                 """
                   music-track[\(idx)] channel=\(info.channel) \
-                  program=\(progStr) percussion=\(info.isPercussion)
+                  program=\(progStr) percussion=\(info.isPercussion) \
+                  name=\(nameStr) instrument=\(instrStr)
                 """
             )
         }
+        let bpm = summary.originalBPM
+        PipelineFileLog.shared.log(
+            "VerovioBridge.render: originalBPM=\(bpm)"
+        )
         return RenderedMIDI(
             data: midiData,
             trackCount: trackCount,
             channels: summary.channels,
-            trackInfo: summary.trackInfo
+            trackInfo: summary.trackInfo,
+            originalBPM: bpm
         )
     }
 
@@ -133,6 +141,9 @@ public final class VerovioBridge {
         var trackCount: Int
         var channels: [UInt8]
         var trackInfo: [TrackInfo]
+        /// BPM from the first SMF meta-0x51 (Set Tempo) event, or 120
+        /// when no tempo event is present.
+        var originalBPM: Double
     }
 
     nonisolated private static func summarize(midi: Data) throws -> MIDISummary {
@@ -143,6 +154,7 @@ public final class VerovioBridge {
         var trackCount = 0
         var channelSet = Set<UInt8>()
         var trackInfo: [TrackInfo] = []
+        var firstTempoMicros: UInt32?
         var i = 0
         while i + 4 <= bytes.count {
             let chunkID = Data(bytes[i..<i + 4])
@@ -159,19 +171,27 @@ public final class VerovioBridge {
                     trackInfo.append(TrackInfo(
                         channel: info.firstChannel ?? 0,
                         program: info.firstProgram,
-                        isPercussion: info.isPercussion
+                        isPercussion: info.isPercussion,
+                        trackName: info.trackName,
+                        instrumentName: info.instrumentName
                     ))
                     info.channels.forEach { channelSet.insert($0) }
+                }
+                // Capture first tempo from any track (usually the conductor)
+                if firstTempoMicros == nil, let micros = info.tempoMicros {
+                    firstTempoMicros = micros
                 }
                 i = trackEnd
             } else {
                 i += 1
             }
         }
+        let bpm = 60_000_000.0 / Double(firstTempoMicros ?? 500_000)
         return MIDISummary(
             trackCount: trackCount,
             channels: channelSet.sorted(),
-            trackInfo: trackInfo
+            trackInfo: trackInfo,
+            originalBPM: bpm
         )
     }
 
@@ -182,6 +202,54 @@ public final class VerovioBridge {
         var firstProgram: UInt8?
         var isPercussion: Bool
         var channels: Set<UInt8>
+        /// Sequence/Track Name from meta event 0x03.
+        var trackName: String?
+        /// Instrument Name from meta event 0x04.
+        var instrumentName: String?
+        /// Microseconds-per-quarter from meta event 0x51 (Set Tempo).
+        var tempoMicros: UInt32?
+    }
+
+    private struct MetaResult {
+        var trackName: String?
+        var instrumentName: String?
+        var tempoMicros: UInt32?
+    }
+
+    nonisolated private static func parseMeta(
+        _ metaType: UInt8, bytes: [UInt8], dataStart: Int, len: Int, end: Int,
+        existingName: String?, existingInstr: String?, existingTempo: UInt32?
+    ) -> MetaResult {
+        var result = MetaResult(
+            trackName: existingName,
+            instrumentName: existingInstr,
+            tempoMicros: existingTempo
+        )
+        switch metaType {
+        case 0x03 where result.trackName == nil:
+            if len > 0, dataStart + len <= end {
+                result.trackName = String(
+                    bytes: bytes[dataStart..<dataStart + len],
+                    encoding: .utf8
+                )
+            }
+        case 0x04 where result.instrumentName == nil:
+            if len > 0, dataStart + len <= end {
+                result.instrumentName = String(
+                    bytes: bytes[dataStart..<dataStart + len],
+                    encoding: .utf8
+                )
+            }
+        case 0x51 where result.tempoMicros == nil:
+            if len == 3, dataStart + 3 <= end {
+                result.tempoMicros = UInt32(bytes[dataStart]) << 16
+                    | UInt32(bytes[dataStart + 1]) << 8
+                    | UInt32(bytes[dataStart + 2])
+            }
+        default:
+            break
+        }
+        return result
     }
 
     /// Single-MTrk parser. Walks events respecting variable-length deltas,
@@ -198,6 +266,9 @@ public final class VerovioBridge {
         var firstProgram: UInt8?
         var channels = Set<UInt8>()
         var isPercussion = false
+        var trackName: String?
+        var instrumentName: String?
+        var tempoMicros: UInt32?
 
         while j < end {
             // Skip variable-length delta time
@@ -220,6 +291,7 @@ public final class VerovioBridge {
             if status == 0xFF {
                 // Meta event: type byte + variable-length length + data
                 guard j < end else { break }
+                let metaType = bytes[j]
                 j += 1  // type
                 var len = 0
                 while j < end {
@@ -228,6 +300,14 @@ public final class VerovioBridge {
                     len = (len << 7) | Int(lb & 0x7F)
                     if lb & 0x80 == 0 { break }
                 }
+                let parsed = parseMeta(
+                    metaType, bytes: bytes, dataStart: j, len: len, end: end,
+                    existingName: trackName, existingInstr: instrumentName,
+                    existingTempo: tempoMicros
+                )
+                trackName = parsed.trackName
+                instrumentName = parsed.instrumentName
+                tempoMicros = parsed.tempoMicros
                 j += len
             } else if status == 0xF0 || status == 0xF7 {
                 // SysEx: variable-length length + data
@@ -272,7 +352,10 @@ public final class VerovioBridge {
             firstChannel: firstChannel,
             firstProgram: firstProgram,
             isPercussion: isPercussion,
-            channels: channels
+            channels: channels,
+            trackName: trackName,
+            instrumentName: instrumentName,
+            tempoMicros: tempoMicros
         )
     }
 }

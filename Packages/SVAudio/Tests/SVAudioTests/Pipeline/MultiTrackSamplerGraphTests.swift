@@ -74,19 +74,48 @@ struct MultiTrackSamplerGraphTests {
         graph.teardown()
     }
 
-    @Test("setTempo clamps to 0.5–1.5 range")
-    func tempoClamps() throws {
+    @Test("setTempoScale(0.5) sets sequencer.rate=0.5, timePitch stays 1.0")
+    func tempoScaleHalf() throws {
         try AudioEngineManager.shared.startForPlayback()
         let graph = try MultiTrackSamplerGraph(trackCount: 1)
 
-        graph.setTempo(rate: 0.25)
-        #expect(graph.timePitch.rate == 0.5)
+        // Load a minimal MIDI so sequencer is non-nil
+        let midi = try Data(contentsOf: Self.fixtureMIDI())
+        try graph.loadMIDI(RenderedMIDI(data: midi, trackCount: 1, channels: [0]))
 
-        graph.setTempo(rate: 5.0)
-        #expect(graph.timePitch.rate == 1.5)
+        graph.setTempoScale(0.5)
+        #expect(graph.sequencerRate == 0.5)
+        #expect(graph.timePitchRate == 1.0)
 
-        graph.setTempo(rate: 1.0)
-        #expect(graph.timePitch.rate == 1.0)
+        graph.teardown()
+    }
+
+    @Test("setTempoScale(2.0) clamps to 1.5")
+    func tempoScaleClampsHigh() throws {
+        try AudioEngineManager.shared.startForPlayback()
+        let graph = try MultiTrackSamplerGraph(trackCount: 1)
+
+        let midi = try Data(contentsOf: Self.fixtureMIDI())
+        try graph.loadMIDI(RenderedMIDI(data: midi, trackCount: 1, channels: [0]))
+
+        graph.setTempoScale(2.0)
+        #expect(graph.sequencerRate == 1.5)
+        #expect(graph.timePitchRate == 1.0)
+
+        graph.teardown()
+    }
+
+    @Test("setTempoScale(0.1) clamps to 0.5")
+    func tempoScaleClampsLow() throws {
+        try AudioEngineManager.shared.startForPlayback()
+        let graph = try MultiTrackSamplerGraph(trackCount: 1)
+
+        let midi = try Data(contentsOf: Self.fixtureMIDI())
+        try graph.loadMIDI(RenderedMIDI(data: midi, trackCount: 1, channels: [0]))
+
+        graph.setTempoScale(0.1)
+        #expect(graph.sequencerRate == 0.5)
+        #expect(graph.timePitchRate == 1.0)
 
         graph.teardown()
     }
@@ -113,6 +142,86 @@ struct MultiTrackSamplerGraphTests {
         #expect(graph.isPlaying == false)
         #expect(graph.sequencer?.currentPositionInSeconds == 0)
 
+        graph.teardown()
+    }
+
+    @Test("seek sets currentPositionInBeats")
+    func seekToBeat() throws {
+        try AudioEngineManager.shared.startForPlayback()
+        let graph = try MultiTrackSamplerGraph(trackCount: 1)
+        let midi = try Data(contentsOf: Self.fixtureMIDI())
+        try graph.loadMIDI(RenderedMIDI(data: midi, trackCount: 1, channels: [0]))
+
+        graph.seek(toBeat: 2.0)
+        #expect(graph.currentPositionInBeats == 2.0)
+
+        // Negative clamps to 0
+        graph.seek(toBeat: -5.0)
+        #expect(graph.currentPositionInBeats == 0)
+
+        graph.teardown()
+    }
+
+    @Test("setMutedTracks mutes specified sequencer tracks")
+    func muteTracks() throws {
+        try AudioEngineManager.shared.startForPlayback()
+        let graph = try MultiTrackSamplerGraph(trackCount: 3)
+        let midi = try Data(contentsOf: Self.fixtureMIDI())
+        try graph.loadMIDI(RenderedMIDI(data: midi, trackCount: 2, channels: [0, 1]))
+
+        guard let seq = graph.sequencer else {
+            graph.teardown()
+            return
+        }
+
+        graph.setMutedTracks([0])
+        #expect(seq.tracks[0].isMuted == true)
+        if seq.tracks.count > 1 {
+            #expect(seq.tracks[1].isMuted == false)
+        }
+
+        // Clear mutes
+        graph.setMutedTracks([])
+        #expect(seq.tracks[0].isMuted == false)
+
+        graph.teardown()
+    }
+
+    @Test("resume is no-op when already playing")
+    func resumeNoOpWhenPlaying() throws {
+        try AudioEngineManager.shared.startForPlayback()
+        guard let mxlURL = Bundle.main.url(forResource: "james-bond-theme", withExtension: "mxl")
+        else { return }
+        let xml = try MXLLoader.loadMusicXML(from: try Data(contentsOf: mxlURL))
+        let bridge = VerovioBridge()
+        let rendered = try bridge.render(musicXML: xml)
+
+        let graph = try MultiTrackSamplerGraph(trackCount: min(rendered.trackCount, 4))
+        try graph.loadMIDI(rendered)
+
+        try graph.play()
+        #expect(graph.isPlaying == true)
+        // resume while playing should not throw
+        try graph.resume()
+        #expect(graph.isPlaying == true)
+
+        graph.pause()
+        #expect(graph.isPlaying == false)
+        // resume from paused state
+        try graph.resume()
+        #expect(graph.isPlaying == true)
+
+        graph.stop()
+        graph.teardown()
+    }
+
+    @Test("conforms to MultiTrackSamplerGraphProtocol")
+    func protocolConformance() throws {
+        try AudioEngineManager.shared.startForPlayback()
+        let graph = try MultiTrackSamplerGraph(trackCount: 1)
+        // Compile-time proof: can assign to protocol variable
+        let proto: any MultiTrackSamplerGraphProtocol = graph
+        #expect(proto.isPlaying == false)
         graph.teardown()
     }
 

@@ -59,14 +59,20 @@ public struct RenderedMIDI: Equatable, Sendable {
     /// (which has no notes / channel-voice events) is excluded so this
     /// array indexes the same way as `AVAudioSequencer.tracks`.
     public let trackInfo: [TrackInfo]
+    /// Tempo in beats-per-minute derived from the first SMF meta-0x51
+    /// (Set Tempo) event. Defaults to 120 BPM when no tempo event is
+    /// present — the MIDI specification's implied default.
+    public let originalBPM: Double
 
     public init(
-        data: Data, trackCount: Int, channels: [UInt8], trackInfo: [TrackInfo] = []
+        data: Data, trackCount: Int, channels: [UInt8], trackInfo: [TrackInfo] = [],
+        originalBPM: Double = 120.0
     ) {
         self.data = data
         self.trackCount = trackCount
         self.channels = channels
         self.trackInfo = trackInfo
+        self.originalBPM = originalBPM
     }
 }
 
@@ -82,10 +88,21 @@ public struct TrackInfo: Equatable, Sendable {
     /// percussion convention). Callers should load the SF2 percussion
     /// bank for this sampler instead of a melodic preset.
     public let isPercussion: Bool
+    /// Human-readable track name from SMF meta event 0x03
+    /// (Sequence/Track Name), or `nil` if the track contains none.
+    public let trackName: String?
+    /// Instrument name from SMF meta event 0x04 (Instrument Name),
+    /// or `nil` if the track contains none.
+    public let instrumentName: String?
 
-    public init(channel: UInt8, program: UInt8?, isPercussion: Bool) {
+    public init(
+        channel: UInt8, program: UInt8?, isPercussion: Bool,
+        trackName: String? = nil, instrumentName: String? = nil
+    ) {
         self.channel = channel
         self.program = program
         self.isPercussion = isPercussion
+        self.trackName = trackName
+        self.instrumentName = instrumentName
     }
 }

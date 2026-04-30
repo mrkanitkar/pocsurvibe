@@ -2,22 +2,150 @@ import Foundation
 import SVCore
 import SVLearning
 import SwiftData
+import UniformTypeIdentifiers
 import os.log
 
-/// Orchestrates import of seed content (songs, lessons) from JSON into SwiftData.
+/// Orchestrates import of seed content (songs, lessons) from JSON into SwiftData,
+/// and user-provided MusicXML files (.mxl, .musicxml, .xml) via content sniffing.
 ///
-/// Maps DTOs from SVLearning to @Model objects in the app target,
-/// then inserts them into the ModelContext.
+/// Format detection reads the first bytes of a file to determine whether it is
+/// a ZIP-compressed MXL (magic bytes `PK\x03\x04`) or a plaintext MusicXML
+/// document (`<?xml`, `<score-partwise`, or `<score-timewise`). This allows
+/// correct handling regardless of file extension.
 ///
 /// ## Usage
 /// ```swift
+/// // Seed content
 /// let summary = try ContentImportManager.importAllSeedContent(
 ///     into: modelContainer
 /// )
+///
+/// // User file import
+/// let format = try ContentImportManager.detectFormat(url)
 /// ```
 @MainActor
 final class ContentImportManager {
     private static let logger = Logger.survibe(category: "ContentImportManager")
+
+    // MARK: - Format Detection
+
+    /// Detected file format based on content sniffing.
+    enum ImportFormat: Sendable {
+        /// ZIP archive with MusicXML inside (magic bytes `PK\x03\x04`).
+        case mxl
+        /// Plaintext MusicXML (XML preamble with score-partwise/timewise root).
+        case musicxml
+        /// File contents do not match any supported format.
+        case unknown
+    }
+
+    /// Errors specific to user file import operations.
+    enum ImportFileError: Error, LocalizedError {
+        /// The file could not be read from disk.
+        case fileUnreadable(path: String, underlying: any Error)
+        /// The file contents do not match any supported MusicXML format.
+        case unsupportedFormat(path: String)
+
+        var errorDescription: String? {
+            switch self {
+            case .fileUnreadable(let path, let underlying):
+                return "Could not read '\(path)': \(underlying.localizedDescription)"
+            case .unsupportedFormat:
+                return "This doesn't look like a MusicXML file. "
+                    + "SurVibe accepts .mxl, .musicxml, and .xml exports."
+            }
+        }
+    }
+
+    /// UTTypes accepted by the file picker for MusicXML import.
+    ///
+    /// Includes `.xml` (generic XML), `.musicxml` (if registered), and `.zip`
+    /// to cover `.mxl` files that the system may identify as plain ZIP archives.
+    static let acceptedMusicXMLTypes: [UTType] = {
+        var types: [UTType] = [.xml]
+        if let musicxml = UTType(filenameExtension: "musicxml") {
+            types.append(musicxml)
+        }
+        if let mxl = UTType(filenameExtension: "mxl") {
+            types.append(mxl)
+        }
+        return types
+    }()
+
+    /// Detects the import format of a file by inspecting its leading bytes.
+    ///
+    /// Reads the first 512 bytes and checks for:
+    /// 1. ZIP magic bytes (`PK\x03\x04`) indicating a compressed `.mxl` archive.
+    /// 2. XML preamble (`<?xml`) or MusicXML root elements (`<score-partwise`,
+    ///    `<score-timewise`) indicating plaintext MusicXML.
+    ///
+    /// Falls back to `.unknown` if neither pattern matches.
+    ///
+    /// - Parameter url: File URL to inspect.
+    /// - Returns: The detected `ImportFormat`.
+    /// - Throws: `ImportFileError.fileUnreadable` if the file cannot be opened.
+    static func detectFormat(_ url: URL) throws -> ImportFormat {
+        let handle: FileHandle
+        do {
+            handle = try FileHandle(forReadingFrom: url)
+        } catch {
+            throw ImportFileError.fileUnreadable(
+                path: url.lastPathComponent, underlying: error
+            )
+        }
+        defer { try? handle.close() }
+
+        let header: Data
+        do {
+            header = try handle.read(upToCount: 512) ?? Data()
+        } catch {
+            throw ImportFileError.fileUnreadable(
+                path: url.lastPathComponent, underlying: error
+            )
+        }
+
+        // ZIP magic "PK\x03\x04" → MXL (compressed MusicXML)
+        if header.count >= 4,
+            header.starts(with: [0x50, 0x4B, 0x03, 0x04])
+        {
+            logger.info("Detected MXL (ZIP magic) for \(url.lastPathComponent, privacy: .public)")
+            return .mxl
+        }
+
+        // XML content check — look for MusicXML markers in the header text
+        if let headerText = String(data: header, encoding: .utf8) {
+            if headerText.contains("<?xml")
+                || headerText.contains("<score-partwise")
+                || headerText.contains("<score-timewise")
+            {
+                logger.info(
+                    "Detected MusicXML (XML preamble) for \(url.lastPathComponent, privacy: .public)"
+                )
+                return .musicxml
+            }
+        }
+
+        logger.warning(
+            "Unknown format for \(url.lastPathComponent, privacy: .public)"
+        )
+        return .unknown
+    }
+
+    /// Validates that a file URL contains a supported MusicXML format.
+    ///
+    /// Combines `detectFormat` with error surfacing — returns the detected format
+    /// on success, or throws a user-facing error for unknown formats.
+    ///
+    /// - Parameter url: File URL to validate.
+    /// - Returns: The detected `ImportFormat` (`.mxl` or `.musicxml`).
+    /// - Throws: `ImportFileError.unsupportedFormat` if the file is not MusicXML.
+    static func validateMusicXMLFile(_ url: URL) throws -> ImportFormat {
+        let format = try detectFormat(url)
+        guard format != .unknown else {
+            throw ImportFileError.unsupportedFormat(path: url.lastPathComponent)
+        }
+        return format
+    }
 
     /// Result of an import operation.
     struct ImportSummary: Sendable {

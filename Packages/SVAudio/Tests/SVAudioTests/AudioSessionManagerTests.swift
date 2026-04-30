@@ -1,3 +1,4 @@
+import AVFoundation
 import Testing
 
 @testable import SVAudio
@@ -49,18 +50,116 @@ struct AudioSessionManagerTests {
         manager.onInterruptionBegan = { }
         manager.onInterruptionEnded = { _ in }
         manager.onRouteChange = { }
+        manager.onRouteChangeWithReason = { _ in }
 
         #expect(manager.onInterruptionBegan != nil)
         #expect(manager.onInterruptionEnded != nil)
         #expect(manager.onRouteChange != nil)
+        #expect(manager.onRouteChangeWithReason != nil)
 
         // Clear callbacks
         manager.onInterruptionBegan = nil
         manager.onInterruptionEnded = nil
         manager.onRouteChange = nil
+        manager.onRouteChangeWithReason = nil
 
         #expect(manager.onInterruptionBegan == nil)
         #expect(manager.onInterruptionEnded == nil)
         #expect(manager.onRouteChange == nil)
+        #expect(manager.onRouteChangeWithReason == nil)
+    }
+
+    @Test("onRouteChangeWithReason defaults to nil")
+    @MainActor
+    func routeChangeWithReasonDefaultsNil() {
+        let manager = AudioSessionManager.shared
+        #expect(manager.onRouteChangeWithReason == nil)
+    }
+
+    @Test("handleRouteChange fires onRouteChangeWithReason with correct reason")
+    @MainActor
+    func routeChangeWithReasonFires() {
+        let manager = AudioSessionManager.shared
+        var receivedReason: AVAudioSession.RouteChangeReason?
+        manager.onRouteChangeWithReason = { reason in
+            receivedReason = reason
+        }
+
+        manager.handleRouteChange(reason: .oldDeviceUnavailable)
+        #expect(receivedReason == .oldDeviceUnavailable)
+
+        // Clean up
+        manager.onRouteChangeWithReason = nil
+    }
+
+    @Test("handleRouteChange fires legacy onRouteChange alongside reason callback")
+    @MainActor
+    func routeChangeLegacyAndReasonBothFire() {
+        let manager = AudioSessionManager.shared
+        var legacyFired = false
+        var receivedReason: AVAudioSession.RouteChangeReason?
+
+        manager.onRouteChange = { legacyFired = true }
+        manager.onRouteChangeWithReason = { reason in
+            receivedReason = reason
+        }
+
+        manager.handleRouteChange(reason: .newDeviceAvailable)
+
+        #expect(legacyFired)
+        #expect(receivedReason == .newDeviceAvailable)
+
+        // Clean up
+        manager.onRouteChange = nil
+        manager.onRouteChangeWithReason = nil
+    }
+
+    @Test("handleRouteChange with nil reason fires legacy but not reason callback")
+    @MainActor
+    func routeChangeNilReasonSkipsReasonCallback() {
+        let manager = AudioSessionManager.shared
+        var legacyFired = false
+        var reasonFired = false
+
+        manager.onRouteChange = { legacyFired = true }
+        manager.onRouteChangeWithReason = { _ in reasonFired = true }
+
+        manager.handleRouteChange(reason: nil)
+
+        #expect(legacyFired)
+        #expect(!reasonFired)
+
+        // Clean up
+        manager.onRouteChange = nil
+        manager.onRouteChangeWithReason = nil
+    }
+
+    @Test("Buffer grant tier defaults to unknown before configuration")
+    @MainActor
+    func bufferGrantTierDefaultsToUnknown() {
+        // Before configuration, lastBufferGrantTier should be .unknown.
+        // We cannot call configureForPlayback() in SPM tests (no AVAudioSession
+        // on macOS), so we verify the default state and enum cases.
+        let manager = AudioSessionManager.shared
+        #expect(manager.lastBufferGrantTier == .unknown)
+    }
+
+    @Test("BufferGrantTier enum has all expected cases")
+    func bufferGrantTierCases() {
+        // Verify the enum compiles with all four expected cases.
+        let tiers: [BufferGrantTier] = [.unknown, .excellent, .acceptable, .degraded]
+        #expect(tiers.count == 4)
+        #expect(tiers[0] == .unknown)
+        #expect(tiers[1] == .excellent)
+        #expect(tiers[2] == .acceptable)
+        #expect(tiers[3] == .degraded)
+    }
+
+    @Test("BufferGrantTier conforms to Sendable")
+    func bufferGrantTierIsSendable() {
+        // Verify Sendable conformance by passing across a sendability boundary.
+        let tier: BufferGrantTier = .excellent
+        let sendable: any Sendable = tier
+        #expect(sendable is BufferGrantTier)
     }
 }

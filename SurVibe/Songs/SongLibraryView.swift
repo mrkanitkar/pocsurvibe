@@ -66,7 +66,10 @@ struct SongLibraryView: View {
             } else if viewModel.filteredSongs.isEmpty {
                 SongLibraryEmptyState(
                     hasActiveFilters: viewModel.hasActiveFilters,
-                    clearFiltersAction: { viewModel.clearAllFilters() }
+                    clearFiltersAction: { viewModel.clearAllFilters() },
+                    onTrySample: {
+                        // TODO: Wire to bundled Sukhkarta_Dukhharta.mxl import (Wave 4 D2)
+                    }
                 )
             } else {
                 songGrid
