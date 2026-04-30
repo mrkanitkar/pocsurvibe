@@ -334,6 +334,15 @@ struct SongPlayAlongView: View {
         .sheet(isPresented: $showTanpuraSheet) {
             tanpuraSettingsSheetContent
         }
+        .sheet(isPresented: $viewModel.showLoopBuilder) {
+            LoopBuilderView(
+                totalMeasures: viewModel.totalMeasures,
+                initialStart: viewModel.loopRegion?.startMeasure ?? 1,
+                initialEnd: viewModel.loopRegion?.endMeasure
+            ) { region in
+                viewModel.loopRegion = region
+            }
+        }
         .sheet(isPresented: $showAppearanceSheet) {
             NavigationStack {
                 ThemeCarouselPicker()

@@ -1,3 +1,4 @@
+import AVFoundation
 import Foundation
 import SVAudio
 import SVCore
@@ -105,10 +106,23 @@ final class PlayAlongViewModel {
         set { playback.isWaitModeEnabled = newValue }
     }
 
-    /// Tempo scaling factor — delegates to `playback.tempoScale` (read+write).
+    /// Unified tempo scaling factor (Wave 5 E1).
+    ///
+    /// Single source of truth for the play-along session's tempo. Setting
+    /// this updates the legacy `playback.tempoScale` (so legacy preset
+    /// pills stay in sync), pushes the same value to the wired
+    /// `ArrangementPlayer` (when present), and is clamped to
+    /// `[0.5, 1.5]` — the intersection of the legacy presets
+    /// (`0.4`–`1.0`) and the Wave 4 D1 slider range (`0.5`–`1.5`).
+    /// Values outside the range are clamped on assignment.
     var tempoScale: Double {
         get { playback.tempoScale }
-        set { playback.tempoScale = newValue }
+        set {
+            let clamped = min(1.5, max(0.5, newValue))
+            playback.tempoScale = clamped
+            arrangementTempoScale = clamped
+            arrangementPlayer?.setTempoScale(Float(clamped))
+        }
     }
 
     /// Whether SoundFont playback is enabled — delegates to `playback.isSoundEnabled` (read+write).
@@ -258,7 +272,16 @@ final class PlayAlongViewModel {
             let clamped = min(1.5, max(0.5, arrangementTempoScale))
             if clamped != arrangementTempoScale {
                 arrangementTempoScale = clamped
+                return
             }
+            // Mirror the slider value into the legacy `tempoScale` and
+            // push to ArrangementPlayer. Guarded against the recursive
+            // `tempoScale` setter (which clamps + re-assigns this same
+            // property) by checking that the legacy value differs.
+            if abs(playback.tempoScale - clamped) > 0.0001 {
+                playback.tempoScale = clamped
+            }
+            arrangementPlayer?.setTempoScale(Float(clamped))
         }
     }
 
@@ -266,13 +289,34 @@ final class PlayAlongViewModel {
     ///
     /// Defaults to `.both`. RH/LH are only meaningful when the loaded
     /// arrangement contains multiple staves (`hasMultipleStaves == true`).
-    /// Bound to the toolbar's hands picker.
-    public var practiceMode: PracticeMode = .both
+    /// Bound to the toolbar's hands picker. Wave 5 E1: forwards to
+    /// `ArrangementPlayer.practiceMode` when an arrangement is wired.
+    public var practiceMode: PracticeMode = .both {
+        didSet {
+            arrangementPlayer?.practiceMode = practiceMode
+        }
+    }
+
+    /// Whether the muted hand should still sound through the
+    /// accompaniment sampler. Defaults to `true` (matches
+    /// `ArrangementPlayer.hearOtherHand`). Wave 5 E1: forwarded to
+    /// `ArrangementPlayer.hearOtherHand` when an arrangement is wired.
+    public var hearOtherHand: Bool = true {
+        didSet {
+            arrangementPlayer?.hearOtherHand = hearOtherHand
+        }
+    }
 
     /// Active loop region (1-indexed inclusive measures), if any.
     ///
     /// `nil` means full-song playback. Bound to the toolbar's loop control.
-    public var loopRegion: LoopRegion?
+    /// Wave 5 E1: forwarded to `ArrangementPlayer.setLoop(_:)` when an
+    /// arrangement is wired.
+    public var loopRegion: LoopRegion? {
+        didSet {
+            arrangementPlayer?.setLoop(loopRegion)
+        }
+    }
 
     /// Loudness preset for the click track when `backingMode == .click`.
     ///
@@ -291,6 +335,23 @@ final class PlayAlongViewModel {
     /// When `false`, RH/LH options in the hands picker are disabled.
     /// `PlayAlongSceneHost` updates this from `PartSplit` after song load.
     public var hasMultipleStaves: Bool = false
+
+    /// Total measure count of the loaded arrangement (Wave 5 E1).
+    ///
+    /// Computed from `LearnerScore.notes.last?.measureNumber` after
+    /// `loadArrangement(split:)`. Drives the `LoopBuilderView` stepper
+    /// upper bound. Defaults to `1` when no arrangement is loaded so the
+    /// builder still renders sensibly.
+    public var totalMeasures: Int = 1
+
+    /// Whether the "Practice mode — Bluetooth MIDI delay disables
+    /// scoring" chip should be visible (Wave 5 E1, spec §D5).
+    ///
+    /// Set to `true` from `MIDIInputManager.onPracticeModeRequired` when
+    /// a Bluetooth endpoint is registered. While `true`, the scoring
+    /// path drops MIDI input events; the sampler-trigger / audible echo
+    /// path is unaffected.
+    public var practiceModeChipVisible: Bool = false
 
     // MARK: - Chrome Visibility (v2) — delegates to chrome coordinator (SP-3c)
 
@@ -326,6 +387,34 @@ final class PlayAlongViewModel {
     var playbackStartDate: Date? { playback.playbackStartDate }
 
     private static let logger = Logger.survibe(category: "PlayAlong")
+
+    // MARK: - Wave 5 E1 — ArrangementPlayer + ScoringAdapter
+
+    /// Optional accompaniment player wired by `loadArrangement(split:)`.
+    ///
+    /// `nil` until a `PartSplit` is loaded. The Wave 1–4 audition pipeline
+    /// produces splits from MXL/MusicXML; legacy notation-only songs leave
+    /// this as `nil` and continue to use the prior visualization-only
+    /// playback path.
+    private(set) var arrangementPlayer: ArrangementPlayer?
+
+    /// Scoring adapter wired alongside `arrangementPlayer`.
+    ///
+    /// `nil` until `loadArrangement(split:)` succeeds. Each MIDI note-on
+    /// from the active input device is forwarded here together with the
+    /// captured host time and current tempo scale (Wave 5 E1).
+    private(set) var scoringAdapter: ScoringAdapter?
+
+    /// Currently loaded `PartSplit`, retained so callers can introspect
+    /// the learner score / staves without re-running PartSplitter. Set
+    /// by `loadArrangement(split:)`; cleared on `cleanup()`.
+    private(set) var currentSplit: PartSplit?
+
+    /// Tonic Sa MIDI note for the loaded arrangement. Defaults to MIDI 60
+    /// (C4); future tanpura-driven Sa changes can override via
+    /// `setTonicSaPitch(_:)`. Forwarded into `ScoringAdapter` on each
+    /// `loadArrangement` call.
+    public var tonicSaPitch: UInt8 = 60
 
     // MARK: - Coordinators (SP-3 extraction)
 
@@ -388,6 +477,192 @@ final class PlayAlongViewModel {
             scoring: scoring,
             playback: playback
         )
+        setupAudioSessionCallbacks()
+        setupMIDIScoringTap(midiInput: resolvedMIDI)
+    }
+
+    // MARK: - Wave 5 E1 — Audio session + MIDI scoring wiring
+
+    /// Install pause/resume callbacks on `AudioSessionManager.shared`.
+    ///
+    /// On interruption-began (phone call, Siri) or route-loss
+    /// (`oldDeviceUnavailable` — wired headphones unplugged), the play-
+    /// along session pauses immediately. On interruption-ended where the
+    /// system recommends resuming, playback resumes automatically.
+    ///
+    /// Callbacks are `@Sendable` and hop to `@MainActor` via `Task`
+    /// because the `AudioSessionManager` notification observers fire on
+    /// the main queue but the closures are typed as `@Sendable`.
+    private func setupAudioSessionCallbacks() {
+        AudioSessionManager.shared.onInterruptionBegan = { [weak self] in
+            Task { @MainActor [weak self] in
+                self?.pauseSession()
+            }
+        }
+        AudioSessionManager.shared.onInterruptionEnded = { [weak self] shouldResume in
+            Task { @MainActor [weak self] in
+                guard shouldResume else { return }
+                self?.resumeSession()
+            }
+        }
+        AudioSessionManager.shared.onRouteChangeWithReason = { [weak self] reason in
+            Task { @MainActor [weak self] in
+                if reason == .oldDeviceUnavailable {
+                    self?.pauseSession()
+                }
+            }
+        }
+    }
+
+    /// Install the scoring tap on `NoteRouter.onMIDINoteOnObserved` and
+    /// the Practice-mode chip subscriber on `MIDIInputManager`.
+    ///
+    /// `NoteRouter` already owns the live CoreMIDI callback chain (Phase-1
+    /// highlight + Phase-2 MainActor scoring). Wave 5 E1 piggy-backs on
+    /// that chain via `onMIDINoteOnObserved` so the scoring fan-out does
+    /// not collide with NoteRouter's `onNoteEvent` registration.
+    ///
+    /// While `practiceModeChipVisible` is `true`, the scoring path drops
+    /// the event (the sampler-trigger / audible echo path is in the
+    /// CoreMIDI parser and is not affected — the user still hears
+    /// themselves play on Bluetooth, only scoring is suppressed).
+    ///
+    /// Practice-mode chip — fires only when the underlying provider is the
+    /// singleton `MIDIInputManager`. Test-double mocks for
+    /// `MIDIInputProviding` skip this hook because they do not surface a
+    /// `onPracticeModeRequired` API.
+    private func setupMIDIScoringTap(midiInput: any MIDIInputProviding) {
+        noteRouter.onMIDINoteOnObserved = { [weak self] event in
+            Task { @MainActor [weak self] in
+                self?.handleMIDINoteEventForScoring(event)
+            }
+        }
+        if let manager = midiInput as? MIDIInputManager {
+            manager.onPracticeModeRequired = { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    self?.practiceModeChipVisible = true
+                }
+            }
+        }
+    }
+
+    /// Forward a MIDI note-on event to `ScoringAdapter`.
+    ///
+    /// Drops the event entirely when `practiceModeChipVisible` is `true`
+    /// (Bluetooth source — timing untrustworthy). Drops note-off events
+    /// (`velocity == 0`) which are not scoring inputs. Captures
+    /// `HostTime.now()` at the call site as the event arrival time. Uses
+    /// `arrangementPlayer.startHostTime` as the sequencer-start anchor
+    /// when present; otherwise no-ops because there is no anchor to
+    /// score against.
+    func handleMIDINoteEventForScoring(_ event: MIDIInputEvent) {
+        guard !practiceModeChipVisible else { return }
+        guard event.isNoteOn else { return }
+        guard let adapter = scoringAdapter else { return }
+        guard let startHost = arrangementPlayer?.startHostTime else { return }
+        let now = HostTime.now()
+        _ = adapter.ingest(
+            midiNote: event.noteNumber,
+            velocity: event.velocity,
+            hostTime: now,
+            sequencerStartHostTime: startHost,
+            currentTempoScale: Float(arrangementTempoScale)
+        )
+    }
+
+    /// Wire an `ArrangementPlayer` over a `PartSplit` (Wave 5 E1).
+    ///
+    /// Loads the accompaniment SMF into the underlying graph, instantiates
+    /// a fresh `ScoringAdapter` against the learner score, applies the
+    /// current tempo / loop / practice-mode / hearOtherHand state, and
+    /// updates `totalMeasures` + `hasMultipleStaves` for the toolbar.
+    ///
+    /// - Parameters:
+    ///   - split: The learner / accompaniment split to load.
+    ///   - graph: Sampler graph backing the player. Production callers
+    ///     pass a `MultiTrackSamplerGraph`; tests inject a mock conforming
+    ///     to `MultiTrackSamplerGraphProtocol`.
+    /// - Throws: Any `PipelineError` from the underlying `loadMIDI` call.
+    func loadArrangement(
+        split: PartSplit,
+        graph: any MultiTrackSamplerGraphProtocol
+    ) async throws {
+        let player = ArrangementPlayer(graph: graph)
+        try await player.load(split)
+        player.practiceMode = practiceMode
+        player.hearOtherHand = hearOtherHand
+        player.setTempoScale(Float(arrangementTempoScale))
+        player.setLoop(loopRegion)
+
+        arrangementPlayer = player
+        currentSplit = split
+        scoringAdapter = ScoringAdapter(
+            score: split.learner,
+            tonicSaPitch: tonicSaPitch
+        )
+        totalMeasures = max(1, split.learner.notes.last?.measureNumber ?? 1)
+        hasMultipleStaves = split.learnerStaves.count > 1
+        let noteCount = split.learner.notes.count
+        let staveCount = split.learnerStaves.count
+        let totalM = totalMeasures
+        Self.logger.info(
+            "loadArrangement: notes=\(noteCount) measures=\(totalM) staves=\(staveCount)"
+        )
+    }
+
+    /// Set the tonic Sa MIDI pitch and refresh the active scoring
+    /// adapter. Called by tanpura-driven Sa changes.
+    ///
+    /// - Parameter midi: MIDI note number that corresponds to Sa
+    ///   (`60` = C4). Out-of-range values are clamped to `0...127`.
+    func setTonicSaPitch(_ midi: UInt8) {
+        tonicSaPitch = min(127, max(0, midi))
+        if let split = currentSplit {
+            scoringAdapter = ScoringAdapter(
+                score: split.learner,
+                tonicSaPitch: tonicSaPitch
+            )
+        }
+    }
+
+    /// Persist a `PlayAlongSession` row from the active scoring summary
+    /// (Wave 5 E1 / spec §5.1).
+    ///
+    /// No-op when no `modelContext` is set, no `scoringAdapter` is
+    /// present, or no `song` is loaded. Saves explicitly per CLAUDE.md
+    /// "critical writes" rule and logs any persistence error via
+    /// `os.Logger`.
+    func persistPlayAlongSessionIfPossible(startedAt: Date, endedAt: Date) {
+        guard let context = playback.modelContext,
+            let adapter = scoringAdapter,
+            let song = playback.song
+        else { return }
+
+        let summary = adapter.summary()
+        let session = PlayAlongSession(
+            songID: song.id,
+            startedAt: startedAt,
+            notesAttempted: summary.notesAttempted,
+            notesCorrect: summary.notesCorrect,
+            notesMissed: summary.notesMissed,
+            notesExtra: summary.notesExtra,
+            timingAccuracyPercent: summary.timingAccuracyPercent,
+            notesCorrectPercent: summary.notesCorrectPercent
+        )
+        session.endedAt = endedAt
+        session.compositeScore = summary.composite.accuracy
+        session.tempoScale = arrangementTempoScale
+        session.practiceMode = practiceMode.rawValue
+
+        context.insert(session)
+        do {
+            try context.save()
+            Self.logger.info("PlayAlongSession persisted (E1)")
+        } catch {
+            Self.logger.error(
+                "PlayAlongSession save failed: \(error.localizedDescription, privacy: .public)"
+            )
+        }
     }
 
     // MARK: - Public Methods — lifecycle
@@ -432,18 +707,27 @@ final class PlayAlongViewModel {
         MultiChannelLog.shared.log(.info, "<<< PlayAlongViewModel.loadSong DONE")
     }
 
+    /// Wall-clock timestamp captured on the most recent `startSession()`.
+    /// Threaded into the persisted `PlayAlongSession.startedAt` field on
+    /// `stopAndComplete()`.
+    private var sessionStartedAt: Date?
+
     /// Start the play-along session from the beginning.
     ///
     /// Delegates engine start, metronome, scheduling, and analytics to
     /// `PlaybackCoordinator`. Re-starts `NoteRouter` input detection to handle
-    /// the case where it was stopped after a previous cleanup.
+    /// the case where it was stopped after a previous cleanup. Wave 5 E1:
+    /// also calls `ArrangementPlayer.start(countInBars:)` when an
+    /// arrangement is wired.
     ///
     /// Guards: only starts from `.idle` or `.stopped` with non-empty events.
     func startSession() async {
         MultiChannelLog.shared.log(.info, ">>> PlayAlongViewModel.startSession")
         MultiChannelLog.shared.log(.info, "... PlayAlongViewModel.startSession: about to await startScheduling")
+        sessionStartedAt = Date()
         await playback.startScheduling()
         MultiChannelLog.shared.log(.info, "... PlayAlongViewModel.startSession: startScheduling returned")
+        arrangementPlayer?.start(countInBars: 1)
         noteRouter.startInputDetection()
         MultiChannelLog.shared.log(.info, "<<< PlayAlongViewModel.startSession")
     }
@@ -455,6 +739,7 @@ final class PlayAlongViewModel {
     /// patience timer via `noteRouter.resetGuidedPlay()`.
     func pauseSession() {
         playback.pauseScheduling()
+        arrangementPlayer?.pause()
         noteRouter.startInputDetection()
         noteRouter.updateExpectedMidiNote()
         noteRouter.resetGuidedPlay()
@@ -466,6 +751,7 @@ final class PlayAlongViewModel {
     /// `PlaybackCoordinator`. Pitch detection keeps running continuously.
     func resumeSession() {
         playback.resumeScheduling()
+        arrangementPlayer?.resume()
     }
 
     /// Called when the user toggles wait mode. Updates state and fires analytics.
@@ -485,7 +771,11 @@ final class PlayAlongViewModel {
     /// Delegates to `PlaybackCoordinator` which marks remaining notes as missed,
     /// finalizes scoring, persists results, and transitions to `.stopped`.
     func stopAndComplete() {
+        let started = sessionStartedAt ?? Date()
         playback.stopAndComplete()
+        arrangementPlayer?.stop()
+        persistPlayAlongSessionIfPossible(startedAt: started, endedAt: Date())
+        sessionStartedAt = nil
     }
 
     /// Clean up all resources and cancel active tasks.
@@ -497,6 +787,17 @@ final class PlayAlongViewModel {
     /// resources remain.
     func cleanup() {
         playback.cleanup()
+        arrangementPlayer?.stop()
+        arrangementPlayer = nil
+        scoringAdapter = nil
+        currentSplit = nil
+        // Clear AudioSessionManager callbacks to break the retain cycle
+        // back into this VM (callbacks captured `[weak self]` so this is
+        // belt-and-braces — but explicit teardown matches Apple's
+        // documented pattern for one-shot scene-host VMs).
+        AudioSessionManager.shared.onInterruptionBegan = nil
+        AudioSessionManager.shared.onInterruptionEnded = nil
+        AudioSessionManager.shared.onRouteChangeWithReason = nil
         noteRouter.stopInputDetection()
         MIDIEventDiagnostics.shared.printSummary()
         Self.logger.info("Play-along cleanup complete (facade)")
