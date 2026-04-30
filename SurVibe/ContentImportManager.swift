@@ -1,4 +1,6 @@
+// swiftlint:disable file_length type_body_length
 import Foundation
+import SVAudio
 import SVCore
 import SVLearning
 import SwiftData
@@ -145,6 +147,130 @@ final class ContentImportManager {
             throw ImportFileError.unsupportedFormat(path: url.lastPathComponent)
         }
         return format
+    }
+
+    // MARK: - MusicXML Import → Song @Model
+
+    /// Imports a MusicXML/MXL file into a `Song` and persists the
+    /// PartSplitter result (learner track index + accompaniment summary).
+    ///
+    /// Pipeline: load MXL/XML → Verovio render → PartSplitter.split (auto)
+    /// → write `learnerTrackIndex` + `accompanimentInstrumentSummary` on the
+    /// `Song` model. The PartSplit is run exactly once at import time so
+    /// the fields can drive the Play tab without re-rendering.
+    ///
+    /// `PipelineError.noPlayableLearnerPart` is logged and swallowed —
+    /// the song is still inserted, but with `learnerTrackIndex == nil`
+    /// and a `nil` summary. The caller may surface a UI hint that the
+    /// user must pick the learner track manually.
+    ///
+    /// - Parameters:
+    ///   - url: File URL to a `.mxl`, `.musicxml`, or `.xml` document.
+    ///   - context: SwiftData ModelContext to insert the new Song into.
+    /// - Returns: The freshly inserted (and saved) `Song`.
+    /// - Throws: `ImportFileError` if the file cannot be read or parsed,
+    ///           or any error from MXLLoader / VerovioBridge.
+    @discardableResult
+    static func importMusicXMLAsSong(
+        from url: URL,
+        into context: ModelContext
+    ) throws -> Song {
+        let xml = try loadMusicXMLString(from: url)
+        let rendered = try VerovioBridge().render(musicXML: xml)
+        let song = makeSongStub(for: url, rendered: rendered)
+        applyPartSplit(to: song, rendered: rendered, sourceName: url.lastPathComponent)
+        context.insert(song)
+        try saveContext(context, slug: song.slugId)
+        let learnerStr = song.learnerTrackIndex.map(String.init) ?? "nil"
+        logger.info(
+            "Imported MusicXML song slug=\(song.slugId, privacy: .public) learner=\(learnerStr, privacy: .public)"
+        )
+        return song
+    }
+
+    /// Reads the URL, sniffs the format, and returns the MusicXML payload
+    /// as a UTF-8 string. Unwraps `.mxl` archives via `MXLLoader`.
+    private static func loadMusicXMLString(from url: URL) throws -> String {
+        let format = try validateMusicXMLFile(url)
+        let data: Data
+        do {
+            data = try Data(contentsOf: url)
+        } catch {
+            throw ImportFileError.fileUnreadable(
+                path: url.lastPathComponent, underlying: error
+            )
+        }
+        switch format {
+        case .mxl:
+            return try MXLLoader.loadMusicXML(from: data)
+        case .musicxml:
+            guard let asString = String(data: data, encoding: .utf8) else {
+                throw ImportFileError.unsupportedFormat(path: url.lastPathComponent)
+            }
+            return asString
+        case .unknown:
+            throw ImportFileError.unsupportedFormat(path: url.lastPathComponent)
+        }
+    }
+
+    /// Builds a Song stub from a rendered MIDI + source URL. Metadata
+    /// (artist, raga, etc.) is left to the seed JSON path.
+    private static func makeSongStub(for url: URL, rendered: RenderedMIDI) -> Song {
+        let baseName = url.deletingPathExtension().lastPathComponent
+        let slug = baseName.lowercased().replacingOccurrences(of: "_", with: "-")
+        let song = Song(
+            slugId: slug,
+            title: baseName.replacingOccurrences(of: "_", with: " "),
+            artist: "",
+            language: SongLanguage.hindi.rawValue,
+            difficulty: 1,
+            category: SongCategory.folk.rawValue,
+            ragaName: "",
+            tempo: Int(rendered.originalBPM.rounded()),
+            durationSeconds: 0
+        )
+        song.midiData = rendered.data
+        song.source = "user"
+        return song
+    }
+
+    /// Runs `PartSplitter` once and writes the projection onto `song`.
+    /// Swallows `PipelineError.noPlayableLearnerPart` so the song still
+    /// imports — the user can pick a learner track from the UI later.
+    private static func applyPartSplit(
+        to song: Song,
+        rendered: RenderedMIDI,
+        sourceName: String
+    ) {
+        do {
+            let split = try PartSplitter().split(rendered)
+            song.learnerTrackIndex = split.learnerTrackIndices.first
+            if !split.accompanimentInstruments.isEmpty {
+                song.accompanimentInstrumentSummary =
+                    split.accompanimentInstruments.joined(separator: " · ")
+            } else {
+                song.accompanimentInstrumentSummary = split.learnerInstrumentLabel
+            }
+        } catch let error as PipelineError where error == .noPlayableLearnerPart {
+            logger.warning(
+                "PartSplitter: no playable learner part for \(sourceName, privacy: .public); skipping split metadata"
+            )
+        } catch {
+            logger.error(
+                "PartSplitter unexpected error for \(sourceName, privacy: .public): \(error, privacy: .public)"
+            )
+        }
+    }
+
+    private static func saveContext(_ context: ModelContext, slug: String) throws {
+        do {
+            try context.save()
+        } catch {
+            logger.error(
+                "Failed to save imported song \(slug, privacy: .public): \(error, privacy: .public)"
+            )
+            throw error
+        }
     }
 
     /// Result of an import operation.
@@ -410,3 +536,4 @@ final class ContentImportManager {
         return curriculum
     }
 }
+// swiftlint:enable file_length type_body_length
