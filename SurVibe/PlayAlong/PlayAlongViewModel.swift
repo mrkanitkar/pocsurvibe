@@ -416,6 +416,19 @@ final class PlayAlongViewModel {
     /// `loadArrangement` call.
     public var tonicSaPitch: UInt8 = 60
 
+    #if DEBUG
+    /// DEBUG-only end-to-end latency probe (Wave 5 E2 / verification gate).
+    ///
+    /// Records the elapsed time between the hardware MIDI timestamp on a
+    /// note-on event and the moment scoring ingests it on the main actor.
+    /// Powers the p50 ≤ 12 ms / p99 ≤ 18 ms gate measured during the
+    /// 3-minute Sukhkarta playback (E3 device pass).
+    ///
+    /// Internal so tests in the host bundle can read percentiles after
+    /// driving simulated note-on events through the scoring tap.
+    let latencyProbe = AppLatencyProbe()
+    #endif
+
     // MARK: - Coordinators (SP-3 extraction)
 
     /// Scoring coordinator — owns note scores, accuracy, streaks,
@@ -561,6 +574,21 @@ final class PlayAlongViewModel {
         guard let adapter = scoringAdapter else { return }
         guard let startHost = arrangementPlayer?.startHostTime else { return }
         let now = HostTime.now()
+        #if DEBUG
+        // Record end-to-end MIDI ingest latency: from the hardware
+        // timestamp captured on the CoreMIDI callback thread to the
+        // moment the scoring path runs on the main actor. Synthetic
+        // events (test doubles) don't carry `midiTimestamp` so the
+        // record is skipped — the probe stays empty until a real
+        // MIDI note arrives.
+        if let hardwareTicks = event.midiTimestamp {
+            let eventHost = HostTime(rawTicks: hardwareTicks)
+            let elapsedSec = now.seconds(since: eventHost)
+            // Negative deltas can occur if the event was scheduled in
+            // the future via MIDI sysex timing — clamp to zero.
+            latencyProbe.record(latencyMs: max(0.0, elapsedSec * 1000.0))
+        }
+        #endif
         _ = adapter.ingest(
             midiNote: event.noteNumber,
             velocity: event.velocity,
