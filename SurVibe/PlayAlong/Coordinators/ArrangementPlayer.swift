@@ -6,6 +6,20 @@ import os
 
 private let arrangementPlayerLogger = Logger.survibe(category: "ArrangementPlayer")
 
+/// Practice mode for hand isolation in the Learn-a-Song play-along flow.
+///
+/// `.both` — both hands sound (default). `.rightHand` — learner is
+/// practising the RH part; LH may be muted depending on `hearOtherHand`.
+/// `.leftHand` — learner is practising the LH part; RH may be muted.
+public nonisolated enum PracticeMode: String, Sendable, Equatable, CaseIterable {
+    /// Both hands play through the accompaniment sampler.
+    case both
+    /// Learner is practising the right-hand staff.
+    case rightHand
+    /// Learner is practising the left-hand staff.
+    case leftHand
+}
+
 /// Coordinates the accompaniment sequencer for the Learn-a-Song play-along
 /// flow. Wraps `MultiTrackSamplerGraphProtocol` and exposes transport
 /// (start / pause / resume / stop), tempo scaling, and observable state
@@ -54,6 +68,25 @@ public final class ArrangementPlayer {
     /// are scheduled on wrap).
     private var firstLoopIterationDone = false
 
+    /// Hand-isolation practice mode. Setting this re-applies the muted
+    /// track set via `graph.setMutedTracks(_:)`.
+    ///
+    /// Defaults to `.both` — no tracks muted, full accompaniment audible.
+    public var practiceMode: PracticeMode = .both {
+        didSet { applyHandMute() }
+    }
+
+    /// When `true` (default), both hands sound regardless of
+    /// `practiceMode`. When `false`, the staff opposite the
+    /// `practiceMode` is muted to let the learner play that part
+    /// themselves.
+    ///
+    /// Setting this re-applies the muted track set via
+    /// `graph.setMutedTracks(_:)`.
+    public var hearOtherHand: Bool = true {
+        didSet { applyHandMute() }
+    }
+
     // MARK: - Initialization
 
     /// Create an `ArrangementPlayer` over a graph instance.
@@ -91,6 +124,7 @@ public final class ArrangementPlayer {
         )
         try graph.loadMIDI(rendered)
         graph.setTempoScale(1.0)
+        applyHandMute()
         arrangementPlayerLogger.info(
             "load: accompaniment bytes=\(split.accompaniment.count, privacy: .public)"
         )
@@ -237,5 +271,67 @@ public final class ArrangementPlayer {
         _ = beatsPerMeasure
         self.currentBeat = newBeat
         tick()
+    }
+
+    // MARK: - Hand isolation (C4)
+
+    /// Recompute the muted-track set from `practiceMode` + `hearOtherHand`
+    /// and forward to the graph.
+    ///
+    /// Called from the `didSet` of either property and from `load(_:)`
+    /// after the graph has the SMF. When `hearOtherHand` is `true` or
+    /// `practiceMode` is `.both`, the muted set is empty.
+    private func applyHandMute() {
+        guard let split else {
+            graph.setMutedTracks([])
+            return
+        }
+        var muted: Set<Int> = []
+        if !hearOtherHand {
+            let mutedRole: HandRole? =
+                switch practiceMode {
+                case .leftHand: .rightHand
+                case .rightHand: .leftHand
+                case .both: nil
+                }
+            if let role = mutedRole {
+                muted = trackIndicesFor(role: role, in: split)
+            }
+        }
+        graph.setMutedTracks(muted)
+    }
+
+    /// Map a `HandRole` to the set of accompaniment-sequencer track
+    /// indices that carry that staff's notes.
+    ///
+    /// **v1 limitation:** most piano scores have a single learner MIDI
+    /// track with notes spanning two staves (RH = treble, LH = bass).
+    /// Verovio does not split that into two MTrk chunks, so muting LH
+    /// at the track level only works when the source SMF already
+    /// separates hands into distinct tracks. Pitch-based filtering
+    /// (split-by-middle-C) is a future enhancement.
+    ///
+    /// Algorithm:
+    /// - If `learnerStaves.count == learnerTrackIndices.count`, zip
+    ///   them and pick indices whose paired staff has the requested
+    ///   role.
+    /// - Else fall back to the heuristic: when there are exactly two
+    ///   learner tracks, treat `[0]` as RH and `[1]` as LH.
+    /// - Otherwise return an empty set.
+    private func trackIndicesFor(role: HandRole, in split: PartSplit) -> Set<Int> {
+        let staves = split.learnerStaves
+        let indices = split.learnerTrackIndices
+        if staves.count == indices.count, !staves.isEmpty {
+            return Set(zip(staves, indices).filter { $0.0.role == role }.map { $0.1 })
+        }
+        // Fallback heuristic: two learner tracks → first=RH, second=LH.
+        if indices.count == 2 {
+            switch role {
+            case .rightHand: return [indices[0]]
+            case .leftHand: return [indices[1]]
+            case .singleStaff: return []
+            }
+        }
+        return []
     }
 }

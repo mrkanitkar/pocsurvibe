@@ -154,6 +154,96 @@ struct ArrangementPlayerTests {
         #expect(mock.resumeCalled)
     }
 
+    /// Build a `PartSplit` whose learner has two staves (RH + LH) on two
+    /// distinct accompaniment-sequencer track indices. Used by the C4
+    /// hand-isolation tests.
+    private func makeSplitWithTwoStaves() -> PartSplit {
+        let bytes: [UInt8] = [
+            0x4D, 0x54, 0x68, 0x64,
+            0x00, 0x00, 0x00, 0x06,
+            0x00, 0x00,
+            0x00, 0x00,
+            0x01, 0xE0,
+        ]
+        let learner = LearnerScore(notes: [], originalBPM: 120, beatsPerMeasure: 4)
+        let rhStaff = StaffSpec(staffNumber: 1, role: .rightHand, noteIDs: [])
+        let lhStaff = StaffSpec(staffNumber: 2, role: .leftHand, noteIDs: [])
+        return PartSplit(
+            learner: learner,
+            accompaniment: Data(bytes),
+            learnerInstrumentLabel: "Piano",
+            accompanimentInstruments: [],
+            learnerTrackIndices: [0, 1],
+            learnerStaves: [rhStaff, lhStaff],
+            lyricsStaffTrackIndex: nil
+        )
+    }
+
+    // MARK: - Hand isolation (C4)
+
+    @Test func defaultPracticeModeIsBothNoMutes() async throws {
+        let mock = MockGraph()
+        let player = ArrangementPlayer(graph: mock)
+        try await player.load(makeSplitWithTwoStaves())
+        #expect(player.practiceMode == .both)
+        #expect(player.hearOtherHand == true)
+        #expect(mock.mutedTrackIndices.isEmpty)
+    }
+
+    @Test func bothModeMutesNothing() async throws {
+        let mock = MockGraph()
+        let player = ArrangementPlayer(graph: mock)
+        try await player.load(makeSplitWithTwoStaves())
+        player.hearOtherHand = false
+        player.practiceMode = .both
+        #expect(mock.mutedTrackIndices.isEmpty)
+    }
+
+    @Test func rightHandModeWithHearOtherHandTrueMutesNothing() async throws {
+        let mock = MockGraph()
+        let player = ArrangementPlayer(graph: mock)
+        try await player.load(makeSplitWithTwoStaves())
+        player.practiceMode = .rightHand
+        player.hearOtherHand = true
+        #expect(mock.mutedTrackIndices.isEmpty)
+    }
+
+    @Test func rightHandModeWithHearOtherHandFalseMutesLeftHand() async throws {
+        let mock = MockGraph()
+        let player = ArrangementPlayer(graph: mock)
+        try await player.load(makeSplitWithTwoStaves())
+        player.practiceMode = .rightHand
+        player.hearOtherHand = false
+        #expect(mock.mutedTrackIndices == [1])
+    }
+
+    @Test func leftHandModeWithHearOtherHandFalseMutesRightHand() async throws {
+        let mock = MockGraph()
+        let player = ArrangementPlayer(graph: mock)
+        try await player.load(makeSplitWithTwoStaves())
+        player.practiceMode = .leftHand
+        player.hearOtherHand = false
+        #expect(mock.mutedTrackIndices == [0])
+    }
+
+    @Test func togglingHearOtherHandRevertsMutes() async throws {
+        let mock = MockGraph()
+        let player = ArrangementPlayer(graph: mock)
+        try await player.load(makeSplitWithTwoStaves())
+        player.practiceMode = .rightHand
+        player.hearOtherHand = false
+        #expect(mock.mutedTrackIndices == [1])
+        player.hearOtherHand = true
+        #expect(mock.mutedTrackIndices.isEmpty)
+    }
+
+    @Test func practiceModeIsCaseIterable() {
+        #expect(PracticeMode.allCases.count == 3)
+        #expect(PracticeMode.allCases.contains(.both))
+        #expect(PracticeMode.allCases.contains(.rightHand))
+        #expect(PracticeMode.allCases.contains(.leftHand))
+    }
+
     @Test func stopResetsIsPlayingFalse() async throws {
         let mock = MockGraph()
         let player = ArrangementPlayer(graph: mock)

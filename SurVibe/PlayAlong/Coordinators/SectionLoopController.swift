@@ -9,7 +9,7 @@ import Foundation
 /// Per spec §5.1, both `startMeasure` and `endMeasure` are 1-indexed and
 /// inclusive — a `LoopRegion(startMeasure: 5, endMeasure: 8)` loops
 /// measures 5, 6, 7, and 8 (in 4/4, that is beats 16..<32 in song time).
-public struct LoopRegion: Sendable, Equatable {
+public nonisolated struct LoopRegion: Sendable, Equatable {
 
     /// First measure of the loop region (1-indexed, inclusive).
     public let startMeasure: Int
@@ -37,7 +37,7 @@ public struct LoopRegion: Sendable, Equatable {
 /// Used by `ArrangementPlayer` (Wave 3 Task C3) to implement section
 /// looping. Kept as a `Sendable` struct so it can be inspected from any
 /// isolation domain — the controller itself owns no mutable state.
-struct SectionLoopController: Sendable, Equatable {
+nonisolated struct SectionLoopController: Sendable, Equatable {
 
     /// The 1-indexed inclusive measure range to loop.
     let region: LoopRegion
