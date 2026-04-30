@@ -182,8 +182,11 @@ final class ContentImportManager {
         context.insert(song)
         try saveContext(context, slug: song.slugId)
         let learnerStr = song.learnerTrackIndex.map(String.init) ?? "nil"
+        let indicesStr = song.learnerTrackIndices.map { "\($0)" } ?? "nil"
+        let slug = song.slugId
         logger.info(
-            "Imported MusicXML song slug=\(song.slugId, privacy: .public) learner=\(learnerStr, privacy: .public)"
+            // swiftlint:disable:next line_length
+            "Imported MusicXML song slug=\(slug, privacy: .public) learner=\(learnerStr, privacy: .public) indices=\(indicesStr, privacy: .public)"
         )
         return song
     }
@@ -244,6 +247,9 @@ final class ContentImportManager {
     ) {
         do {
             let split = try PartSplitter().split(rendered)
+            // D5: persist BOTH the full array (for multi-staff learners) and
+            // the back-compat single-Int field (`.first`). Single source of truth.
+            song.learnerTrackIndices = split.learnerTrackIndices
             song.learnerTrackIndex = split.learnerTrackIndices.first
             if !split.accompanimentInstruments.isEmpty {
                 song.accompanimentInstrumentSummary =
@@ -486,6 +492,16 @@ final class ContentImportManager {
         song.keySignatureRaw = dto.keySignature ?? ""
         song.timeSignatureRaw = dto.timeSignature ?? ""
 
+        // TODO(D5): seed-songs.json carries optional base64 SMF bytes but no
+        // pre-parsed RenderedMIDI track metadata, and PartSplitter requires
+        // `RenderedMIDI.trackInfo` to identify learner vs. accompaniment
+        // tracks. As of Wave 4 the seed JSON pipeline ships
+        // `learnerTrackIndex == nil` / `learnerTrackIndices == nil` and the
+        // Play tab falls back to its auto-pick heuristic at load time — this
+        // matches v1 behaviour and is NOT a regression. When seed content
+        // gains track-level metadata (or we add an SMF parser that builds
+        // RenderedMIDI from raw bytes), wire PartSplitter through here so
+        // seed songs match the MXL import path.
         return song
     }
 

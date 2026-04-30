@@ -23,7 +23,12 @@ struct SongImporterPartSplitTests {
         guard let mxlURL = Bundle.main.url(
             forResource: "Sukhkarta_Dukhharta", withExtension: "mxl"
         ) else {
-            // Asset isn't bundled into the test host bundle — skip.
+            // D5 review fix: surface fixture-missing as a recorded issue so
+            // the test does not silently pass when the bundled MXL is dropped
+            // from the test host. Previous `return` was a false-positive risk.
+            Issue.record(
+                "Sukhkarta_Dukhharta.mxl is missing from the test host bundle"
+            )
             return
         }
 
@@ -37,6 +42,10 @@ struct SongImporterPartSplitTests {
         )
 
         #expect(song.learnerTrackIndex != nil)
+        // D5: full multi-track learner array must be populated alongside the
+        // back-compat scalar; first element must equal the scalar.
+        #expect(song.learnerTrackIndices != nil)
+        #expect(song.learnerTrackIndices?.first == song.learnerTrackIndex)
         #expect(song.accompanimentInstrumentSummary != nil)
         let summary = song.accompanimentInstrumentSummary ?? ""
         #expect(!summary.isEmpty)

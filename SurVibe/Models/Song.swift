@@ -161,7 +161,22 @@ final class Song {
     ///
     /// `nil` means the app auto-picks the melody track at load time.
     /// Persisted per song so the user's choice survives across sessions.
+    ///
+    /// Back-compat single-track field. For multi-track learners
+    /// (e.g., piano RH + LH on separate MTrk chunks) read from
+    /// `learnerTrackIndices` instead — this field carries `learnerTrackIndices.first`.
     var learnerTrackIndex: Int?
+
+    /// Full set of MIDI track indices designated as the learner's part(s).
+    ///
+    /// `nil` means the app auto-picks the learner track(s) at load time.
+    /// Persisted per song so the user's choice survives across sessions.
+    /// Stored as a SwiftData Transformable blob (CloudKit-compatible).
+    ///
+    /// Wave 3 review (D5): introduced because `PartSplit.learnerTrackIndices`
+    /// is `[Int]` and a single `Int?` lost data for multi-staff piano scores.
+    /// `learnerTrackIndex` is kept for back-compat and mirrors `.first`.
+    var learnerTrackIndices: [Int]?
 
     /// Human-readable summary of the accompaniment instruments.
     ///
