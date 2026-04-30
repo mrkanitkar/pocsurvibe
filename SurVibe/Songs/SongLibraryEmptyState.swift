@@ -82,9 +82,9 @@ struct SongLibraryEmptyState: View {
 // MARK: - Preview
 
 #Preview("No Songs") {
-    SongLibraryEmptyState(hasActiveFilters: false) {
+    SongLibraryEmptyState(hasActiveFilters: false, onTrySample: {
         print("Try a sample tapped")
-    }
+    })
 }
 
 #Preview("No Matches") {
