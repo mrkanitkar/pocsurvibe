@@ -630,12 +630,41 @@ final class PlayAlongViewModel {
         )
         totalMeasures = max(1, split.learner.notes.last?.measureNumber ?? 1)
         hasMultipleStaves = split.learnerStaves.count > 1
+        installArrangementBeatBridge(split: split)
         let noteCount = split.learner.notes.count
         let staveCount = split.learnerStaves.count
         let totalM = totalMeasures
         Self.logger.info(
             "loadArrangement: notes=\(noteCount) measures=\(totalM) staves=\(staveCount)"
         )
+    }
+
+    /// Install the bridge that pumps `ArrangementPlayer` beat ticks
+    /// into `PlaybackCoordinator.currentTime` so the falling-notes
+    /// visualization advances in lockstep with the accompaniment
+    /// sequencer (Wave 5 D3/E1 — last wiring gap).
+    ///
+    /// `PlaybackCoordinator.currentTime` is visualization-only after D3
+    /// — without an external driver it would stay pinned at zero. This
+    /// hook converts the player's musical-time `currentBeat` to
+    /// wall-clock seconds using the loaded learner score's
+    /// `originalBPM` and the active `arrangementTempoScale`, then
+    /// pushes the value via `playback.setCurrentTime(_:)`. Negative
+    /// beats during count-in clamp to zero so the visualization stays
+    /// at the start of the song while the user counts in.
+    ///
+    /// - Parameter split: The active part split — its
+    ///   `learner.originalBPM` defines the unscaled beat-to-seconds
+    ///   conversion.
+    private func installArrangementBeatBridge(split: PartSplit) {
+        let originalBPM = max(1.0, split.learner.originalBPM)
+        let secondsPerBeat = 60.0 / originalBPM
+        arrangementPlayer?.onBeatTick = { [weak self] beat in
+            guard let self else { return }
+            let scale = max(0.0001, self.arrangementTempoScale)
+            let elapsed = max(0.0, beat) * secondsPerBeat / scale
+            self.playback.setCurrentTime(elapsed)
+        }
     }
 
     /// Set the tonic Sa MIDI pitch and refresh the active scoring
@@ -732,7 +761,62 @@ final class PlayAlongViewModel {
             )
             Self.logger.error("Audio engine start failed: \(error.localizedDescription)")
         }
+
+        await loadArrangementIfPossible(for: song)
+
         MultiChannelLog.shared.log(.info, "<<< PlayAlongViewModel.loadSong DONE")
+    }
+
+    /// Best-effort wiring of an `ArrangementPlayer` + `ScoringAdapter`
+    /// when the loaded `Song` carries Standard MIDI File bytes
+    /// (`Song.midiData != nil`).
+    ///
+    /// Pipeline: parse `midiData` → `RenderedMIDI` via
+    /// `VerovioBridge.summarizeSMF`; run `PartSplitter().split(_:)`; build
+    /// a `MultiTrackSamplerGraph(trackCount:)` against the running shared
+    /// engine; await `loadArrangement(split:graph:)`. Each step is wrapped
+    /// in `do/catch` so visualization-only fallback (`arrangementPlayer ==
+    /// nil`) is preserved when:
+    ///
+    /// - the song has no `midiData` (notation-only);
+    /// - `PartSplitter` reports `noPlayableLearnerPart`;
+    /// - the audio engine is not running (graph init throws);
+    /// - the SMF buffer is malformed.
+    ///
+    /// All failures are logged via `os.Logger` and never crash the
+    /// play-along path. This is the gateway that turns
+    /// `SongPlayAlongView`'s plain `viewModel.loadSong(song)` call into a
+    /// fully wired Learn-a-Song session for MXL-imported songs without
+    /// any view-side code change.
+    private func loadArrangementIfPossible(for song: Song) async {
+        guard let midiData = song.midiData, !midiData.isEmpty else {
+            Self.logger.info("loadArrangementIfPossible: no midiData; visualization-only fallback")
+            return
+        }
+        do {
+            let rendered = try VerovioBridge.summarizeSMF(midiData)
+            let split: PartSplit
+            do {
+                split = try PartSplitter().split(rendered)
+            } catch let error as PipelineError where error == .noPlayableLearnerPart {
+                Self.logger.warning(
+                    "loadArrangementIfPossible: no playable learner part — visualization-only fallback"
+                )
+                return
+            }
+            // `MultiTrackSamplerGraph(trackCount:)` requires the shared
+            // engine to be running. `startForPlayback` was just invoked
+            // a few lines earlier in `loadSong(_:)` — propagate any
+            // construction failure to the catch block below so we
+            // degrade to visualization-only.
+            let graph = try MultiTrackSamplerGraph(trackCount: rendered.trackCount)
+            try await loadArrangement(split: split, graph: graph)
+            Self.logger.info("loadArrangementIfPossible: wired arrangement (tracks=\(rendered.trackCount))")
+        } catch {
+            Self.logger.error(
+                "loadArrangementIfPossible: failed (\(error.localizedDescription, privacy: .public)) — visualization-only fallback"
+            )
+        }
     }
 
     /// Wall-clock timestamp captured on the most recent `startSession()`.

@@ -30,7 +30,21 @@ final class SeedContentLoader {
     /// - v6: +8 lessons (total 10), +2 curricula (Sargam Foundations, Melodic Expression)
     /// - v7: Jana Gana Mana updated with official notation in G major (G=Sa)
     /// - v8: Force re-import Jana Gana Mana (v7 written before JSON was corrected)
-    private static let currentContentVersion = 8
+    /// - v9: Auto-import bundled MXL audition assets
+    ///       (Sukhkarta_Dukhharta, james-bond-theme) as Songs so the
+    ///       Learn-a-Song play-along path has populated `midiData` +
+    ///       `learnerTrackIndices` on first launch.
+    private static let currentContentVersion = 9
+
+    /// Resource basenames (no extension) of the bundled MXL audition
+    /// assets that should be imported as `Song` rows on first launch.
+    /// Each entry maps the resource name to the slug used by
+    /// `ContentImportManager.importMusicXMLAsSong` so we can short-circuit
+    /// the import when the song already exists.
+    private static let bundledMXLImports: [(resource: String, slug: String)] = [
+        ("Sukhkarta_Dukhharta", "sukhkarta-dukhharta"),
+        ("james-bond-theme", "james-bond-theme"),
+    ]
 
     /// The stored seed content version from UserDefaults.
     static var storedContentVersion: Int {
@@ -53,12 +67,77 @@ final class SeedContentLoader {
 
         do {
             let summary = try ContentImportManager.importAllSeedContent(into: container)
+            importBundledMXLs(into: container)
             UserDefaults.standard.set(currentContentVersion, forKey: seedContentVersionKey)
             logger.info("Seed content loaded successfully (v\(currentContentVersion)): \(summary.description, privacy: .public)")
         } catch {
             logger.error(
                 "Seed content loading failed: \(error, privacy: .public). App will continue without seed data."
             )
+        }
+    }
+
+    /// Import each bundled `.mxl` audition asset as a `Song` row so the
+    /// Learn-a-Song play-along has populated `midiData` /
+    /// `learnerTrackIndex` on first launch.
+    ///
+    /// Idempotent — looks up an existing Song by `slugId` and skips the
+    /// import when one is already present. Errors from any individual
+    /// MXL are logged but do not block the seed flow; the JSON-seeded
+    /// songs remain available regardless.
+    ///
+    /// - Parameter container: SwiftData ModelContainer to insert into.
+    private static func importBundledMXLs(into container: ModelContainer) {
+        let context = ModelContext(container)
+        for entry in bundledMXLImports {
+            do {
+                if try existingSong(slug: entry.slug, in: context) != nil {
+                    logger.info("Bundled MXL '\(entry.resource, privacy: .public)' already imported; skipping")
+                    continue
+                }
+                guard let url = Bundle.main.url(forResource: entry.resource, withExtension: "mxl") else {
+                    logger.warning(
+                        "Bundled MXL '\(entry.resource, privacy: .public)' missing from Bundle.main"
+                    )
+                    continue
+                }
+                let imported = try ContentImportManager.importMusicXMLAsSong(from: url, into: context)
+                // Override the slug + display title that `makeSongStub`
+                // derives from the file name with our canonical kebab-case
+                // slug + "Title Case" display, so the row matches what the
+                // SongLibrary expects.
+                imported.slugId = entry.slug
+                imported.title = displayTitle(forResource: entry.resource)
+                imported.source = "bundled"
+                try context.save()
+                logger.info(
+                    "Imported bundled MXL '\(entry.resource, privacy: .public)' as Song slug=\(entry.slug, privacy: .public)"
+                )
+            } catch {
+                logger.error(
+                    "Failed to import bundled MXL '\(entry.resource, privacy: .public)': \(error, privacy: .public)"
+                )
+            }
+        }
+    }
+
+    /// Look up an existing Song by slug. Returns `nil` when none matches.
+    private static func existingSong(slug: String, in context: ModelContext) throws -> Song? {
+        var descriptor = FetchDescriptor<Song>(
+            predicate: #Predicate { $0.slugId == slug }
+        )
+        descriptor.fetchLimit = 1
+        return try context.fetch(descriptor).first
+    }
+
+    /// Map a bundled MXL resource basename to a human-readable display
+    /// title. Falls back to the basename with underscores replaced by
+    /// spaces.
+    private static func displayTitle(forResource resource: String) -> String {
+        switch resource {
+        case "Sukhkarta_Dukhharta": return "Sukhkarta Dukhharta"
+        case "james-bond-theme": return "James Bond Theme"
+        default: return resource.replacingOccurrences(of: "_", with: " ")
         }
     }
 

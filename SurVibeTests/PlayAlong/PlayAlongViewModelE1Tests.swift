@@ -277,6 +277,89 @@ struct PlayAlongViewModelE1Tests {
 
     // MARK: - Cleanup
 
+    // MARK: - Wave 5 — loadSong → loadArrangement auto-wiring
+
+    /// `loadSong` on a Song without `midiData` falls back to the
+    /// visualization-only path — no `arrangementPlayer`, no
+    /// `scoringAdapter`, and no crash. Mirrors the legacy notation-only
+    /// pipeline (Jana Gana Mana on first launch).
+    /// `loadSong` on a Song that carries SMF bytes drives the
+    /// production pipeline (`VerovioBridge.summarizeSMF` →
+    /// `PartSplitter` → `MultiTrackSamplerGraph` → `loadArrangement`)
+    /// and ends with a wired `arrangementPlayer` + `scoringAdapter`
+    /// when the shared audio engine is available. Under
+    /// `xcodebuild test` the simulator audio engine generally starts
+    /// successfully, so we assert the wiring is present. When the
+    /// engine cannot be started (CI sandbox), the call still completes
+    /// — the visualization-only fallback is exercised by the sibling
+    /// test below.
+    @Test("loadSong with MXL data automatically loads arrangement")
+    func loadSongWithMXLDataAutomaticallyLoadsArrangement() async throws {
+        guard
+            let url = Bundle.main.url(
+                forResource: "Sukhkarta_Dukhharta",
+                withExtension: "mxl"
+            )
+        else {
+            Issue.record("Bundled Sukhkarta_Dukhharta.mxl missing")
+            return
+        }
+        let context = try SwiftDataTestContainer.freshContext()
+        let song = try ContentImportManager.importMusicXMLAsSong(from: url, into: context)
+        #expect(song.midiData != nil)
+
+        let vm = makeViewModel()
+        await vm.loadSong(song)
+
+        // When the shared audio engine is running, the MXL pipeline
+        // produced an `arrangementPlayer` + `scoringAdapter`. When it
+        // is not (e.g. headless CI), the call still completes
+        // gracefully via the visualization-only fallback. We accept
+        // either outcome — the contract under test is "no crash, and
+        // when an engine is available, the arrangement is wired".
+        if AudioEngineManager.shared.isRunning {
+            #expect(vm.arrangementPlayer != nil)
+            #expect(vm.scoringAdapter != nil)
+            #expect(vm.currentSplit != nil)
+        }
+        vm.cleanup()
+    }
+
+    @Test("loadSong without MXL data falls back to visualization-only")
+    func loadSongWithoutMXLDataFallsBackToVisualizationOnly() async {
+        let vm = makeViewModel()
+        let song = Song(slugId: "notation-only", title: "Notation Only")
+        // Plant minimal sargam + western notation arrays so
+        // PlaybackCoordinator.loadSong returns true rather than .error
+        // — that path is the realistic notation-only fallback.
+        let sargam: [String] = ["Sa", "Re", "Ga"]
+        let western: [String] = ["C", "D", "E"]
+        song.sargamNotation = try? JSONEncoder().encode(sargam)
+        song.westernNotation = try? JSONEncoder().encode(western)
+        await vm.loadSong(song)
+        #expect(vm.arrangementPlayer == nil)
+        #expect(vm.scoringAdapter == nil)
+        vm.cleanup()
+    }
+
+    /// Simulating a beat tick after `loadArrangement` advances
+    /// `PlaybackCoordinator.currentTime`. Closes Wave 5's last wiring
+    /// gap: nothing was driving the visualization clock after D3.
+    @Test("ArrangementPlayer tick advances PlaybackCoordinator currentTime")
+    func arrangementPlayerTickAdvancesPlaybackCoordinatorTime() async throws {
+        let vm = makeViewModel()
+        _ = try await loadArrangement(on: vm, measureCount: 8)
+        #expect(vm.playback.currentTime == 0)
+        vm.arrangementPlayer?.start(countInBars: 0)
+        // 4 beats at 120 BPM × 1.0 scale → 2.0 wall-clock seconds.
+        vm.arrangementPlayer?.simulateBeatTick(beatsPerMeasure: 4, currentBeat: 4.0)
+        #expect(vm.playback.currentTime > 0)
+        // Tolerance for floating-point conversion, but tight enough to
+        // prove the conversion ran (4 beats / (120/60) / 1.0 = 2.0 s).
+        #expect(abs(vm.playback.currentTime - 2.0) < 0.01)
+        vm.cleanup()
+    }
+
     @Test("cleanup tears down ArrangementPlayer + ScoringAdapter + AudioSession callbacks")
     func cleanupTearsDownE1State() async throws {
         let vm = makeViewModel()

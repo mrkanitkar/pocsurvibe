@@ -216,6 +216,34 @@ public final class VerovioBridge {
         return RenderedScore(midi: midi, svgPages: svgPages)
     }
 
+    // MARK: - Public SMF Analysis
+
+    /// Parse a Standard MIDI File byte stream and return a fully-populated
+    /// `RenderedMIDI` summary without re-running Verovio.
+    ///
+    /// Use this when the caller already has SMF bytes in hand — for
+    /// example a `Song.midiData` blob produced by an earlier MXL import.
+    /// The summary mirrors what `render(musicXML:)` returns for the same
+    /// MIDI bytes, so downstream consumers (PartSplitter,
+    /// MultiTrackSamplerGraph) can run unchanged.
+    ///
+    /// - Parameter midi: Raw SMF bytes (Verovio output, .mid file, …).
+    /// - Returns: `RenderedMIDI` carrying the original bytes plus
+    ///   per-track metadata, the distinct channel set, and the
+    ///   first-tempo-derived `originalBPM` (default 120).
+    /// - Throws: `PipelineError.verovioRenderFailed` when the buffer is
+    ///   shorter than the minimum SMF header.
+    public nonisolated static func summarizeSMF(_ midi: Data) throws -> RenderedMIDI {
+        let summary = try summarize(midi: midi)
+        return RenderedMIDI(
+            data: midi,
+            trackCount: summary.trackCount,
+            channels: summary.channels,
+            trackInfo: summary.trackInfo,
+            originalBPM: summary.originalBPM
+        )
+    }
+
     // MARK: - Private Methods
 
     /// Remove every `<lyric>...</lyric>` element from a MusicXML string.

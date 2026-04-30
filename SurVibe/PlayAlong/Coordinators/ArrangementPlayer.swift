@@ -81,6 +81,15 @@ public final class ArrangementPlayer {
         didSet { applyHandMute() }
     }
 
+    /// Per-tick callback invoked from the display-link driver (and from
+    /// the `simulate*` test seams) with the latest `currentBeat`.
+    ///
+    /// Wave 5 D3/E1 wires this to `PlaybackCoordinator.setCurrentTime`
+    /// from `PlayAlongViewModel` so the falling-notes visualization
+    /// advances in lockstep with the accompaniment sequencer. Optional
+    /// because legacy callers (visualization-only paths) do not need it.
+    public var onBeatTick: ((Double) -> Void)?
+
     /// When `true` (default), both hands sound regardless of
     /// `practiceMode`. When `false`, the staff opposite the
     /// `practiceMode` is muted to let the learner play that part
@@ -290,6 +299,7 @@ public final class ArrangementPlayer {
         guard isPlaying else { return }
         currentBeat = graph.currentPositionInBeats
         tick()
+        onBeatTick?(currentBeat)
     }
 
     // Note: no explicit deinit — `displayLinkProxy`'s strong reference
@@ -329,6 +339,7 @@ public final class ArrangementPlayer {
         _ = beatsPerMeasure
         self.currentBeat = newBeat
         tick()
+        onBeatTick?(currentBeat)
     }
 
     // MARK: - Hand isolation (C4)
