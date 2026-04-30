@@ -1,5 +1,6 @@
 // SurVibe/PlayAlong/Coordinators/ArrangementPlayer.swift
 import Foundation
+import QuartzCore
 import SVAudio
 import SVCore
 import os
@@ -67,6 +68,16 @@ public final class ArrangementPlayer {
     /// `start(...)`; subsequent iterations skip count-in (no new clicks
     /// are scheduled on wrap).
     private var firstLoopIterationDone = false
+
+    /// Display-link proxy that forwards `CADisplayLink` callbacks to
+    /// `handleDisplayLinkTick()` on the main run loop. Created lazily on
+    /// the first `start(...)` and invalidated on `stop()` / `deinit`.
+    ///
+    /// `CADisplayLink` requires an `@objc` selector target, so the proxy
+    /// (an `NSObject` subclass) owns the link and forwards via a
+    /// `Sendable` closure — this keeps `ArrangementPlayer` itself a pure
+    /// `@Observable` class without needing to inherit `NSObject`.
+    private var displayLinkProxy: DisplayLinkProxy?
 
     /// Hand-isolation practice mode. Setting this re-applies the muted
     /// track set via `graph.setMutedTracks(_:)`.
@@ -162,6 +173,7 @@ public final class ArrangementPlayer {
         do {
             try graph.play()
             isPlaying = true
+            startDisplayLink()
         } catch {
             arrangementPlayerLogger.error(
                 "start: graph.play() failed: \(error.localizedDescription, privacy: .public)"
@@ -171,6 +183,10 @@ public final class ArrangementPlayer {
     }
 
     /// Pause playback without resetting position.
+    ///
+    /// Leaves the display link installed — `handleDisplayLinkTick()`
+    /// no-ops while `isPlaying == false`, so position observers do not
+    /// drift while paused. The link is torn down in `stop()` / `deinit`.
     public func pause() {
         graph.pause()
         isPlaying = false
@@ -181,6 +197,7 @@ public final class ArrangementPlayer {
         do {
             try graph.resume()
             isPlaying = true
+            startDisplayLink()
         } catch {
             arrangementPlayerLogger.error(
                 "resume: graph.resume() failed: \(error.localizedDescription, privacy: .public)"
@@ -193,6 +210,7 @@ public final class ArrangementPlayer {
     public func stop() {
         graph.stop()
         isPlaying = false
+        stopDisplayLink()
     }
 
     // MARK: - Tempo
@@ -253,7 +271,59 @@ public final class ArrangementPlayer {
         }
     }
 
+    // MARK: - Display-link beat driver (D6)
+
+    /// Install a `CADisplayLink` on the main run loop that fires per
+    /// frame and drives `handleDisplayLinkTick()`. Idempotent — calling
+    /// it while a link is already installed is a no-op.
+    private func startDisplayLink() {
+        guard displayLinkProxy == nil else { return }
+        let proxy = DisplayLinkProxy { [weak self] in
+            self?.handleDisplayLinkTick()
+        }
+        proxy.start()
+        displayLinkProxy = proxy
+    }
+
+    /// Tear down the active display link (if any) and drop the proxy.
+    private func stopDisplayLink() {
+        displayLinkProxy?.invalidate()
+        displayLinkProxy = nil
+    }
+
+    /// Per-frame body invoked by the display link. Samples the graph's
+    /// current position, mirrors it to `currentBeat`, and runs the
+    /// loop-wrap check via `tick()`.
+    ///
+    /// **Note:** `CADisplayLink` does not fire under `xcodebuild test`
+    /// (no run loop spin). Tests exercise this method through the
+    /// `simulateDisplayLinkFire()` test seam.
+    private func handleDisplayLinkTick() {
+        guard isPlaying else { return }
+        currentBeat = graph.currentPositionInBeats
+        tick()
+    }
+
+    // Note: no explicit deinit — `displayLinkProxy`'s strong reference
+    // is dropped by ARC when this object deallocates, which triggers
+    // `DisplayLinkProxy.deinit` to invalidate the underlying
+    // `CADisplayLink`. `CADisplayLink.invalidate()` is thread-safe.
+
     // MARK: - Test Seam
+
+    /// Test-only seam used by `ArrangementPlayerTests` to simulate the
+    /// display link firing one frame. Tests must use this rather than
+    /// waiting on a real `CADisplayLink` because the test runner does
+    /// not pump the main run loop.
+    internal func simulateDisplayLinkFire() {
+        handleDisplayLinkTick()
+    }
+
+    /// Test-only accessor: `true` while a display-link proxy is
+    /// installed (between `start()` / `resume()` and `stop()` / deinit).
+    internal var isDisplayLinkActive: Bool {
+        displayLinkProxy != nil
+    }
 
     /// Test-only seam used by `ArrangementPlayerTests` to simulate the
     /// playback driver advancing `currentBeat`. Production code uses
@@ -333,5 +403,77 @@ public final class ArrangementPlayer {
             }
         }
         return []
+    }
+}
+
+// MARK: - DisplayLinkProxy
+
+/// Owns a `CADisplayLink` and forwards each frame callback to a
+/// `@MainActor` closure.
+///
+/// `CADisplayLink` requires its target to expose an `@objc` selector,
+/// which is incompatible with the `@Observable` macro on
+/// `ArrangementPlayer`. Wrapping the link in this small `NSObject`
+/// helper keeps the public coordinator a pure `@Observable` class.
+///
+/// The proxy adds itself to `RunLoop.main` in `.common` mode so it
+/// continues firing during scroll-tracking. It is not `Sendable` —
+/// instances are created and torn down on the main actor.
+@MainActor
+private final class DisplayLinkProxy: NSObject {
+
+    /// Closure invoked on each frame callback. Captured weakly by the
+    /// caller to avoid retain cycles.
+    private let onTick: () -> Void
+
+    /// The active link, or `nil` after `invalidate()` has been called.
+    ///
+    /// Marked `nonisolated(unsafe)` so the proxy's `deinit` (which is
+    /// nonisolated under Swift 6 strict concurrency) can invalidate it
+    /// without an actor hop. Mutation is otherwise confined to
+    /// `start()` / `invalidate()`, both `@MainActor`-isolated, and the
+    /// link itself is created and added to the main run loop on the
+    /// main actor. `CADisplayLink.invalidate()` is documented as
+    /// thread-safe, so the deinit-time read+invalidate is safe.
+    nonisolated(unsafe) private var link: CADisplayLink?
+
+    /// Create a proxy that will invoke `onTick` on each `CADisplayLink`
+    /// callback.
+    ///
+    /// - Parameter onTick: Closure run on every frame. Called on the
+    ///   main thread (where the link is scheduled).
+    init(onTick: @escaping () -> Void) {
+        self.onTick = onTick
+        super.init()
+    }
+
+    /// Schedule the link on the main run loop in `.common` mode.
+    ///
+    /// Idempotent — calling `start()` while a link is already running
+    /// is a no-op.
+    func start() {
+        guard link == nil else { return }
+        let newLink = CADisplayLink(target: self, selector: #selector(fire))
+        newLink.add(to: .main, forMode: .common)
+        link = newLink
+    }
+
+    /// Invalidate the underlying link and drop the reference.
+    func invalidate() {
+        link?.invalidate()
+        link = nil
+    }
+
+    /// Selector target invoked by `CADisplayLink` once per frame.
+    @objc private func fire() {
+        onTick()
+    }
+
+    deinit {
+        // `CADisplayLink.invalidate()` is thread-safe per Apple docs,
+        // so we can call it from the (potentially non-MainActor) deinit
+        // without hopping. Reading `link` here is safe because the
+        // proxy is being deallocated — no other reference exists.
+        link?.invalidate()
     }
 }

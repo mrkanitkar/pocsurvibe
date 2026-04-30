@@ -297,6 +297,78 @@ struct ArrangementPlayerTests {
         #expect(player.currentBeat == 32.5)
     }
 
+    // MARK: - D6: Display-link beat driver
+
+    @Test func displayLinkCallbackUpdatesCurrentBeat() async throws {
+        let mock = MockGraph()
+        let player = ArrangementPlayer(graph: mock)
+        try await player.load(makeSplit())
+        player.start(countInBars: 0)
+        mock.currentPositionInBeats = 5.0
+        player.simulateDisplayLinkFire()
+        #expect(player.currentBeat == 5.0)
+    }
+
+    @Test func displayLinkCallbackTriggersLoopWrap() async throws {
+        let mock = MockGraph()
+        let player = ArrangementPlayer(graph: mock)
+        try await player.load(makeSplitWithMeasures(20))
+        player.setLoop(LoopRegion(startMeasure: 5, endMeasure: 8))
+        player.start(countInBars: 0)
+        // Advance the graph past the end of measure 8 (endBeat = 32) and
+        // fire the display-link callback.
+        mock.currentPositionInBeats = 32.5
+        player.simulateDisplayLinkFire()
+        // Expected: graph seeks back to beat (5-1)*4 = 16, currentBeat
+        // tracks the wrap.
+        #expect(mock.lastSeekBeat == 16)
+        #expect(player.currentBeat == 16)
+    }
+
+    @Test func pauseStopsDisplayLinkCallback() async throws {
+        let mock = MockGraph()
+        let player = ArrangementPlayer(graph: mock)
+        try await player.load(makeSplit())
+        player.start(countInBars: 0)
+        player.pause()
+        // While paused, the callback must not advance currentBeat even
+        // if the graph reports a new position.
+        mock.currentPositionInBeats = 9.0
+        let beatBeforeFire = player.currentBeat
+        player.simulateDisplayLinkFire()
+        #expect(player.currentBeat == beatBeforeFire)
+    }
+
+    @Test func stopInvalidatesDisplayLink() async throws {
+        let mock = MockGraph()
+        let player = ArrangementPlayer(graph: mock)
+        try await player.load(makeSplit())
+        player.start(countInBars: 0)
+        #expect(player.isDisplayLinkActive)
+        player.stop()
+        #expect(player.isDisplayLinkActive == false)
+    }
+
+    @Test func startActivatesDisplayLink() async throws {
+        let mock = MockGraph()
+        let player = ArrangementPlayer(graph: mock)
+        try await player.load(makeSplit())
+        #expect(player.isDisplayLinkActive == false)
+        player.start(countInBars: 0)
+        #expect(player.isDisplayLinkActive)
+    }
+
+    @Test func resumeReactivatesDisplayLinkAfterStop() async throws {
+        let mock = MockGraph()
+        let player = ArrangementPlayer(graph: mock)
+        try await player.load(makeSplit())
+        player.start(countInBars: 0)
+        player.stop()
+        #expect(player.isDisplayLinkActive == false)
+        player.resume()
+        #expect(player.isDisplayLinkActive)
+    }
+
     @Test func setLoopBeforeLoadIsNoOp() async throws {
         let mock = MockGraph()
         let player = ArrangementPlayer(graph: mock)
