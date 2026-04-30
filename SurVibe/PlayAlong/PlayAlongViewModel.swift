@@ -811,7 +811,13 @@ final class PlayAlongViewModel {
             let graph = try MultiTrackSamplerGraph(trackCount: rendered.trackCount)
             MultiChannelLog.shared.log(.info, "... loadArrangementIfPossible: graph constructed; calling loadArrangement")
             try await loadArrangement(split: split, graph: graph)
-            MultiChannelLog.shared.log(.info, "<<< loadArrangementIfPossible: WIRED tracks=\(rendered.trackCount)")
+            // E1.5: seed visualization with the learner notes derived from
+            // PartSplit. The legacy Day-0 MIDIParser produces zero events
+            // for the bundled MXLs; this gives the toolbar/falling-notes
+            // a non-empty timeline to render.
+            let viz = NoteEvent.fromExpectedNotes(split.learner.notes, bpm: rendered.originalBPM)
+            playback.setNoteEvents(viz)
+            MultiChannelLog.shared.log(.info, "<<< WIRED tracks=\(rendered.trackCount) viz=\(viz.count) notes")
         } catch {
             MultiChannelLog.shared.log(.error, "<<< loadArrangementIfPossible: FAILED \(error.localizedDescription) — viz-only")
         }

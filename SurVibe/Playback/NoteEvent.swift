@@ -189,6 +189,34 @@ struct NoteEvent: Identifiable, Equatable, Sendable {
         }
     }
 
+    /// Convert a `LearnerScore`'s `[ExpectedNote]` array (beat-based) into
+    /// `[NoteEvent]` for visualization. Each beat is converted to seconds
+    /// via the song's original BPM.
+    ///
+    /// Used by Wave 5 E1.5 to seed visualization from MXL imports when the
+    /// legacy MIDI parse path produces no events.
+    ///
+    /// - Parameters:
+    ///   - notes: Expected notes from `PartSplit.learner.notes`.
+    ///   - bpm: Original song tempo in BPM (from `RenderedMIDI.originalBPM`).
+    /// - Returns: NoteEvents with `timestamp` and `duration` in seconds.
+    static func fromExpectedNotes(_ notes: [ExpectedNote], bpm: Double) -> [NoteEvent] {
+        let secPerBeat = 60.0 / max(1.0, bpm)
+        return notes.map { note in
+            let info = Self.noteNames(fromMIDI: note.midiNote)
+            return NoteEvent(
+                id: note.id,
+                midiNote: note.midiNote,
+                swarName: info.swarName,
+                westernName: info.westernName,
+                octave: info.octave,
+                timestamp: note.beat * secPerBeat,
+                duration: note.durationBeats * secPerBeat,
+                velocity: 90
+            )
+        }
+    }
+
     // MARK: - Private Helpers
 
     /// Construct the full Swar name from a base note and optional modifier.

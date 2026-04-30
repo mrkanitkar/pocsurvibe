@@ -182,6 +182,32 @@ final class PlaybackCoordinator {
         return result
     }
 
+    /// Replace `noteEvents` with a pre-built array (from LearnerScore).
+    ///
+    /// Used by Wave 5 E1.5: when `PartSplitter` produces a learner score
+    /// from a freshly-rendered MXL, the resulting `ExpectedNote` array is
+    /// converted to `NoteEvent`s and seeded directly so visualization has
+    /// data even when the legacy `MIDIParser.parse(midiData)` path
+    /// produces zero events.
+    ///
+    /// - Parameter events: Pre-built note events.
+    func setNoteEvents(_ events: [NoteEvent]) {
+        noteEvents = events
+        if let last = events.last {
+            duration = last.timestamp + last.duration
+        }
+        noteStates = [:]
+        for event in events { noteStates[event.id] = .upcoming }
+        currentNoteIndex = events.isEmpty ? nil : 0
+        if case .error = playbackState {
+            playbackState = .idle
+            errorMessage = nil
+        }
+        Self.logger.info(
+            "setNoteEvents: \(events.count) events, duration=\(String(format: "%.1f", self.duration))s"
+        )
+    }
+
     /// Drop the loaded song and reset all visualization state to `.idle`.
     func clearSong() {
         song = nil
