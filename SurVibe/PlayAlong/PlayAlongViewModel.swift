@@ -789,33 +789,31 @@ final class PlayAlongViewModel {
     /// fully wired Learn-a-Song session for MXL-imported songs without
     /// any view-side code change.
     private func loadArrangementIfPossible(for song: Song) async {
+        MultiChannelLog.shared.log(.info, ">>> loadArrangementIfPossible song=\(song.title) midiBytes=\(song.midiData?.count ?? 0)")
         guard let midiData = song.midiData, !midiData.isEmpty else {
-            Self.logger.info("loadArrangementIfPossible: no midiData; visualization-only fallback")
+            MultiChannelLog.shared.log(.info, "<<< loadArrangementIfPossible: no midiData; viz-only fallback")
             return
         }
         do {
+            MultiChannelLog.shared.log(.info, "... loadArrangementIfPossible: calling VerovioBridge.summarizeSMF")
             let rendered = try VerovioBridge.summarizeSMF(midiData)
+            MultiChannelLog.shared.log(.info, "... summarizeSMF tracks=\(rendered.trackCount) ch=\(rendered.channels.count)")
             let split: PartSplit
             do {
+                MultiChannelLog.shared.log(.info, "... loadArrangementIfPossible: PartSplitter.split")
                 split = try PartSplitter().split(rendered)
+                MultiChannelLog.shared.log(.info, "... split notes=\(split.learner.notes.count) acc=\(split.accompanimentInstruments.count)")
             } catch let error as PipelineError where error == .noPlayableLearnerPart {
-                Self.logger.warning(
-                    "loadArrangementIfPossible: no playable learner part — visualization-only fallback"
-                )
+                MultiChannelLog.shared.log(.warning, "<<< loadArrangementIfPossible: noPlayableLearnerPart — viz-only")
                 return
             }
-            // `MultiTrackSamplerGraph(trackCount:)` requires the shared
-            // engine to be running. `startForPlayback` was just invoked
-            // a few lines earlier in `loadSong(_:)` — propagate any
-            // construction failure to the catch block below so we
-            // degrade to visualization-only.
+            MultiChannelLog.shared.log(.info, "... loadArrangementIfPossible: building MultiTrackSamplerGraph trackCount=\(rendered.trackCount)")
             let graph = try MultiTrackSamplerGraph(trackCount: rendered.trackCount)
+            MultiChannelLog.shared.log(.info, "... loadArrangementIfPossible: graph constructed; calling loadArrangement")
             try await loadArrangement(split: split, graph: graph)
-            Self.logger.info("loadArrangementIfPossible: wired arrangement (tracks=\(rendered.trackCount))")
+            MultiChannelLog.shared.log(.info, "<<< loadArrangementIfPossible: WIRED tracks=\(rendered.trackCount)")
         } catch {
-            Self.logger.error(
-                "loadArrangementIfPossible: failed (\(error.localizedDescription, privacy: .public)) — visualization-only fallback"
-            )
+            MultiChannelLog.shared.log(.error, "<<< loadArrangementIfPossible: FAILED \(error.localizedDescription) — viz-only")
         }
     }
 
