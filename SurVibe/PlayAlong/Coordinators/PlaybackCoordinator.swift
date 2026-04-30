@@ -6,93 +6,90 @@ import SVLearning
 import SwiftData
 import os.log
 
-/// Owns the play-along transport state machine: scheduling, tempo, wait-mode,
-/// session completion, and `PracticeSessionRecorder`-mediated SwiftData writes.
+/// Visualization-only coordinator for the play-along / Learn-a-Song timeline.
 ///
-/// Extracted from `PlayAlongViewModel` in SP-3b. The facade
-/// (`PlayAlongViewModel`) holds `let playback = PlaybackCoordinator(...)` and
-/// re-exposes every owned property as a delegating computed property so
-/// existing views/tests continue to read `viewModel.playbackState` etc.
-/// unchanged (spec AD-1 facade).
+/// Wave 4 D3 rework: PlaybackCoordinator no longer owns audio scheduling. It
+/// is now a pure visualization-state owner — it keeps `noteEvents`,
+/// `currentTime`, `currentNoteIndex`, `noteStates`, and `playbackState` in
+/// sync with whatever external transport drives the session (Wave 5 E1 will
+/// wire `ArrangementPlayer` as that driver). The coordinator is observed by
+/// falling-notes / sheet rendering and by `NoteRouter` for input dispatch.
 ///
-/// ## Public surface (Option B per spec §11 D-SP3b-1)
-/// - `loadSong(_:)` — parse song into `noteEvents` + `noteStates`; pure data prep.
-/// - `startScheduling()` — engine.start + metronome + reset + display-link + schedule.
-/// - `pauseScheduling()` — save `pauseElapsed`, cancel tasks, stop metronome.
-/// - `resumeScheduling()` — advance start time by `pauseElapsed`, restart tasks.
-/// - `stopAndComplete()` — early stop → `completeSession()`.
-/// - `seek(to:)` — set `currentTime` (only effective when paused; matches VM's prior behavior).
-/// - `cleanup()` — playback-side resources only (engine.stop, metronome.stop, sound off, tasks cancel).
+/// ## Removed in D3 (visualization-only narrowing)
+/// - `soundFont` dependency and the scheduled-note `playNote(...)` path.
+/// - `audioEngine.start/stop` lifecycle (ArrangementPlayer owns this).
+/// - `metronome` lifecycle (ArrangementPlayer owns this).
+/// - `clock` + drift-corrected scheduling loop (`runPlaybackLoop`).
+/// - Internal display-link `Task` (`playbackStartDate` is set externally now).
+/// - `PlayAlongWaitController` ownership (Wave 5 E1 will reattach if needed).
 ///
-/// ## Out of scope (still on VM facade until SP-3d)
-/// - Pitch detection (mic + chord), MIDI input routing, guided-play state,
-///   patience timer, raga-aware mapping. The VM composes `playback.startScheduling()`
-///   with those still-on-VM hooks; SP-3d collapses them into NoteRouter.
+/// ## Public surface (visualization-only)
+/// - `loadSong(_:)` — parse song into `noteEvents`; pure data prep.
+/// - `clearSong()` — drop song + reset visualization to `.idle`.
+/// - `setCurrentTime(_:)` — external driver (ArrangementPlayer) pushes time.
+/// - `setPlaybackState(_:)` — external driver pushes transport state.
+/// - `setCurrentNoteIndex(_:)` — external driver pushes the active index.
+/// - `seek(to:)` — paused-only timeline scrub.
+/// - `completeSession()` — finalise scoring + persist (still owned here
+///   because it's a visualization-domain decision: "this song run is over").
+/// - `cleanup()` — drop transient state.
 ///
-/// ## Latency invariants (non-negotiable)
-/// - Never calls `AudioEngineManager.shared.noteOn(...)` — that's NoteRouter's site.
-/// - Only calls `soundFont.playNote(...)` for scheduled playback notes (the song's notes,
-///   not user-input notes).
-/// - No new `await` on the MIDI → noteOn path (path is entirely outside this class).
+/// Legacy transport methods (`startScheduling`, `pauseScheduling`,
+/// `resumeScheduling`, `stopAndComplete`) are kept as thin no-op-style state
+/// transitions so existing callers (`PlayAlongViewModel.startSession` etc.)
+/// continue to compile. Wave 5 E1 (`ArrangementPlayer` wiring) replaces these
+/// with direct `setPlaybackState(_:)` calls from the audio driver.
+///
+/// ## Latency invariants
+/// - Never calls into `AudioEngineManager`.
+/// - Never emits MIDI / SoundFont notes — there is no audio dependency at all.
 @Observable
 @MainActor
 final class PlaybackCoordinator {
-    // MARK: - Observed playback state
+    // MARK: - Observed visualization state
 
-    /// Current playback state of the play-along session.
+    /// Current playback state (driven externally by the audio transport).
     private(set) var playbackState: PlaybackState = .idle
 
-    /// Ordered note events for the loaded song.
+    /// Ordered note events for the loaded song. Used by falling-notes /
+    /// sheet rendering and by `NoteRouter` for input dispatch.
     var noteEvents: [NoteEvent] = []
 
     /// Index of the note currently being played or evaluated.
     var currentNoteIndex: Int?
 
     /// Per-note state for the falling-notes / sheet view, keyed by `NoteEvent.id`.
-    ///
-    /// Exposed as `var` (not `private(set)`) for SP-3b transitional convenience —
-    /// still-on-VM NoteRouter-territory code (`skipGuidedNote`, `processNoteInput`)
-    /// writes via `playback.noteStates[id] = .missed`. SP-3d locks this down once
-    /// NoteRouter owns the writers.
     var noteStates: [UUID: FallingNotesLayoutEngine.NoteState] = [:]
 
-    /// Current playback position in seconds from song start.
+    /// Current playback position in seconds from song start (driven externally).
     private(set) var currentTime: TimeInterval = 0
 
     /// Total duration of the loaded song in seconds.
     private(set) var duration: TimeInterval = 0
 
     /// Wall-clock Date adjusted to represent "when time=0 was", used by
-    /// `FallingNotesView` to self-drive animation via `TimelineView`.
+    /// `FallingNotesView` to self-drive animation via `TimelineView`. Set by
+    /// the external audio driver (E1: ArrangementPlayer) when it starts.
     private(set) var playbackStartDate: Date?
 
     /// Human-readable error message when `playbackState` is `.error`.
     private(set) var errorMessage: String?
 
     /// The loaded Song model (for tempo, ragaName, difficulty).
-    ///
-    /// Internal write so the test seam can install a song info without
-    /// running the full `loadSong` notation-parsing flow.
     private(set) var song: Song?
 
-    // MARK: - Observed transport-control state (settable from facade/UI)
+    // MARK: - Settable transport / display flags
 
-    /// Tempo scaling factor (1.0 = original, 0.5 = half speed). Updates the
-    /// metronome BPM live when playing.
-    var tempoScale: Double = 1.0 {
-        didSet {
-            if metronome.isPlaying, let song {
-                metronome.setBPM(Double(song.tempo) * tempoScale)
-            }
-        }
-    }
+    /// Tempo scaling factor (1.0 = original, 0.5 = half speed). Read by the
+    /// external audio driver; this coordinator no longer reacts to changes.
+    var tempoScale: Double = 1.0
 
-    /// Whether wait mode is enabled for this session. Read at `startScheduling`
-    /// time to construct the `waitController`.
+    /// Whether wait mode is enabled for this session. Read by `NoteRouter`
+    /// and by the external audio driver (E1).
     var isWaitModeEnabled: Bool = false
 
-    /// Whether SoundFont playback is enabled (controls whether scheduled notes
-    /// trigger `soundFont.playNote`).
+    /// Whether the song's playback audio is enabled. Read by the external
+    /// audio driver and by tanpura UI; this coordinator does not emit audio.
     var isSoundEnabled: Bool = true
 
     // MARK: - Persistence
@@ -114,52 +111,29 @@ final class PlaybackCoordinator {
 
     // MARK: - Dependencies (injected)
 
-    private let soundFont: any SoundFontPlaying
-    private let audioEngine: any AudioEngineProviding
-    private let metronome: any MetronomePlaying
-    private let clock: any ClockProviding
     private let scoring: ScoringCoordinator
     private let analytics: (any AnalyticsProviding)?
-
-    // MARK: - Internal scheduling state
-
-    private var waitController: PlayAlongWaitController?
-    private var playbackTask: Task<Void, Never>?
-    private var displayLinkTask: Task<Void, Never>?
-    private var playbackStartTime: ContinuousClock.Instant?
-    private var pauseElapsed: TimeInterval = 0
 
     private static let logger = Logger.survibe(category: "PlaybackCoordinator")
 
     // MARK: - Initialization
 
-    /// Create a playback coordinator with injectable dependencies.
+    /// Create a visualization-only playback coordinator.
     ///
     /// - Parameters:
-    ///   - soundFont: SoundFont player for scheduled playback notes.
-    ///   - audioEngine: Audio engine for `start()` / `stop()` lifecycle.
-    ///   - metronome: Metronome player driven by `tempoScale` × `song.tempo`.
-    ///   - clock: Drift-corrected clock for scheduling.
-    ///   - scoring: Scoring coordinator (SP-3a) for `record/updateStreak/finalize/reset`.
-    ///   - analytics: Analytics provider (nil → falls back to `AnalyticsManager.shared`
-    ///     at call time per SP-0 D-SP0-1 / SP-1 D-SP1-1 nil-sentinel pattern).
+    ///   - scoring: Scoring coordinator (SP-3a) — used by `completeSession()`
+    ///     to finalise + persist the run.
+    ///   - analytics: Analytics provider (nil → falls back to
+    ///     `AnalyticsManager.shared` at call time per SP-0 nil-sentinel).
     init(
-        soundFont: any SoundFontPlaying,
-        audioEngine: any AudioEngineProviding,
-        metronome: any MetronomePlaying,
-        clock: any ClockProviding,
         scoring: ScoringCoordinator,
         analytics: (any AnalyticsProviding)? = nil
     ) {
-        self.soundFont = soundFont
-        self.audioEngine = audioEngine
-        self.metronome = metronome
-        self.clock = clock
         self.scoring = scoring
         self.analytics = analytics
     }
 
-    // MARK: - Public methods (transport state machine)
+    // MARK: - Public methods — song lifecycle
 
     /// Parse the song into `noteEvents`, compute duration, initialize per-note
     /// state. Pure data prep — no audio or input wiring.
@@ -168,7 +142,6 @@ final class PlaybackCoordinator {
     ///   data was available (in which case `playbackState` is set to `.error`).
     @discardableResult
     func loadSong(_ song: Song) -> Bool {
-        MultiChannelLog.shared.log(.info, ">>> PlaybackCoordinator.loadSong(\(song.title))")
         playbackState = .loading
         self.song = song
 
@@ -177,10 +150,6 @@ final class PlaybackCoordinator {
             case .success(let midiEvents) = MIDIParser.parse(data: midiData)
         {
             noteEvents = NoteEvent.fromMIDI(events: midiEvents)
-            MultiChannelLog.shared.log(
-                .info,
-                "... PlaybackCoordinator.loadSong: branch=midi events=\(noteEvents.count)"
-            )
             result = true
         } else if let sargam = song.decodedSargamNotes,
             let western = song.decodedWesternNotes
@@ -190,17 +159,11 @@ final class PlaybackCoordinator {
                 westernNotes: western,
                 tempo: song.tempo
             )
-            MultiChannelLog.shared.log(
-                .info,
-                "... PlaybackCoordinator.loadSong: branch=notation events=\(noteEvents.count)"
-            )
             result = true
         } else {
-            MultiChannelLog.shared.log(.info, "... PlaybackCoordinator.loadSong: branch=error")
             errorMessage = "No playable notation found"
             playbackState = .error("No playable notation")
             Self.logger.error("loadSong failed: no MIDI or notation data")
-            MultiChannelLog.shared.log(.info, "<<< PlaybackCoordinator.loadSong DONE returning=false")
             return false
         }
 
@@ -216,78 +179,74 @@ final class PlaybackCoordinator {
         Self.logger.info(
             "Song loaded: \(self.noteEvents.count) events, duration=\(String(format: "%.1f", self.duration))s"
         )
-        MultiChannelLog.shared.log(.info, "<<< PlaybackCoordinator.loadSong DONE returning=\(result)")
         return result
     }
 
+    /// Drop the loaded song and reset all visualization state to `.idle`.
+    func clearSong() {
+        song = nil
+        noteEvents = []
+        noteStates = [:]
+        currentNoteIndex = nil
+        currentTime = 0
+        duration = 0
+        playbackStartDate = nil
+        errorMessage = nil
+        playbackState = .idle
+    }
+
     /// Seek to a normalized position (0.0 to 1.0). Only effective when paused —
-    /// matches the existing VM behavior; full mid-playback seek is out of scope
-    /// for SP-3b (would require re-anchoring `playbackStartTime` and rescheduling).
+    /// matches the prior behavior; full mid-playback seek is the audio driver's
+    /// responsibility (E1: ArrangementPlayer).
     func seek(to progress: Double) {
         guard duration > 0 else { return }
         currentTime = progress * duration
     }
 
-    /// Start scheduling the loaded song from the beginning. Idempotent guard:
-    /// only starts from `.idle` or `.stopped` with non-empty `noteEvents`.
+    // MARK: - External transport setters (driven by ArrangementPlayer in E1)
+
+    /// Push the master clock's current time into the visualization model.
     ///
-    /// Sequence:
-    /// 1. Engine `start()` (in playAndRecord — caller already configured session).
-    /// 2. Metronome setBPM + start at `tempoScale × song.tempo`.
-    /// 3. `reset()` clears scoring + position.
-    /// 4. `playbackStartTime` = `clock.now`; `playbackStartDate` = `Date()`.
-    /// 5. Transition to `.playing`, start display link, kick off the playback loop.
-    /// 6. If `isWaitModeEnabled`, construct the `waitController`.
-    /// 7. Fire `songPlaybackStarted` analytics.
+    /// Called by the external audio driver (E1: `ArrangementPlayer`) on every
+    /// display tick. Visualization observers (`FallingNotesView`,
+    /// `currentTime`-bound UI) react automatically through `@Observable`.
+    func setCurrentTime(_ time: TimeInterval) {
+        currentTime = time
+    }
+
+    /// Push a new transport state from the external audio driver.
+    ///
+    /// Idempotent: setting to the same state is a no-op.
+    func setPlaybackState(_ state: PlaybackState) {
+        playbackState = state
+    }
+
+    /// Push the active note index from the external audio driver.
+    func setCurrentNoteIndex(_ index: Int?) {
+        currentNoteIndex = index
+    }
+
+    /// Set the wall-clock anchor used by `FallingNotesView` self-driving
+    /// animation. The external audio driver sets this on `start()` / `resume()`
+    /// and clears to `nil` on `pause()`.
+    func setPlaybackStartDate(_ date: Date?) {
+        playbackStartDate = date
+    }
+
+    // MARK: - Legacy transport shims (Wave 5 E1 will replace with direct setters)
+
+    /// Legacy entry point preserved so existing facade callers compile during
+    /// the Wave 4 → Wave 5 transition. Performs only a state transition; audio
+    /// is owned by ArrangementPlayer (E1).
+    ///
+    /// TODO(E1): replace facade calls with `ArrangementPlayer.start()` and
+    /// remove this shim.
     func startScheduling() async {
-        MultiChannelLog.shared.log(
-            .info,
-            ">>> PlaybackCoordinator.startScheduling state=\(playbackState) noteEvents=\(noteEvents.count)"
-        )
         guard playbackState == .idle || playbackState == .stopped else { return }
-        MultiChannelLog.shared.log(.info, "... startScheduling: state guard passed")
         guard !noteEvents.isEmpty else { return }
-
-        MultiChannelLog.shared.log(.info, "... startScheduling: about to audioEngine.start()")
-        do {
-            try audioEngine.start()
-            MultiChannelLog.shared.log(.info, "... startScheduling: audioEngine.start returned")
-        } catch {
-            MultiChannelLog.shared.log(
-                .info, "<<< startScheduling FAILED engine: \(error.localizedDescription)"
-            )
-            Self.logger.error("Engine start failed: \(error.localizedDescription)")
-            errorMessage = "Audio engine failed to start"
-            playbackState = .error("Audio engine failed to start")
-            return
-        }
-
-        let scaledBPM = Double(song?.tempo ?? 120) * tempoScale
-        MultiChannelLog.shared.log(.info, "... startScheduling: metronome.setBPM(\(scaledBPM))")
-        metronome.setBPM(scaledBPM)
-        MultiChannelLog.shared.log(.info, "... startScheduling: metronome.start()")
-        metronome.start()
-
         reset()
-        MultiChannelLog.shared.log(.info, "... startScheduling: reset done")
-
-        playbackStartTime = clock.now
         playbackStartDate = Date()
-        MultiChannelLog.shared.log(.info, "... startScheduling: clock.now captured")
         playbackState = .playing
-        MultiChannelLog.shared.log(.info, "... startScheduling: state=.playing")
-
-        MultiChannelLog.shared.log(.info, "... startScheduling: starting display link")
-        startDisplayLink()
-        MultiChannelLog.shared.log(.info, "... startScheduling: kicking off playback Task")
-        startPlayback()
-
-        if isWaitModeEnabled {
-            waitController = PlayAlongWaitController(noteEvents: noteEvents)
-        } else {
-            waitController = nil
-        }
-
         track(
             .songPlaybackStarted,
             properties: [
@@ -296,294 +255,39 @@ final class PlaybackCoordinator {
                 "wait_mode": isWaitModeEnabled,
             ]
         )
-
-        Self.logger.info("Playback scheduling started")
-        MultiChannelLog.shared.log(.info, "<<< PlaybackCoordinator.startScheduling DONE")
     }
 
-    /// Pause the active scheduling. Records elapsed time for seamless resume,
-    /// cancels the playback + display-link tasks, stops sounding notes and
-    /// metronome.
+    /// Legacy pause shim. State transition only — audio pause is the driver's
+    /// responsibility (E1).
+    ///
+    /// TODO(E1): replace with `ArrangementPlayer.pause()` + `setPlaybackState(.paused)`.
     func pauseScheduling() {
         guard playbackState == .playing else { return }
-
-        if let startTime = playbackStartTime {
-            let elapsed = clock.now - startTime
-            pauseElapsed = elapsedSeconds(from: elapsed)
-        }
-
         playbackState = .paused
         playbackStartDate = nil
-
-        cancelPlaybackTasks()
-        soundFont.stopAllNotes()
-        metronome.stop()
-
         track(.songPlaybackPaused, properties: ["song_title": song?.title ?? ""])
-        Self.logger.info("Scheduling paused at \(String(format: "%.1f", self.pauseElapsed))s")
     }
 
-    /// Resume from the paused position. Adjusts the clock reference so elapsed
-    /// computation continues from the pause offset, restarts display link +
-    /// playback loop + metronome.
+    /// Legacy resume shim. State transition only — audio resume is the driver's
+    /// responsibility (E1).
+    ///
+    /// TODO(E1): replace with `ArrangementPlayer.resume()` + `setPlaybackState(.playing)`.
     func resumeScheduling() {
         guard playbackState == .paused else { return }
-
-        playbackStartTime = clock.now.advanced(by: .seconds(-pauseElapsed))
-        playbackStartDate = Date(timeIntervalSinceNow: -pauseElapsed)
+        playbackStartDate = Date(timeIntervalSinceNow: -currentTime)
         playbackState = .playing
-
-        startDisplayLink()
-        startPlaybackFromCurrentPosition()
-        metronome.start()
-
-        Self.logger.info("Scheduling resumed from \(String(format: "%.1f", self.pauseElapsed))s")
     }
 
-    // MARK: - Private — Scheduling
-
-    private func startPlayback() {
-        playbackTask?.cancel()
-        playbackTask = Task { [weak self] in
-            guard let self else { return }
-            await self.runPlaybackLoop(fromIndex: 0, timeOffset: 0)
-        }
-    }
-
-    private func startPlaybackFromCurrentPosition() {
-        playbackTask?.cancel()
-        let offset = pauseElapsed
-        let startIndex =
-            noteEvents.firstIndex { event in
-                (event.timestamp / tempoScale) >= offset
-            } ?? noteEvents.count
-
-        playbackTask = Task { [weak self] in
-            guard let self else { return }
-            await self.runPlaybackLoop(fromIndex: startIndex, timeOffset: 0)
-        }
-    }
-
-    private func runPlaybackLoop(fromIndex: Int, timeOffset: TimeInterval) async {
-        MultiChannelLog.shared.log(
-            .info,
-            ">>> runPlaybackLoop fromIndex=\(fromIndex) totalEvents=\(noteEvents.count)"
-        )
-        guard let startTime = playbackStartTime else { return }
-
-        for index in fromIndex..<noteEvents.count {
-            if index < 5 || index % 50 == 0 {
-                MultiChannelLog.shared.log(
-                    .info,
-                    "... runPlaybackLoop: index=\(index) noteCount=\(noteEvents.count) sleeping"
-                )
-            }
-            let event = noteEvents[index]
-            let scaledTimestamp = event.timestamp / tempoScale
-            let targetTime = startTime.advanced(by: .seconds(scaledTimestamp))
-
-            let sleepDuration = targetTime - clock.now
-            if sleepDuration > .zero {
-                do {
-                    try await clock.sleep(for: sleepDuration)
-                } catch {
-                    MultiChannelLog.shared.log(
-                        .info, "<<< runPlaybackLoop EXIT cancelled=\(Task.isCancelled)"
-                    )
-                    return
-                }
-            }
-
-            guard !Task.isCancelled else {
-                MultiChannelLog.shared.log(
-                    .info, "<<< runPlaybackLoop EXIT cancelled=true"
-                )
-                return
-            }
-
-            playNoteSound(event: event)
-
-            currentNoteIndex = index
-            noteStates[event.id] = .active
-            markPreviousNotesAsMissed(beforeIndex: index)
-
-            do {
-                if try await awaitWaitModeResolution(index: index) {
-                    MultiChannelLog.shared.log(
-                        .info, "<<< runPlaybackLoop EXIT cancelled=\(Task.isCancelled)"
-                    )
-                    return
-                }
-            } catch {
-                MultiChannelLog.shared.log(
-                    .info, "<<< runPlaybackLoop EXIT cancelled=\(Task.isCancelled)"
-                )
-                return
-            }
-        }
-
-        await awaitLastNoteCompletion()
-        guard !Task.isCancelled else {
-            MultiChannelLog.shared.log(.info, "<<< runPlaybackLoop EXIT cancelled=true")
-            return
-        }
-        MultiChannelLog.shared.log(.info, "<<< runPlaybackLoop EXIT cancelled=false")
-        completeSession()
-    }
-
-    private func playNoteSound(event: NoteEvent) {
-        guard isSoundEnabled else { return }
-        soundFont.playNote(
-            midiNote: event.midiNote,
-            velocity: event.velocity,
-            channel: 0
-        )
-        let scaledDuration = event.duration / tempoScale
-        Task { [weak self] in
-            guard let self else { return }
-            try? await self.clock.sleep(for: .seconds(scaledDuration))
-            self.soundFont.stopNote(midiNote: event.midiNote, channel: 0)
-        }
-    }
-
-    private func markPreviousNotesAsMissed(beforeIndex index: Int) {
-        for prevIndex in 0..<index {
-            let prevEvent = noteEvents[prevIndex]
-            if noteStates[prevEvent.id] == .active {
-                noteStates[prevEvent.id] = .missed
-                scoring.record(NoteScoreCalculator.missedNote(expectedNote: prevEvent.swarName))
-                scoring.updateStreak(grade: .miss)
-            }
-        }
-    }
-
-    private func awaitWaitModeResolution(index: Int) async throws -> Bool {
-        MultiChannelLog.shared.log(
-            .info,
-            ">>> awaitWaitModeResolution index=\(index) waitEnabled=\(isWaitModeEnabled)"
-        )
-        guard isWaitModeEnabled, let waitCtrl = waitController else {
-            MultiChannelLog.shared.log(.info, "<<< awaitWaitModeResolution returning=false (skip)")
-            return false
-        }
-        waitCtrl.setCurrentNoteIndex(index)
-        while waitCtrl.isWaitingForNote, !Task.isCancelled {
-            try? await clock.sleep(for: .milliseconds(50))
-        }
-        let cancelled = Task.isCancelled
-        MultiChannelLog.shared.log(
-            .info, "<<< awaitWaitModeResolution returning=\(cancelled)"
-        )
-        return cancelled
-    }
-
-    private func awaitLastNoteCompletion() async {
-        guard let last = noteEvents.last else { return }
-        let endTime = (last.timestamp + last.duration) / tempoScale
-        let startTime = playbackStartTime ?? clock.now
-        let targetEnd = startTime.advanced(by: .seconds(endTime))
-        let remaining = targetEnd - clock.now
-        if remaining > .zero {
-            try? await clock.sleep(for: remaining)
-        }
-    }
-
-    // MARK: - Private — Display Link
-
-    private func startDisplayLink() {
-        displayLinkTask?.cancel()
-        displayLinkTask = Task { [weak self] in
-            while !Task.isCancelled {
-                guard let self, self.playbackState == .playing else { return }
-                if let startTime = self.playbackStartTime {
-                    let elapsed = self.clock.now - startTime
-                    self.currentTime = self.elapsedSeconds(from: elapsed) * self.tempoScale
-                }
-                try? await Task.sleep(for: .milliseconds(50))
-            }
-        }
-    }
-
-    // MARK: - Test seams (internal — do not call from production code)
-
-    /// Install raw `NoteEvent`s for tests, bypassing the full `loadSong` flow.
-    func installNoteEventsForTesting(_ events: [NoteEvent]) {
-        noteEvents = events
-        if let last = events.last {
-            duration = last.timestamp + last.duration
-        }
-        for event in events {
-            noteStates[event.id] = .upcoming
-        }
-    }
-
-    /// Install a synthetic song with the given tempo for tempo-scale tests.
-    func installSongTempoForTesting(_ tempo: Int) {
-        song = Song(tempo: tempo)
-    }
-
-    /// Install a synthetic song with persistence-relevant fields for completion tests.
-    func installSongInfoForTesting(
-        slugId: String,
-        title: String,
-        ragaName: String,
-        difficulty: Int
-    ) {
-        song = Song(slugId: slugId, title: title, difficulty: difficulty, ragaName: ragaName)
-    }
-
-    // MARK: - Internal helpers (placeholders for Tasks 4 + 5)
-
-    /// Cancel scheduled playback tasks (does NOT touch pitch/MIDI tasks —
-    /// those are the facade's responsibility until SP-3d).
-    func cancelPlaybackTasks() {
-        playbackTask?.cancel()
-        playbackTask = nil
-        displayLinkTask?.cancel()
-        displayLinkTask = nil
-    }
-
-    /// Reset playback-domain state for a fresh scheduling pass. Called by
-    /// `startScheduling()`. Does NOT reset NoteRouter-territory state
-    /// (`expectedMidiNote`, `guidedPlayState`, `patienceTimerTask`) — those
-    /// stay on the facade until SP-3d.
-    func reset() {
-        scoring.reset()
-        currentNoteIndex = nil
-        currentTime = 0
-        pauseElapsed = 0
-        errorMessage = nil
-        for event in noteEvents {
-            noteStates[event.id] = .upcoming
-        }
-    }
-
-    /// Convert a `Duration` to seconds as a `TimeInterval`.
-    func elapsedSeconds(from duration: Duration) -> TimeInterval {
-        Double(duration.components.seconds)
-            + Double(duration.components.attoseconds) / 1_000_000_000_000_000_000
-    }
-
-    // MARK: - Private — Analytics
-
-    /// Dispatch an event via the injected analytics, falling back to the
-    /// shared singleton (nil-sentinel per SP-0 D-SP0-1).
-    private func track(_ event: AnalyticsEvent, properties: [String: any Sendable]?) {
-        let provider: any AnalyticsProviding = analytics ?? AnalyticsManager.shared
-        provider.track(event, properties: properties)
-    }
-
-    // MARK: - Public — Session completion
-
-    /// Stop scheduling early and complete the session with whatever notes
-    /// have been scored so far. Triggers results overlay.
+    /// Stop the session early and complete with whatever has been scored so far.
     func stopAndComplete() {
         guard playbackState == .playing || playbackState == .paused else { return }
         completeSession()
     }
 
+    // MARK: - Public — Session completion
+
     /// Complete the session: mark unfinished notes as missed, finalize scoring,
-    /// stop sound, persist results, fire analytics.
+    /// persist results, fire analytics.
     ///
     /// AUD-028/034: noteStates mutations batched into a single dictionary
     /// snapshot — one Canvas redraw instead of N individual property sets.
@@ -609,25 +313,71 @@ final class PlaybackCoordinator {
 
         scoring.finalize(songDifficulty: song?.difficulty ?? 1)
 
-        cancelPlaybackTasks()
-        soundFont.stopAllNotes()
         playbackState = .stopped
+        playbackStartDate = nil
 
         persistSessionResults()
         trackSessionCompletion()
     }
 
-    /// Tear down playback resources. Does NOT touch pitch/MIDI tasks — those
-    /// are the facade's responsibility until SP-3d.
+    /// Tear down transient visualization resources. Audio teardown is the
+    /// external driver's responsibility (E1: `ArrangementPlayer.stop()`).
     func cleanup() {
-        cancelPlaybackTasks()
-        soundFont.stopAllNotes()
-        audioEngine.stop()
-        metronome.stop()
-        waitController?.reset()
-        waitController = nil
         playbackState = .idle
-        Self.logger.info("PlaybackCoordinator cleanup complete")
+        playbackStartDate = nil
+        Self.logger.info("PlaybackCoordinator cleanup complete (visualization-only)")
+    }
+
+    // MARK: - Internal helpers
+
+    /// Reset visualization state for a fresh run. Does NOT touch
+    /// NoteRouter-territory state.
+    func reset() {
+        scoring.reset()
+        currentNoteIndex = noteEvents.isEmpty ? nil : 0
+        currentTime = 0
+        errorMessage = nil
+        for event in noteEvents {
+            noteStates[event.id] = .upcoming
+        }
+    }
+
+    // MARK: - Test seams (internal — do not call from production code)
+
+    /// Install raw `NoteEvent`s for tests, bypassing the full `loadSong` flow.
+    func installNoteEventsForTesting(_ events: [NoteEvent]) {
+        noteEvents = events
+        if let last = events.last {
+            duration = last.timestamp + last.duration
+        }
+        for event in events {
+            noteStates[event.id] = .upcoming
+        }
+        currentNoteIndex = events.isEmpty ? nil : 0
+    }
+
+    /// Install a synthetic song with the given tempo for tempo-scale tests.
+    func installSongTempoForTesting(_ tempo: Int) {
+        song = Song(tempo: tempo)
+    }
+
+    /// Install a synthetic song with persistence-relevant fields for completion tests.
+    func installSongInfoForTesting(
+        slugId: String,
+        title: String,
+        ragaName: String,
+        difficulty: Int
+    ) {
+        song = Song(slugId: slugId, title: title, difficulty: difficulty, ragaName: ragaName)
+    }
+
+    // MARK: - Private — Analytics
+
+    /// Dispatch an event via the injected analytics, falling back to the
+    /// shared singleton (nil-sentinel per SP-0 D-SP0-1).
+    private func track(_ event: AnalyticsEvent, properties: [String: any Sendable]?) {
+        let provider: any AnalyticsProviding = analytics ?? AnalyticsManager.shared
+        provider.track(event, properties: properties)
     }
 
     // MARK: - Private — Persistence
@@ -641,7 +391,7 @@ final class PlaybackCoordinator {
             ragaName: song.ragaName,
             difficulty: song.difficulty
         )
-        let durationMinutes = max(1, Int(pauseElapsed / 60))
+        let durationMinutes = max(1, Int(currentTime / 60))
         recorder.recordSession(
             songInfo: songInfo,
             durationMinutes: durationMinutes,

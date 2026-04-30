@@ -190,33 +190,9 @@ struct PlayAlongViewModelTests {
         #expect(vm.playbackState == .playing)
     }
 
-    @Test("startSession calls audioEngine.start for playAndRecord mode")
-    func startSessionCallsEngineStart() async {
-        let sut = makeSUT()
-        let vm = sut.vm
-        let engine = sut.engine
-        let song = makeNotationSong()
-        await vm.loadSong(song)
-
-        await vm.startSession()
-
-        #expect(engine.startCallCount == 1)
-        #expect(engine.isRunning)
-    }
-
-    @Test("startSession starts the metronome at scaled BPM")
-    func startSessionStopsMetronome() async {
-        let sut = makeSUT()
-        let vm = sut.vm
-        let metronome = sut.metronome
-        let song = makeNotationSong()
-        await vm.loadSong(song)
-
-        await vm.startSession()
-
-        // Metronome should be started at the song's scaled BPM
-        #expect(metronome.startCallCount >= 1)
-    }
+    // [Wave 4 D3] Removed: `startSessionCallsEngineStart`,
+    // `startSessionStopsMetronome` — PlaybackCoordinator no longer drives
+    // engine/metronome lifecycle (ArrangementPlayer / Wave 5 E1 owns these).
 
     @Test("startSession resets scoring state")
     func startSessionResetsScoring() async {
@@ -240,28 +216,15 @@ struct PlayAlongViewModelTests {
     func startSessionWithNoEventsDoesNothing() async {
         let sut = makeSUT()
         let vm = sut.vm
-        let engine = sut.engine
         // Don't load a song
 
         await vm.startSession()
 
         #expect(vm.playbackState == .idle)
-        #expect(engine.startCallCount == 0)
     }
 
-    @Test("startSession when engine fails sets error state")
-    func startSessionEngineFailureSetsError() async {
-        let sut = makeSUT()
-        let vm = sut.vm
-        let engine = sut.engine
-        let song = makeNotationSong()
-        await vm.loadSong(song)
-        engine.shouldThrowOnStart = true
-
-        await vm.startSession()
-
-        #expect(vm.playbackState == .error("Audio engine failed to start"))
-    }
+    // [Wave 4 D3] Removed: `startSessionEngineFailureSetsError` — engine
+    // start lives outside PlaybackCoordinator now (Wave 5 E1: ArrangementPlayer).
 
     @Test("startSession creates wait controller when wait mode enabled")
     func startSessionCreatesWaitControllerWhenEnabled() async {
@@ -291,30 +254,18 @@ struct PlayAlongViewModelTests {
         #expect(vm.playbackState == .paused)
     }
 
-    @Test("pauseSession stops all sounding notes")
-    func pauseSessionStopsAllNotes() async {
-        let sut = makeSUT()
-        let vm = sut.vm
-        let soundFont = sut.soundFont
-        let song = makeNotationSong()
-        await vm.loadSong(song)
-        await vm.startSession()
-
-        vm.pauseSession()
-
-        #expect(soundFont.stopAllNotesCallCount >= 1)
-    }
+    // [Wave 4 D3] Removed: `pauseSessionStopsAllNotes` — soundFont is no
+    // longer a PlaybackCoordinator dependency. Audio teardown on pause is
+    // now ArrangementPlayer's job (Wave 5 E1).
 
     @Test("pauseSession from non-playing state does nothing")
     func pauseSessionFromNonPlayingDoesNothing() async {
         let sut = makeSUT()
         let vm = sut.vm
-        let soundFont = sut.soundFont
 
         vm.pauseSession()
 
         #expect(vm.playbackState == .idle)
-        #expect(soundFont.stopAllNotesCallCount == 0)
     }
 
     @Test("resumeSession transitions from paused to playing")
@@ -379,12 +330,10 @@ struct PlayAlongViewModelTests {
 
     // MARK: - cleanup Tests
 
-    @Test("cleanup cancels tasks and resets state")
+    @Test("cleanup resets state to idle")
     func cleanupResetsState() async {
         let sut = makeSUT()
         let vm = sut.vm
-        let soundFont = sut.soundFont
-        let engine = sut.engine
         let song = makeNotationSong()
         await vm.loadSong(song)
         await vm.startSession()
@@ -392,8 +341,8 @@ struct PlayAlongViewModelTests {
         vm.cleanup()
 
         #expect(vm.playbackState == .idle)
-        #expect(soundFont.stopAllNotesCallCount >= 1)
-        #expect(engine.stopCallCount >= 1)
+        // [Wave 4 D3] soundFont/engine teardown assertions removed —
+        // those are now ArrangementPlayer's responsibility (Wave 5 E1).
     }
 
     // MARK: - Default Property Tests

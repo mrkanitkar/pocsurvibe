@@ -32,13 +32,7 @@ struct NoteRouterTests {
 
     /// Build a `PlaybackCoordinator` with test doubles.
     private func makePlayback(scoring: ScoringCoordinator) -> PlaybackCoordinator {
-        PlaybackCoordinator(
-            soundFont: MockSoundFontPlayer(),
-            audioEngine: MockAudioEngineProvider(),
-            metronome: MockMetronomePlayer(),
-            clock: RealClock(),
-            scoring: scoring
-        )
+        PlaybackCoordinator(scoring: scoring)
     }
 
     /// Build a `NoteRouter` with optional dependency overrides.
@@ -199,5 +193,4 @@ struct NoteRouterTests {
         #expect(midi.onNoteEvent == nil, "onNoteEvent callback cleared on stop")
         #expect(router.detectedMidiNotes.isEmpty, "detectedMidiNotes cleared on stop")
     }
-
 }

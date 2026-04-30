@@ -349,15 +349,20 @@ final class PlayAlongViewModel {
 
     /// Create a play-along view model with injectable dependencies.
     ///
+    /// Wave 4 D3: PlaybackCoordinator is now visualization-only — it no longer
+    /// takes `soundFont` / `audioEngine` / `metronome` / `clock`. Those audio
+    /// dependencies are kept on this initializer's signature as no-op
+    /// placeholders so existing call sites compile; Wave 5 E1 will route them
+    /// to `ArrangementPlayer` when that owner lands.
+    ///
     /// All parameters default to production singletons when `nil` is passed.
     /// Tests inject mocks for deterministic behavior without audio hardware.
     ///
     /// - Parameters:
-    ///   - soundFont: SoundFont player for note playback. Defaults to
-    ///     `MultiChannelTouchSoundFont()` (routes to multiChannel.samplers[0]).
-    ///   - audioEngine: Audio engine for session setup. Defaults to `AudioEngineManager.shared`.
-    ///   - metronome: Metronome player (stopped during play-along). Defaults to `MetronomePlayer.shared`.
-    ///   - clock: Clock for drift-corrected scheduling. Defaults to `RealClock()`.
+    ///   - soundFont: SoundFont player. TODO(E1): wire to ArrangementPlayer.
+    ///   - audioEngine: Audio engine. TODO(E1): wire to ArrangementPlayer.
+    ///   - metronome: Metronome player. TODO(E1): wire to ArrangementPlayer.
+    ///   - clock: Drift-corrected clock. TODO(E1): wire to ArrangementPlayer.
     ///   - midiInput: MIDI input provider for USB keyboard detection. Defaults to `MIDIInputManager.shared`.
     init(
         soundFont: (any SoundFontPlaying)? = nil,
@@ -366,35 +371,23 @@ final class PlayAlongViewModel {
         clock: (any ClockProviding)? = nil,
         midiInput: (any MIDIInputProviding)? = nil
     ) {
-        MultiChannelLog.shared.log(.info, ">>> PlayAlongViewModel.init")
+        // Audio-side params accepted for source compatibility — ignored until E1.
+        _ = soundFont
+        _ = audioEngine
+        _ = metronome
+        _ = clock
         let scoring = ScoringCoordinator()
         self.scoring = scoring
-        MultiChannelLog.shared.log(.info, "... PlayAlongViewModel.init: scoring constructed; about to resolve dependencies")
-        let resolvedSoundFont = soundFont ?? MultiChannelTouchSoundFont()
-        MultiChannelLog.shared.log(.info, "... PlayAlongViewModel.init: soundFont resolved")
-        let resolvedEngine: any AudioEngineProviding = audioEngine ?? AudioEngineManager.shared
-        MultiChannelLog.shared.log(.info, "... PlayAlongViewModel.init: audioEngine resolved")
-        let resolvedMetronome = metronome ?? MetronomePlayer.shared
-        MultiChannelLog.shared.log(.info, "... PlayAlongViewModel.init: metronome resolved")
-        let resolvedClock = clock ?? RealClock()
-        MultiChannelLog.shared.log(.info, "... PlayAlongViewModel.init: clock resolved")
         let resolvedMIDI = midiInput ?? MIDIInputManager.shared
-        MultiChannelLog.shared.log(.info, "... PlayAlongViewModel.init: midiInput resolved")
         self.playback = PlaybackCoordinator(
-            soundFont: resolvedSoundFont,
-            audioEngine: resolvedEngine,
-            metronome: resolvedMetronome,
-            clock: resolvedClock,
             scoring: scoring,
             analytics: nil  // nil-sentinel — uses AnalyticsManager.shared at call time
         )
-        MultiChannelLog.shared.log(.info, "... PlayAlongViewModel.init: PlaybackCoordinator constructed")
         self.noteRouter = NoteRouter(
             midiInput: resolvedMIDI,
             scoring: scoring,
             playback: playback
         )
-        MultiChannelLog.shared.log(.info, "<<< PlayAlongViewModel.init DONE")
     }
 
     // MARK: - Public Methods — lifecycle
