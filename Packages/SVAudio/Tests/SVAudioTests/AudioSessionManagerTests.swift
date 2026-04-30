@@ -162,4 +162,102 @@ struct AudioSessionManagerTests {
         let sendable: any Sendable = tier
         #expect(sendable is BufferGrantTier)
     }
+
+    // MARK: - Interruption Handler Tests (A10 gap)
+
+    @Test("interruptionBeganFiresCallback — handleInterruption with .began type invokes onInterruptionBegan")
+    @MainActor
+    func interruptionBeganFiresCallback() {
+        let manager = AudioSessionManager.shared
+        var beganFired = false
+
+        manager.onInterruptionBegan = { beganFired = true }
+        defer { manager.onInterruptionBegan = nil }
+
+        manager.handleInterruption(
+            typeValue: AVAudioSession.InterruptionType.began.rawValue,
+            optionsValue: 0
+        )
+
+        #expect(beganFired)
+    }
+
+    @Test("interruptionEndedFiresCallbackWithShouldResume — handleInterruption with .ended and .shouldResume option passes true")
+    @MainActor
+    func interruptionEndedFiresCallbackWithShouldResume() {
+        let manager = AudioSessionManager.shared
+        var receivedShouldResume: Bool?
+
+        manager.onInterruptionEnded = { shouldResume in
+            receivedShouldResume = shouldResume
+        }
+        defer { manager.onInterruptionEnded = nil }
+
+        manager.handleInterruption(
+            typeValue: AVAudioSession.InterruptionType.ended.rawValue,
+            optionsValue: AVAudioSession.InterruptionOptions.shouldResume.rawValue
+        )
+
+        #expect(receivedShouldResume == true)
+    }
+
+    @Test("interruptionEndedFiresCallbackWithShouldResumefalse — handleInterruption with .ended and no options passes false")
+    @MainActor
+    func interruptionEndedFiresCallbackWithShouldResumeFalse() {
+        let manager = AudioSessionManager.shared
+        var receivedShouldResume: Bool?
+
+        manager.onInterruptionEnded = { shouldResume in
+            receivedShouldResume = shouldResume
+        }
+        defer { manager.onInterruptionEnded = nil }
+
+        manager.handleInterruption(
+            typeValue: AVAudioSession.InterruptionType.ended.rawValue,
+            optionsValue: 0
+        )
+
+        #expect(receivedShouldResume == false)
+    }
+
+    @Test("interruptionBeganDoesNotFireEndedCallback — .began type only fires onInterruptionBegan")
+    @MainActor
+    func interruptionBeganDoesNotFireEndedCallback() {
+        let manager = AudioSessionManager.shared
+        var endedFired = false
+
+        manager.onInterruptionBegan = { }
+        manager.onInterruptionEnded = { _ in endedFired = true }
+        defer {
+            manager.onInterruptionBegan = nil
+            manager.onInterruptionEnded = nil
+        }
+
+        manager.handleInterruption(
+            typeValue: AVAudioSession.InterruptionType.began.rawValue,
+            optionsValue: 0
+        )
+
+        #expect(!endedFired)
+    }
+
+    @Test("interruptionWithNilTypeValueIsIgnored — nil typeValue does not crash or fire callbacks")
+    @MainActor
+    func interruptionWithNilTypeValueIsIgnored() {
+        let manager = AudioSessionManager.shared
+        var beganFired = false
+        var endedFired = false
+
+        manager.onInterruptionBegan = { beganFired = true }
+        manager.onInterruptionEnded = { _ in endedFired = true }
+        defer {
+            manager.onInterruptionBegan = nil
+            manager.onInterruptionEnded = nil
+        }
+
+        manager.handleInterruption(typeValue: nil, optionsValue: nil)
+
+        #expect(!beganFired)
+        #expect(!endedFired)
+    }
 }

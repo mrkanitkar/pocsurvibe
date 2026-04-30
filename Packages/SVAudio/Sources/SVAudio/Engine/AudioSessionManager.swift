@@ -265,7 +265,7 @@ public final class AudioSessionManager {
         }
     }
 
-    private func handleInterruption(typeValue: UInt?, optionsValue: UInt?) {
+    func handleInterruption(typeValue: UInt?, optionsValue: UInt?) {
         guard let typeValue,
             let type = AVAudioSession.InterruptionType(rawValue: typeValue)
         else {
