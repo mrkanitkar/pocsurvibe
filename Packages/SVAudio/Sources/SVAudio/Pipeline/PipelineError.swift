@@ -27,6 +27,11 @@ public enum PipelineError: Error, LocalizedError, Equatable {
     /// The realtime tap bounce failed (disk, format, interruption, etc.).
     case bounceFailed(reason: String)
 
+    /// `PartSplitter` could not produce a playable learner part — either
+    /// the user override pointed at a percussion track, or no non-percussion
+    /// melodic track was present in the rendered MIDI.
+    case noPlayableLearnerPart
+
     public var errorDescription: String? {
         switch self {
         case .resourceMissing(let name):
@@ -43,6 +48,8 @@ public enum PipelineError: Error, LocalizedError, Equatable {
             return "AudioEngineManager.shared.engine is not running."
         case .bounceFailed(let reason):
             return "Bounce failed: \(reason)"
+        case .noPlayableLearnerPart:
+            return "No playable learner part is available in this score."
         }
     }
 }
@@ -65,7 +72,10 @@ public struct RenderedMIDI: Equatable, Sendable {
     public let originalBPM: Double
 
     public init(
-        data: Data, trackCount: Int, channels: [UInt8], trackInfo: [TrackInfo] = [],
+        data: Data,
+        trackCount: Int,
+        channels: [UInt8],
+        trackInfo: [TrackInfo] = [],
         originalBPM: Double = 120.0
     ) {
         self.data = data
@@ -96,8 +106,11 @@ public struct TrackInfo: Equatable, Sendable {
     public let instrumentName: String?
 
     public init(
-        channel: UInt8, program: UInt8?, isPercussion: Bool,
-        trackName: String? = nil, instrumentName: String? = nil
+        channel: UInt8,
+        program: UInt8?,
+        isPercussion: Bool,
+        trackName: String? = nil,
+        instrumentName: String? = nil
     ) {
         self.channel = channel
         self.program = program
