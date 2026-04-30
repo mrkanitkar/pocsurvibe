@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+
 @testable import SVLearning
 
 struct ImportPipelineTests {
@@ -18,11 +19,18 @@ struct ImportPipelineTests {
 
     // MARK: - Happy Path
 
-    @Test func completesWithSargamInput() async throws {
+    @Test
+    func completesWithSargamInput() async throws {
         let input = NotationInput(text: "Sa Re Ga Ma Pa Dha Ni Sa", declaredFormat: .sargam)
         let stream = pipeline.run(
-            input: input, title: "Test Song", artist: "Test",
-            language: "hi", difficulty: 1, category: "folk"
+            input: input,
+            configuration: ImportConfiguration(
+                title: "Test Song",
+                artist: "Test",
+                language: "hi",
+                difficulty: 1,
+                category: "folk"
+            )
         )
         let results = await collectResults(from: stream)
 
@@ -34,11 +42,18 @@ struct ImportPipelineTests {
         #expect(completed[0].source == "user")
     }
 
-    @Test func completesWithWesternInput() async throws {
+    @Test
+    func completesWithWesternInput() async throws {
         let input = NotationInput(text: "C4 D4 E4 F4 G4 A4 B4 C5", declaredFormat: .western)
         let stream = pipeline.run(
-            input: input, title: "C Major", artist: "Test",
-            language: "en", difficulty: 1, category: "classical"
+            input: input,
+            configuration: ImportConfiguration(
+                title: "C Major",
+                artist: "Test",
+                language: "en",
+                difficulty: 1,
+                category: "classical"
+            )
         )
         let results = await collectResults(from: stream)
 
@@ -49,11 +64,18 @@ struct ImportPipelineTests {
         #expect(completed[0].title == "C Major")
     }
 
-    @Test func emitsProgressUpdates() async throws {
+    @Test
+    func emitsProgressUpdates() async throws {
         let input = NotationInput(text: "Sa Re Ga Ma Pa", declaredFormat: .sargam)
         let stream = pipeline.run(
-            input: input, title: "Test", artist: "Test",
-            language: "hi", difficulty: 1, category: "folk"
+            input: input,
+            configuration: ImportConfiguration(
+                title: "Test",
+                artist: "Test",
+                language: "hi",
+                difficulty: 1,
+                category: "folk"
+            )
         )
         let results = await collectResults(from: stream)
 
@@ -65,11 +87,18 @@ struct ImportPipelineTests {
         #expect(progressUpdates.last?.fraction == 1.0)
     }
 
-    @Test func dtoHasCorrectMetadata() async throws {
+    @Test
+    func dtoHasCorrectMetadata() async throws {
         let input = NotationInput(text: "Sa Re Ga Ma Pa Dha Ni", declaredFormat: .sargam)
         let stream = pipeline.run(
-            input: input, title: "Raag Test", artist: "Pandit Test",
-            language: "hi", difficulty: 3, category: "classical"
+            input: input,
+            configuration: ImportConfiguration(
+                title: "Raag Test",
+                artist: "Pandit Test",
+                language: "hi",
+                difficulty: 3,
+                category: "classical"
+            )
         )
         let results = await collectResults(from: stream)
 
@@ -84,11 +113,18 @@ struct ImportPipelineTests {
 
     // MARK: - Failure Cases
 
-    @Test func failsWithEmptyTitle() async throws {
+    @Test
+    func failsWithEmptyTitle() async throws {
         let input = NotationInput(text: "Sa Re Ga Ma", declaredFormat: .sargam)
         let stream = pipeline.run(
-            input: input, title: "   ", artist: "Test",
-            language: "hi", difficulty: 1, category: "folk"
+            input: input,
+            configuration: ImportConfiguration(
+                title: "   ",
+                artist: "Test",
+                language: "hi",
+                difficulty: 1,
+                category: "folk"
+            )
         )
         let results = await collectResults(from: stream)
 
@@ -98,11 +134,18 @@ struct ImportPipelineTests {
         #expect(!failed.isEmpty)
     }
 
-    @Test func failsWithEmptyInput() async throws {
+    @Test
+    func failsWithEmptyInput() async throws {
         let input = NotationInput(text: "   ", declaredFormat: .sargam)
         let stream = pipeline.run(
-            input: input, title: "Test", artist: "Test",
-            language: "hi", difficulty: 1, category: "folk"
+            input: input,
+            configuration: ImportConfiguration(
+                title: "Test",
+                artist: "Test",
+                language: "hi",
+                difficulty: 1,
+                category: "folk"
+            )
         )
         let results = await collectResults(from: stream)
 
@@ -112,11 +155,18 @@ struct ImportPipelineTests {
         #expect(!failed.isEmpty)
     }
 
-    @Test func failsWithUnknownFormat() async throws {
+    @Test
+    func failsWithUnknownFormat() async throws {
         let input = NotationInput(text: "hello world", declaredFormat: .unknown)
         let stream = pipeline.run(
-            input: input, title: "Test", artist: "Test",
-            language: "hi", difficulty: 1, category: "folk"
+            input: input,
+            configuration: ImportConfiguration(
+                title: "Test",
+                artist: "Test",
+                language: "hi",
+                difficulty: 1,
+                category: "folk"
+            )
         )
         let results = await collectResults(from: stream)
 
@@ -128,11 +178,18 @@ struct ImportPipelineTests {
 
     // MARK: - Warnings
 
-    @Test func warningsGeneratedForMissingKeySignature() async throws {
+    @Test
+    func warningsGeneratedForMissingKeySignature() async throws {
         let input = NotationInput(text: "Sa Re Ga Ma Pa Dha Ni", declaredFormat: .sargam)
         let stream = pipeline.run(
-            input: input, title: "Test", artist: "Test",
-            language: "hi", difficulty: 1, category: "folk"
+            input: input,
+            configuration: ImportConfiguration(
+                title: "Test",
+                artist: "Test",
+                language: "hi",
+                difficulty: 1,
+                category: "folk"
+            )
         )
         let results = await collectResults(from: stream)
 

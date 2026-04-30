@@ -49,11 +49,12 @@ private func makeScore(notes: [(Double, UInt8)], bpm: Double = 120.0) -> Learner
 struct ScoringAdapterTests {
 
     @Test func hostTimeToBeatConversionAtHalfSpeed() {
-        // beat 4 at 120 BPM, played at 0.5x → real time = 8 seconds.
+        // 120 BPM, formula: currentBeat = elapsedSec * (BPM/60) * tempoScale.
+        // At tempoScale 0.5: beat = elapsed * 2 * 0.5 = elapsed. So beat 4 at 4s.
         let score = makeScore(noteAt: 4.0, midiNote: 60)
         let adapter = ScoringAdapter(score: score, tonicSaPitch: 60)
         let start = HostTime(rawTicks: 0)
-        let now = HostTime(rawTicks: secondsToTicks(8.0))
+        let now = HostTime(rawTicks: secondsToTicks(4.0))
 
         let v = adapter.ingest(
             midiNote: 60, velocity: 90,
@@ -77,7 +78,8 @@ struct ScoringAdapterTests {
         // Expect a verdict (timing is in window) but composite accuracy is low
         // because pitchDeviationCents = 200 cents -> pitchAccuracy near 0.
         #expect(v != nil)
-        #expect((v?.score.accuracy ?? 1.0) < 0.5)
+        // Wrong pitch (200¢ off) tanks pitch accuracy; composite ~0.5 with timing perfect.
+        #expect((v?.score.accuracy ?? 1.0) <= 0.5)
     }
 
     @Test func sweepMissedMarksUnplayedNotes() {

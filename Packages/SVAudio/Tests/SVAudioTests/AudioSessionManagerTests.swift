@@ -1,4 +1,5 @@
 import AVFoundation
+import os
 import Testing
 
 @testable import SVAudio
@@ -80,15 +81,14 @@ struct AudioSessionManagerTests {
     @MainActor
     func routeChangeWithReasonFires() {
         let manager = AudioSessionManager.shared
-        var receivedReason: AVAudioSession.RouteChangeReason?
+        let receivedReason = OSAllocatedUnfairLock<AVAudioSession.RouteChangeReason?>(initialState: nil)
         manager.onRouteChangeWithReason = { reason in
-            receivedReason = reason
+            receivedReason.withLock { $0 = reason }
         }
 
         manager.handleRouteChange(reason: .oldDeviceUnavailable)
-        #expect(receivedReason == .oldDeviceUnavailable)
+        #expect(receivedReason.withLock { $0 } == .oldDeviceUnavailable)
 
-        // Clean up
         manager.onRouteChangeWithReason = nil
     }
 
@@ -96,20 +96,19 @@ struct AudioSessionManagerTests {
     @MainActor
     func routeChangeLegacyAndReasonBothFire() {
         let manager = AudioSessionManager.shared
-        var legacyFired = false
-        var receivedReason: AVAudioSession.RouteChangeReason?
+        let legacyFired = OSAllocatedUnfairLock<Bool>(initialState: false)
+        let receivedReason = OSAllocatedUnfairLock<AVAudioSession.RouteChangeReason?>(initialState: nil)
 
-        manager.onRouteChange = { legacyFired = true }
+        manager.onRouteChange = { legacyFired.withLock { $0 = true } }
         manager.onRouteChangeWithReason = { reason in
-            receivedReason = reason
+            receivedReason.withLock { $0 = reason }
         }
 
         manager.handleRouteChange(reason: .newDeviceAvailable)
 
-        #expect(legacyFired)
-        #expect(receivedReason == .newDeviceAvailable)
+        #expect(legacyFired.withLock { $0 })
+        #expect(receivedReason.withLock { $0 } == .newDeviceAvailable)
 
-        // Clean up
         manager.onRouteChange = nil
         manager.onRouteChangeWithReason = nil
     }
@@ -118,18 +117,17 @@ struct AudioSessionManagerTests {
     @MainActor
     func routeChangeNilReasonSkipsReasonCallback() {
         let manager = AudioSessionManager.shared
-        var legacyFired = false
-        var reasonFired = false
+        let legacyFired = OSAllocatedUnfairLock<Bool>(initialState: false)
+        let reasonFired = OSAllocatedUnfairLock<Bool>(initialState: false)
 
-        manager.onRouteChange = { legacyFired = true }
-        manager.onRouteChangeWithReason = { _ in reasonFired = true }
+        manager.onRouteChange = { legacyFired.withLock { $0 = true } }
+        manager.onRouteChangeWithReason = { _ in reasonFired.withLock { $0 = true } }
 
         manager.handleRouteChange(reason: nil)
 
-        #expect(legacyFired)
-        #expect(!reasonFired)
+        #expect(legacyFired.withLock { $0 })
+        #expect(!reasonFired.withLock { $0 })
 
-        // Clean up
         manager.onRouteChange = nil
         manager.onRouteChangeWithReason = nil
     }
@@ -169,9 +167,9 @@ struct AudioSessionManagerTests {
     @MainActor
     func interruptionBeganFiresCallback() {
         let manager = AudioSessionManager.shared
-        var beganFired = false
+        let beganFired = OSAllocatedUnfairLock<Bool>(initialState: false)
 
-        manager.onInterruptionBegan = { beganFired = true }
+        manager.onInterruptionBegan = { beganFired.withLock { $0 = true } }
         defer { manager.onInterruptionBegan = nil }
 
         manager.handleInterruption(
@@ -179,17 +177,17 @@ struct AudioSessionManagerTests {
             optionsValue: 0
         )
 
-        #expect(beganFired)
+        #expect(beganFired.withLock { $0 })
     }
 
     @Test("interruptionEndedFiresCallbackWithShouldResume — handleInterruption with .ended and .shouldResume option passes true")
     @MainActor
     func interruptionEndedFiresCallbackWithShouldResume() {
         let manager = AudioSessionManager.shared
-        var receivedShouldResume: Bool?
+        let receivedShouldResume = OSAllocatedUnfairLock<Bool?>(initialState: nil)
 
         manager.onInterruptionEnded = { shouldResume in
-            receivedShouldResume = shouldResume
+            receivedShouldResume.withLock { $0 = shouldResume }
         }
         defer { manager.onInterruptionEnded = nil }
 
@@ -198,17 +196,17 @@ struct AudioSessionManagerTests {
             optionsValue: AVAudioSession.InterruptionOptions.shouldResume.rawValue
         )
 
-        #expect(receivedShouldResume == true)
+        #expect(receivedShouldResume.withLock { $0 } == true)
     }
 
     @Test("interruptionEndedFiresCallbackWithShouldResumefalse — handleInterruption with .ended and no options passes false")
     @MainActor
     func interruptionEndedFiresCallbackWithShouldResumeFalse() {
         let manager = AudioSessionManager.shared
-        var receivedShouldResume: Bool?
+        let receivedShouldResume = OSAllocatedUnfairLock<Bool?>(initialState: nil)
 
         manager.onInterruptionEnded = { shouldResume in
-            receivedShouldResume = shouldResume
+            receivedShouldResume.withLock { $0 = shouldResume }
         }
         defer { manager.onInterruptionEnded = nil }
 
@@ -217,17 +215,17 @@ struct AudioSessionManagerTests {
             optionsValue: 0
         )
 
-        #expect(receivedShouldResume == false)
+        #expect(receivedShouldResume.withLock { $0 } == false)
     }
 
     @Test("interruptionBeganDoesNotFireEndedCallback — .began type only fires onInterruptionBegan")
     @MainActor
     func interruptionBeganDoesNotFireEndedCallback() {
         let manager = AudioSessionManager.shared
-        var endedFired = false
+        let endedFired = OSAllocatedUnfairLock<Bool>(initialState: false)
 
         manager.onInterruptionBegan = { }
-        manager.onInterruptionEnded = { _ in endedFired = true }
+        manager.onInterruptionEnded = { _ in endedFired.withLock { $0 = true } }
         defer {
             manager.onInterruptionBegan = nil
             manager.onInterruptionEnded = nil
@@ -238,18 +236,18 @@ struct AudioSessionManagerTests {
             optionsValue: 0
         )
 
-        #expect(!endedFired)
+        #expect(!endedFired.withLock { $0 })
     }
 
     @Test("interruptionWithNilTypeValueIsIgnored — nil typeValue does not crash or fire callbacks")
     @MainActor
     func interruptionWithNilTypeValueIsIgnored() {
         let manager = AudioSessionManager.shared
-        var beganFired = false
-        var endedFired = false
+        let beganFired = OSAllocatedUnfairLock<Bool>(initialState: false)
+        let endedFired = OSAllocatedUnfairLock<Bool>(initialState: false)
 
-        manager.onInterruptionBegan = { beganFired = true }
-        manager.onInterruptionEnded = { _ in endedFired = true }
+        manager.onInterruptionBegan = { beganFired.withLock { $0 = true } }
+        manager.onInterruptionEnded = { _ in endedFired.withLock { $0 = true } }
         defer {
             manager.onInterruptionBegan = nil
             manager.onInterruptionEnded = nil
@@ -257,7 +255,7 @@ struct AudioSessionManagerTests {
 
         manager.handleInterruption(typeValue: nil, optionsValue: nil)
 
-        #expect(!beganFired)
-        #expect(!endedFired)
+        #expect(!beganFired.withLock { $0 })
+        #expect(!endedFired.withLock { $0 })
     }
 }
