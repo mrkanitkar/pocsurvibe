@@ -88,20 +88,32 @@ public final class ArrangementPlayer {
 
     // MARK: - Transport
 
-    /// Begin playback at the given beat.
+    /// Begin playback at the given beat with an optional metronome
+    /// count-in lead-in.
     ///
-    /// In C1 this captures `startHostTime`, calls `graph.play()`, and
-    /// flips `isPlaying` to `true`. Count-in scheduling (C2) and seek
-    /// support layer on top — for now `atBeat` and `countInBars` are
-    /// accepted parameters but their bodies are deferred to C2.
+    /// When `countInBars > 0`, schedules `countInBars *
+    /// learner.beatsPerMeasure` metronome clicks on GM percussion
+    /// channel 9, at beat positions `atBeat - beats ..< atBeat`. The
+    /// observable `currentBeat` is initialised to the leading edge of
+    /// the count-in (`atBeat - beats`) so subsequent tick-driven
+    /// updates can count up to `atBeat` (the "real" downbeat).
+    ///
+    /// If no `PartSplit` has been loaded yet, the call is a no-op.
     ///
     /// - Parameters:
-    ///   - atBeat: Target start beat. Currently unused; reserved for C2.
-    ///   - countInBars: Number of count-in bars before song beat 0.
-    ///     Currently unused; reserved for C2.
+    ///   - atBeat: Target start beat. Defaults to 0.
+    ///   - countInBars: Number of count-in bars before `atBeat`.
+    ///     Defaults to 1. Pass `0` to skip the lead-in.
     public func start(atBeat: Double = 0, countInBars: Int = 1) {
-        _ = atBeat
-        _ = countInBars
+        guard let split else { return }
+        let beats = max(0, countInBars) * split.learner.beatsPerMeasure
+        if beats > 0 {
+            for i in 0..<beats {
+                let beatPos = atBeat - Double(beats - i)
+                graph.scheduleMetronomeClick(at: beatPos, channel: 9)
+            }
+        }
+        currentBeat = atBeat - Double(beats)
         startHostTime = HostTime.now()
         do {
             try graph.play()

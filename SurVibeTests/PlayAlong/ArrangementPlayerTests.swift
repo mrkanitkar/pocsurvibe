@@ -72,15 +72,55 @@ struct ArrangementPlayerTests {
         #expect(mock.playCalled)
     }
 
-    @Test func startWithoutCountInBaseBeginsAtBeatZero() async throws {
+    @Test func startWithDefaultCountInSchedulesOneBarOfClicks() async throws {
         let mock = MockGraph()
         let player = ArrangementPlayer(graph: mock)
         try await player.load(makeSplit())
         player.start()
-        // C1 base has no count-in scheduling (added in C2). currentBeat
-        // remains at 0 immediately after start.
-        #expect(player.currentBeat == 0)
+        // Default countInBars is 1; with beatsPerMeasure=4 we expect 4
+        // metronome clicks at beats [-4, -3, -2, -1] on channel 9 and
+        // currentBeat positioned at -4 ready to count up to 0.
+        #expect(player.currentBeat == -4)
+        #expect(mock.scheduledMetronomeClicks.count == 4)
+    }
+
+    @Test func startSchedulesCountInClicksBeforeBeatZero() async throws {
+        let mock = MockGraph()
+        let player = ArrangementPlayer(graph: mock)
+        try await player.load(makeSplit())
+        player.start(countInBars: 1)
+        let beats = mock.scheduledMetronomeClicks.map(\.0)
+        let channels = mock.scheduledMetronomeClicks.map(\.1)
+        #expect(beats == [-4, -3, -2, -1])
+        #expect(channels == [9, 9, 9, 9])
+    }
+
+    @Test func startWithCountInBars2DoublesClicks() async throws {
+        let mock = MockGraph()
+        let player = ArrangementPlayer(graph: mock)
+        try await player.load(makeSplit())
+        player.start(countInBars: 2)
+        #expect(mock.scheduledMetronomeClicks.count == 8)
+        let beats = mock.scheduledMetronomeClicks.map(\.0)
+        #expect(beats == [-8, -7, -6, -5, -4, -3, -2, -1])
+        #expect(player.currentBeat == -8)
+    }
+
+    @Test func startWithCountInBarsZeroSkipsScheduling() async throws {
+        let mock = MockGraph()
+        let player = ArrangementPlayer(graph: mock)
+        try await player.load(makeSplit())
+        player.start(countInBars: 0)
         #expect(mock.scheduledMetronomeClicks.isEmpty)
+        #expect(player.currentBeat == 0)
+    }
+
+    @Test func startSetsCurrentBeatToNegativeCountIn() async throws {
+        let mock = MockGraph()
+        let player = ArrangementPlayer(graph: mock)
+        try await player.load(makeSplit())
+        player.start(countInBars: 1)
+        #expect(player.currentBeat == -4)
     }
 
     @Test func pauseFlipsIsPlayingFalse() async throws {
