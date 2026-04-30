@@ -1,3 +1,4 @@
+// swiftlint:disable type_body_length
 import SVAudio
 import SVCore
 import SVLearning
