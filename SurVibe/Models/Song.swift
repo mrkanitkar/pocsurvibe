@@ -155,6 +155,47 @@ final class Song {
     /// Empty string defaults to 4/4.
     var timeSignatureRaw: String = ""
 
+    // MARK: - Play-Along Preferences
+
+    /// Index of the MIDI track designated as the learner's part.
+    ///
+    /// `nil` means the app auto-picks the melody track at load time.
+    /// Persisted per song so the user's choice survives across sessions.
+    ///
+    /// Back-compat single-track field. For multi-track learners
+    /// (e.g., piano RH + LH on separate MTrk chunks) read from
+    /// `learnerTrackIndices` instead — this field carries `learnerTrackIndices.first`.
+    var learnerTrackIndex: Int?
+
+    /// Full set of MIDI track indices designated as the learner's part(s).
+    ///
+    /// `nil` means the app auto-picks the learner track(s) at load time.
+    /// Persisted per song so the user's choice survives across sessions.
+    /// Stored as a SwiftData Transformable blob (CloudKit-compatible).
+    ///
+    /// Wave 3 review (D5): introduced because `PartSplit.learnerTrackIndices`
+    /// is `[Int]` and a single `Int?` lost data for multi-staff piano scores.
+    /// `learnerTrackIndex` is kept for back-compat and mirrors `.first`.
+    var learnerTrackIndices: [Int]?
+
+    /// Human-readable summary of the accompaniment instruments.
+    ///
+    /// Display-only string built at import time, e.g. "Harmonium · Tabla · Strings".
+    /// `nil` when the song has no accompaniment metadata.
+    var accompanimentInstrumentSummary: String?
+
+    /// Default practice-mode preset for this song.
+    ///
+    /// One of `"both"`, `"rightHand"`, or `"leftHand"`.
+    /// `nil` falls back to the app-wide default (both hands).
+    var defaultPracticeMode: String?
+
+    /// Last tempo scale the user applied to this song.
+    ///
+    /// `1.0` = original tempo; `0.5` = half speed; `2.0` = double.
+    /// `nil` means the song has never been tempo-scaled (use original).
+    var lastUsedTempoScale: Double?
+
     // MARK: - Business Logic
 
     /// Whether this song is available to free-tier users.

@@ -91,6 +91,25 @@ final class CCCallbackBox: Sendable {
     }
 }
 
+/// Thread-safe box holding an optional `@Sendable` Practice-mode callback.
+///
+/// Fired when a Bluetooth endpoint is registered via
+/// `MIDIInputManager.updateEndpoint(_:descriptor:)`. The callback is invoked
+/// on the main actor by the manager; the box itself only stores it.
+final class PracticeModeCallbackBox: Sendable {
+    private let lock = OSAllocatedUnfairLock<(@Sendable (EndpointDescriptor) -> Void)?>(
+        initialState: nil
+    )
+
+    func get() -> (@Sendable (EndpointDescriptor) -> Void)? {
+        lock.withLock { $0 }
+    }
+
+    func set(_ cb: (@Sendable (EndpointDescriptor) -> Void)?) {
+        lock.withLock { $0 = cb }
+    }
+}
+
 /// Thread-safe box holding an optional `EventLogging` reference.
 final class EventLoggerBox: Sendable {
     private let lock = OSAllocatedUnfairLock<(any EventLogging)?>(initialState: nil)
@@ -160,13 +179,15 @@ public final class MIDIInputManager: MIDIInputProviding {
     ///
     /// Written via `Task { @MainActor in }` from `refreshSources()`.
     /// Read on the main actor by `PlayAlongViewModel`.
-    @MainActor public internal(set) var isConnected: Bool = false
+    @MainActor
+    public internal(set) var isConnected: Bool = false
 
     /// Human-readable name of the first connected physical MIDI source.
     ///
     /// Written via `Task { @MainActor in }` from `refreshSources()`.
     /// Read on the main actor by `PlayAlongViewModel`.
-    @MainActor public internal(set) var connectedDeviceName: String?
+    @MainActor
+    public internal(set) var connectedDeviceName: String?
 
     // MARK: - Note-On Stream
 
@@ -250,15 +271,89 @@ public final class MIDIInputManager: MIDIInputProviding {
         set { programChangeCallbackBox.set(newValue) }
     }
 
+    // MARK: - Bluetooth Blocklist / Practice-Mode Dispatch (spec §D5, §7)
+
+    /// Fired on the main actor when a Bluetooth-classified endpoint is
+    /// registered via ``updateEndpoint(_:descriptor:)``.
+    ///
+    /// Consumers (e.g. `PlayAlongViewModel`) react by surfacing the
+    /// "Practice mode — Bluetooth MIDI delay disables scoring" chip and
+    /// suppressing scoring for events from that endpoint. The audio
+    /// (sampler-trigger) path is unaffected — the user still hears themselves
+    /// play.
+    ///
+    /// The closure is `@Sendable` because the manager itself is nonisolated;
+    /// the manager hops to `@MainActor` before invoking it.
+    public var onPracticeModeRequired: (@Sendable (EndpointDescriptor) -> Void)? {
+        get { practiceModeBox.get() }
+        set { practiceModeBox.set(newValue) }
+    }
+
+    /// Register or refresh classification for a CoreMIDI endpoint.
+    ///
+    /// Adds the endpoint's unique ID to the scoring blocklist when its
+    /// transport is `.bluetooth`, and dispatches ``onPracticeModeRequired`` on
+    /// the main actor so the UI can surface Practice mode. For any other
+    /// kind, the endpoint is removed from the blocklist (handles the case
+    /// where a previously-Bluetooth endpoint is re-classified, e.g. after the
+    /// user switches transports on a multi-mode keyboard).
+    ///
+    /// This method only mutates the blocklist; it does not connect or
+    /// disconnect the CoreMIDI port. Connection management remains in
+    /// `refreshSources()`.
+    ///
+    /// - Parameters:
+    ///   - ref: The CoreMIDI endpoint reference. Reserved for future use
+    ///     (currently unused — classification is taken from `descriptor.kind`).
+    ///   - descriptor: Pre-computed transport classification for the endpoint.
+    public func updateEndpoint(_ ref: MIDIEndpointRef, descriptor: EndpointDescriptor) {
+        _ = ref  // Reserved — classification is supplied via the descriptor.
+
+        let shouldNotify: Bool = state.withLock { s in
+            if descriptor.kind == .bluetooth {
+                let inserted = s.blockedEndpointIDs.insert(descriptor.endpointID).inserted
+                return inserted
+            } else {
+                s.blockedEndpointIDs.remove(descriptor.endpointID)
+                return false
+            }
+        }
+
+        guard shouldNotify else { return }
+
+        // Notification dispatched on the main actor — `descriptor` is Sendable.
+        let callback = practiceModeBox.get()
+        let desc = descriptor
+        Task { @MainActor in
+            callback?(desc)
+        }
+    }
+
+    /// Whether events from the given endpoint should be dropped from the
+    /// scoring stream.
+    ///
+    /// Consulted only by the scoring path (e.g. `ScoringAdapter` /
+    /// `ArrangementPlayer`). The sampler-trigger path does NOT consult this —
+    /// the user must still hear themselves play, even on Bluetooth.
+    ///
+    /// - Parameter id: CoreMIDI persistent ID of the source endpoint.
+    /// - Returns: `true` if the event originates from a blocked (Bluetooth)
+    ///   endpoint and should be excluded from scoring.
+    public func shouldDropEvent(fromEndpointID id: MIDIUniqueID) -> Bool {
+        state.withLock { $0.blockedEndpointIDs.contains(id) }
+    }
+
     // MARK: - Device Management (MIDIInputProviding)
 
     /// Forward to device manager for available MIDI device names.
-    @MainActor public var availableDeviceNames: [String] {
+    @MainActor
+    public var availableDeviceNames: [String] {
         deviceManager.availableDeviceNames
     }
 
     /// Forward to device manager for selected device name.
-    @MainActor public var selectedDeviceName: String? {
+    @MainActor
+    public var selectedDeviceName: String? {
         deviceManager.selectedDeviceName
     }
 
@@ -298,6 +393,14 @@ public final class MIDIInputManager: MIDIInputProviding {
         var isStarted = false
         var noteOnStream: AsyncStream<MIDIInputEvent>?
         var connectionStateStream: AsyncStream<Bool>?
+        /// CoreMIDI unique IDs whose events must be filtered from the scoring
+        /// stream. Populated by ``MIDIInputManager/updateEndpoint(_:descriptor:)``
+        /// when a Bluetooth source is detected (spec §D5, §7).
+        ///
+        /// The audio (sampler-trigger) path ignores this set so the user still
+        /// hears themselves play; only the scoring consumer consults
+        /// ``MIDIInputManager/shouldDropEvent(fromEndpointID:)``.
+        var blockedEndpointIDs: Set<MIDIUniqueID> = []
     }
 
     /// Sendable box shared with the CoreMIDI read callback.
@@ -336,6 +439,12 @@ public final class MIDIInputManager: MIDIInputProviding {
 
     /// Sendable box holding the optional event logger for persisting MIDI events.
     private let eventLoggerBox = EventLoggerBox()
+
+    /// Sendable box holding the optional Practice-mode callback.
+    ///
+    /// Fired on the main actor from ``updateEndpoint(_:descriptor:)`` whenever
+    /// a Bluetooth endpoint is registered. See ``onPracticeModeRequired``.
+    private let practiceModeBox = PracticeModeCallbackBox()
 
     static let logger = Logger.survibe(category: "MIDIInput")
 
@@ -436,8 +545,11 @@ public final class MIDIInputManager: MIDIInputProviding {
             &portRef
         ) { eventList, _ in
             MIDIInputManager.parseEventList(
-                eventList, into: box, callbacks: cbSet,
-                deJitter: djFilter, router: midiRouter
+                eventList,
+                into: box,
+                callbacks: cbSet,
+                deJitter: djFilter,
+                router: midiRouter
             )
         }
 
@@ -477,6 +589,7 @@ public final class MIDIInputManager: MIDIInputProviding {
             s.isStarted = false
             s.noteOnStream = nil
             s.connectionStateStream = nil
+            s.blockedEndpointIDs.removeAll()
 
             return snap
         }

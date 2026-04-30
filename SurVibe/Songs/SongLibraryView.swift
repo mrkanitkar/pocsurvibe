@@ -1,3 +1,4 @@
+import SVAudio
 import SVCore
 import SVLearning
 import SwiftUI
@@ -66,7 +67,10 @@ struct SongLibraryView: View {
             } else if viewModel.filteredSongs.isEmpty {
                 SongLibraryEmptyState(
                     hasActiveFilters: viewModel.hasActiveFilters,
-                    clearFiltersAction: { viewModel.clearAllFilters() }
+                    clearFiltersAction: { viewModel.clearAllFilters() },
+                    onTrySample: {
+                        // TODO: Wire to bundled Sukhkarta_Dukhharta.mxl import (Wave 4 D2)
+                    }
                 )
             } else {
                 songGrid
@@ -93,8 +97,10 @@ struct SongLibraryView: View {
             NavigationStack {
                 SongDetailView(song: song)
             }
-            .presentationDetents([.medium, .large])
-            .presentationDragIndicator(.visible)
+            // Note: presentationDetents removed — resizable detents on iPad
+            // caused fullScreenCover (Play Along) presented from inside this
+            // sheet to remount every ~720ms before its `.task` could run.
+            // Stable full-height sheet keeps Play Along's view tree stable.
         }
         .sheet(isPresented: $showImportSheet) {
             SongImportSheet()
@@ -235,10 +241,15 @@ struct SongLibraryView: View {
                     return .handled
                 }
         } else {
-            NavigationLink(value: song) {
+            NavigationLink(value: AppDestination.songDetail(song)) {
                 SongCardView(song: song)
             }
             .buttonStyle(.plain)
+            .simultaneousGesture(
+                TapGesture().onEnded {
+                    MultiChannelLog.shared.log(.info, "==> SongLibraryView: NavigationLink tap on '\(song.title)' (slug=\(song.slugId))")
+                }
+            )
             .focused($focusedSongID, equals: song.id)
             .focusRing(
                 itemID: song.id,

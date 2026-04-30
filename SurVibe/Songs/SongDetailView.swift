@@ -41,6 +41,19 @@ struct SongDetailView: View {
     /// Whether the play-along full-screen cover is shown.
     @State private var showPlayAlong = false
 
+    /// Selected learner track index for the Parts section.
+    ///
+    /// Initialized from `song.learnerTrackIndex` (or 0 when nil) on first
+    /// render via `.task`. Kept as local view state in Wave 4 D2; later
+    /// waves persist the user's choice back to the Song / SongProgress.
+    @State private var learnerTrackIndex: Int = 0
+
+    /// Selected tonic Sa MIDI pitch for the Parts section.
+    ///
+    /// Defaults to MIDI 60 (`C4`). Local view state in Wave 4 D2;
+    /// `SongProgress.preferredSaHz` is the eventual persistence target.
+    @State private var tonicSaPitch: UInt8 = 60
+
     // MARK: - Constants
 
     /// Two-column grid layout for metadata items.
@@ -55,6 +68,8 @@ struct SongDetailView: View {
         ScrollView {
             VStack(spacing: 16) {
                 headerSection
+
+                partsSection
 
                 playbackSection
 
@@ -82,6 +97,7 @@ struct SongDetailView: View {
 
                 // Practice button
                 Button {
+                    MultiChannelLog.shared.log(.info, "==> SongDetailView: Practice button tapped, presenting cover")
                     showPractice = true
                 } label: {
                     Label("Practice This Song", systemImage: "music.note.list")
@@ -107,9 +123,21 @@ struct SongDetailView: View {
                 PlayAlongSceneHost(song: song)
             }
         }
+        .onChange(of: showPlayAlong) { _, presenting in
+            // Pause the inline preview engine while Play Along is on
+            // screen — its currentTime ticks at the audio buffer rate
+            // and reactively recomputed SongDetailView's body, which
+            // cascaded into the presented cover and starved touch events
+            // on the inner SongPlayAlongView.
+            if presenting {
+                MultiChannelLog.shared.log(.info, "==> SongDetailView: stopping inline engine for Play Along")
+                engine.stop()
+            }
+        }
         .navigationTitle(song.title)
         .navigationBarTitleDisplayMode(.inline)
         .task {
+            learnerTrackIndex = song.learnerTrackIndex ?? 0
             await engine.load(song: song)
         }
         .onDisappear {
@@ -181,6 +209,34 @@ struct SongDetailView: View {
         }
         .padding()
         .background(themeManager.resolved.cardBackgroundColor, in: RoundedRectangle(cornerRadius: 12))
+    }
+
+    /// "Parts" section letting the user pick a learner track and tonic Sa.
+    ///
+    /// Always shown — single-track songs collapse to a one-entry "Piano"
+    /// picker (still useful for the Sa picker and preview buttons).
+    @ViewBuilder
+    private var partsSection: some View {
+        let labels = SongDetailViewParts.trackLabels(for: song)
+        let accomp = song.accompanimentInstrumentSummary?
+            .split(separator: "·")
+            .map { $0.trimmingCharacters(in: .whitespaces) }
+            .filter { !$0.isEmpty } ?? []
+        SongDetailViewParts(
+            song: song,
+            trackLabels: labels,
+            accompanimentInstruments: accomp,
+            learnerTrackIndex: $learnerTrackIndex,
+            tonicSaPitch: $tonicSaPitch,
+            // TODO(E1): wire to ArrangementPlayer.previewLearner() in Wave 5.
+            onPreviewLearner: {
+                MultiChannelLog.shared.log(.info, "==> SongDetailView: preview learner (stub)")
+            },
+            // TODO(E1): wire to ArrangementPlayer.previewBacking() in Wave 5.
+            onPreviewBacking: {
+                MultiChannelLog.shared.log(.info, "==> SongDetailView: preview backing (stub)")
+            }
+        )
     }
 
     /// Playback controls section with a section header.

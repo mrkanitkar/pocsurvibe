@@ -97,7 +97,7 @@ struct AuditionPipelineSection: View {
             .accessibilityLabel("Pipeline playback tempo")
             .accessibilityValue(String(format: "%.2f times", tempo))
             .onChange(of: tempo) { _, newValue in
-                graph?.setTempo(rate: newValue)
+                graph?.setTempoScale(newValue)
                 PipelineFileLog.shared.log(
                     "setTempo: rate=\(String(format: "%.2f", newValue))"
                 )

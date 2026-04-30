@@ -47,7 +47,7 @@ public struct PerformanceSnapshot: Sendable, Codable {
 
     /// Capture a live snapshot from the shared diagnostic singletons.
     ///
-    /// Reads from `LatencyProbe.shared` and `LatencyHistogram.shared` by default.
+    /// Reads from `PracticeLatencyProbe.shared` and `LatencyHistogram.shared` by default.
     /// Pass a custom histogram for per-component snapshots.
     ///
     /// - Parameters:
@@ -63,7 +63,7 @@ public struct PerformanceSnapshot: Sendable, Codable {
         PerformanceSnapshot(
             latency: histogram.summary(),
             droppedFrames: frameDropCounter.count,
-            probeCount: LatencyProbe.shared.completedCount,
+            probeCount: PracticeLatencyProbe.shared.completedCount,
             bufferFillLevel: bufferFillLevel
         )
     }

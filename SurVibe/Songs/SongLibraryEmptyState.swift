@@ -3,7 +3,8 @@ import SwiftUI
 /// Empty state view for the song library.
 ///
 /// Displays two distinct modes:
-/// - **No songs at all**: Shows a general "no songs" message.
+/// - **No songs at all**: Shows a general "no songs" message with updated import guidance
+///   and a "Try a sample" button to load a bundled song.
 /// - **No matching filters**: Shows a "no results" message with a "Clear Filters" button.
 struct SongLibraryEmptyState: View {
     // MARK: - Properties
@@ -13,6 +14,9 @@ struct SongLibraryEmptyState: View {
 
     /// Action to clear all active filters.
     var clearFiltersAction: (() -> Void)?
+
+    /// Action to import a bundled sample song (e.g. Sukhkarta_Dukhharta.mxl).
+    var onTrySample: () -> Void = {}
 
     // MARK: - Body
 
@@ -29,6 +33,17 @@ struct SongLibraryEmptyState: View {
                 .buttonStyle(.bordered)
                 .accessibilityLabel(Text("Clear Filters"))
                 .accessibilityHint(Text("Double tap to remove all filters and show all songs"))
+            } else {
+                Button {
+                    onTrySample()
+                } label: {
+                    Label("Try a sample", systemImage: "arrow.down.circle")
+                }
+                .buttonStyle(.bordered)
+                .accessibilityLabel(Text("Try a sample"))
+                .accessibilityHint(
+                    Text("Double tap to import a bundled sample song so you can start playing")
+                )
             }
         }
     }
@@ -50,15 +65,26 @@ struct SongLibraryEmptyState: View {
         if hasActiveFilters {
             "Try adjusting your filters or search terms to find more songs."
         } else {
-            "Songs will appear here once content is loaded."
+            "Drop in a .mxl, .musicxml, or .xml file from MuseScore, your teacher,"
+                + " or your own composition. Multi-instrument songs play their backing"
+                + " while you practice the piano part."
         }
     }
+
+    // MARK: - Test Seam
+
+    #if DEBUG
+    /// Simulates a tap on the "Try a sample" button for testing.
+    func simulateTrySampleTap() { onTrySample() }
+    #endif
 }
 
 // MARK: - Preview
 
 #Preview("No Songs") {
-    SongLibraryEmptyState(hasActiveFilters: false)
+    SongLibraryEmptyState(hasActiveFilters: false, onTrySample: {
+        print("Try a sample tapped")
+    })
 }
 
 #Preview("No Matches") {

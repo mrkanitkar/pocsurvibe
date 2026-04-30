@@ -99,6 +99,21 @@ extension MIDIInputManager {
                 if firstName == nil { firstName = Self.sourceName(source) }
                 Self.logger.info("Connected to MIDI source \(i): \(Self.sourceName(source), privacy: .public)")
                 Self.logEndpointProperties(source, tag: "MIDI-SRC")
+
+                // Wave 5 E1: register the endpoint with the practice-mode
+                // dispatcher so Bluetooth-classified sources land on the
+                // scoring blocklist and surface the Practice-mode chip.
+                let kind = BluetoothEndpointFilter.detectKind(source)
+                var uniqueID: MIDIUniqueID = 0
+                _ = MIDIObjectGetIntegerProperty(
+                    source, kMIDIPropertyUniqueID, &uniqueID
+                )
+                let descriptor = EndpointDescriptor(
+                    endpointID: uniqueID,
+                    displayName: Self.sourceName(source),
+                    kind: kind
+                )
+                self.updateEndpoint(source, descriptor: descriptor)
             } else {
                 Self.logger.error(
                     "MIDIPortConnectSource failed for source \(i): OSStatus=\(connectStatus)"

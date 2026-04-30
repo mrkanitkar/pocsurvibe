@@ -357,7 +357,9 @@ private func makeSongDTO(
             WesternNoteDTO(note: "C4", duration: 1.0, midiNumber: 60)
         ],
         ragaName: nil,
-        isFree: true
+        isFree: true,
+        keySignature: nil,
+        timeSignature: nil
     )
 }
 

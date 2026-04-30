@@ -4,13 +4,13 @@ import SwiftUI
 
 /// Songs tab — browse and play the song library.
 ///
-/// On iPad and Mac Catalyst (regular horizontal size class), renders a
-/// `NavigationSplitView` with `SongLibrarySidebar` in the sidebar column
-/// and `SongDetailView` in the detail column. On iPhone (compact), the
-/// sidebar column collapses and behaves like a `NavigationStack`.
-///
-/// Injects `SongLibraryViewModel` via the environment for the full
-/// `SongLibraryView` used on compact layouts.
+/// Single-column `NavigationStack` on all sizes (iPhone + iPad). Was
+/// previously a `NavigationSplitView` with a sidebar, but the sidebar
+/// detail column reflowed on every reactive tick (e.g. inline-preview
+/// `currentTime`), which propagated into Play Along's `fullScreenCover`
+/// and remounted `SongPlayAlongView` every ~720ms before its `.task`
+/// could run — hanging the feature. User-confirmed they do not need
+/// the sidebar.
 struct SongsTab: View {
     // MARK: - Properties
 
@@ -30,23 +30,27 @@ struct SongsTab: View {
         @Bindable
         var router = router
 
-        NavigationSplitView {
+        NavigationStack(path: router.pathForTab(.songs)) {
             Group {
                 if let viewModel {
-                    SongLibrarySidebar(selection: $router.selectedSongID)
+                    SongLibraryView()
                         .environment(viewModel)
                 } else {
                     ProgressView()
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
-            .navigationSplitViewColumnWidth(min: 280, ideal: 360, max: 420)
-        } detail: {
-            NavigationStack(path: router.pathForTab(.songs)) {
-                detailContent(for: router.selectedSongID)
-                    .navigationDestination(for: Song.self) { song in
-                        PlayAlongSceneHost(song: song)
-                    }
+            .navigationDestination(for: AppDestination.self) { destination in
+                switch destination {
+                case .songDetail(let song):
+                    SongDetailView(song: song)
+                case .playAlong(let song):
+                    PlayAlongSceneHost(song: song)
+                case .practiceMode:
+                    EmptyView()  // PracticeSession is presented as fullScreenCover, not pushed.
+                default:
+                    EmptyView()
+                }
             }
         }
         .background(
@@ -62,27 +66,6 @@ struct SongsTab: View {
             if viewModel == nil {
                 viewModel = SongLibraryViewModel(modelContext: modelContext)
             }
-        }
-    }
-
-    // MARK: - Private Methods
-
-    /// Resolves the detail column content for the currently selected song ID.
-    ///
-    /// Shows `SongDetailView` when a song is selected, or a
-    /// `ContentUnavailableView` prompt when nothing is selected.
-    ///
-    /// - Parameter songID: The optional selected `Song.ID`.
-    @ViewBuilder
-    private func detailContent(for songID: Song.ID?) -> some View {
-        if let songID {
-            SongDetailViewResolver(songID: songID)
-        } else {
-            ContentUnavailableView(
-                "Select a Song",
-                systemImage: "music.note.list",
-                description: Text("Choose a song from the sidebar.")
-            )
         }
     }
 }

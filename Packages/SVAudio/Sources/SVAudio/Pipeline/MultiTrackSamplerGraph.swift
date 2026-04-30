@@ -5,6 +5,36 @@ import os
 
 private let graphLogger = Logger.survibe(category: "MultiTrackSamplerGraph")
 
+/// Abstraction over `MultiTrackSamplerGraph` for testability.
+///
+/// `ArrangementPlayer` (Wave 3) depends on this protocol so tests can
+/// inject a mock graph without spinning up AVAudioEngine.
+@MainActor
+public protocol MultiTrackSamplerGraphProtocol: AnyObject, Sendable {
+    /// Load rendered MIDI data into the sequencer and route tracks.
+    func loadMIDI(_ rendered: RenderedMIDI) throws
+    /// Scale playback tempo via `AVAudioSequencer.rate`. Clamped to 0.5–1.5.
+    func setTempoScale(_ rate: Float)
+    /// Start sequencer playback.
+    func play() throws
+    /// Pause without resetting position.
+    func pause()
+    /// Stop and reset to start.
+    func stop()
+    /// Resume playback from current position (alias for `play()` when paused).
+    func resume() throws
+    /// Seek to a specific beat position.
+    func seek(toBeat beat: Double)
+    /// Mute specific track sampler outputs by index.
+    func setMutedTracks(_ indices: Set<Int>)
+    /// Schedule a MIDI note-on event for the metronome click at the given beat.
+    func scheduleMetronomeClick(at beat: Double, channel: UInt8)
+    /// Current playback position in beats.
+    var currentPositionInBeats: Double { get }
+    /// Whether the sequencer is currently playing.
+    var isPlaying: Bool { get }
+}
+
 /// Multi-channel sampler graph for the audition `.mxl` pipeline.
 ///
 /// Topology:
@@ -16,10 +46,11 @@ private let graphLogger = Logger.survibe(category: "MultiTrackSamplerGraph")
 ///
 /// The sub-mixer isolates audition processing from the rest of the
 /// app's audio (tanpura, metronome, production sampler, mic).
-/// The TimePitch node lets us scale tempo (rate 0.5–1.5×) without
-/// pitch shifting.
+/// TimePitch is kept as a 1.0 passthrough for pitch preservation;
+/// tempo scaling uses `AVAudioSequencer.rate` to avoid the 50–100 ms
+/// overlap-add DSP latency that `timePitch.rate` introduces.
 @MainActor
-public final class MultiTrackSamplerGraph {
+public final class MultiTrackSamplerGraph: MultiTrackSamplerGraphProtocol {
 
     /// MIDI hard cap — 16 channels per port; full orchestral scores
     /// exceed this and require sub-mixing (out of POC scope).
@@ -227,18 +258,45 @@ public final class MultiTrackSamplerGraph {
         }
     }
 
+    // MARK: - Transport State
+
     /// Whether the sequencer is currently playing.
     public var isPlaying: Bool { sequencer?.isPlaying ?? false }
 
-    /// Set playback tempo as a rate multiplier. Clamped to `[minRate, maxRate]`.
-    /// Pitch is preserved (TimePitch overlap-add adds ~50–100 ms latency).
-    public func setTempo(rate: Float) {
-        let clamped = max(Self.minRate, min(Self.maxRate, rate))
-        timePitch.rate = clamped
-        graphLogger.info("setTempo rate=\(clamped, privacy: .public)")
+    /// Current playback position in beats.
+    public var currentPositionInBeats: Double {
+        sequencer?.currentPositionInBeats ?? 0
     }
 
+    #if DEBUG
+    /// Test seam: current `AVAudioSequencer.rate` value.
+    public var sequencerRate: Float { sequencer?.rate ?? 1.0 }
+    /// Test seam: current `AVAudioUnitTimePitch.rate` value.
+    public var timePitchRate: Float { timePitch.rate }
+    #endif
+
+    // MARK: - Tempo
+
+    /// Scale playback tempo via `AVAudioSequencer.rate`.
+    ///
+    /// Uses the sequencer's native rate scaling which adjusts the MIDI
+    /// timeline directly, avoiding the 50–100 ms overlap-add DSP latency
+    /// that `AVAudioUnitTimePitch.rate` introduces. `timePitch` stays at
+    /// 1.0 as a passthrough. Clamped to `[minRate, maxRate]`.
+    ///
+    /// - Parameter rate: Tempo multiplier (0.5 = half speed, 1.5 = 1.5x).
+    public func setTempoScale(_ rate: Float) {
+        let clamped = max(Self.minRate, min(Self.maxRate, rate))
+        sequencer?.rate = clamped
+        // timePitch stays at 1.0 — no time-stretch DSP on the audio path
+        graphLogger.info("setTempoScale rate=\(clamped, privacy: .public)")
+    }
+
+    // MARK: - Transport Controls
+
     /// Start sequencer playback. Throws underlying `AVAudioSequencer` error.
+    ///
+    /// - Throws: `PipelineError.engineNotRunning` if no sequencer is loaded.
     public func play() throws {
         guard let sequencer else {
             throw PipelineError.engineNotRunning
@@ -256,6 +314,17 @@ public final class MultiTrackSamplerGraph {
         )
     }
 
+    /// Resume playback from current position.
+    ///
+    /// Alias for `play()` when the sequencer is paused. If already playing,
+    /// this is a no-op.
+    ///
+    /// - Throws: `PipelineError.engineNotRunning` if no sequencer is loaded.
+    public func resume() throws {
+        guard !isPlaying else { return }
+        try play()
+    }
+
     /// Pause without resetting position.
     public func pause() {
         let pos = sequencer?.currentPositionInSeconds ?? 0
@@ -271,6 +340,59 @@ public final class MultiTrackSamplerGraph {
         sequencer?.currentPositionInSeconds = 0
         graphLogger.info("stop from pos=\(pos, privacy: .public)s")
         PipelineFileLog.shared.log("MultiTrackSamplerGraph.stop from pos=\(pos)s")
+    }
+
+    /// Seek to a specific beat position in the sequencer timeline.
+    ///
+    /// - Parameter beat: Target position in beats. Clamped to non-negative.
+    public func seek(toBeat beat: Double) {
+        let clamped = max(0, beat)
+        sequencer?.currentPositionInBeats = clamped
+        graphLogger.info("seek toBeat=\(clamped, privacy: .public)")
+    }
+
+    // MARK: - Track Muting
+
+    /// Mute specific tracks by index via `AVMusicTrack.isMuted`.
+    ///
+    /// Tracks not in `indices` are unmuted. Requires a loaded sequencer;
+    /// no-ops if no MIDI is loaded yet.
+    ///
+    /// - Parameter indices: Set of track indices to mute.
+    public func setMutedTracks(_ indices: Set<Int>) {
+        guard let sequencer else { return }
+        for (i, track) in sequencer.tracks.enumerated() {
+            track.isMuted = indices.contains(i)
+        }
+        graphLogger.info("setMutedTracks: \(indices, privacy: .public)")
+    }
+
+    // MARK: - Metronome
+
+    /// Schedule a MIDI note-on event for a metronome click at the given beat.
+    ///
+    /// Adds a short percussion note (note 37 = side stick, velocity 100,
+    /// duration 0.1 beats) on the specified MIDI channel at the target beat
+    /// position. Requires a loaded sequencer with tracks.
+    ///
+    /// - Parameters:
+    ///   - beat: Beat position where the click should sound.
+    ///   - channel: MIDI channel for the click event.
+    public func scheduleMetronomeClick(at beat: Double, channel: UInt8) {
+        guard let sequencer, !sequencer.tracks.isEmpty else { return }
+        // Use the last track for metronome events to avoid conflicts
+        // with melodic content on earlier tracks.
+        let track = sequencer.tracks[sequencer.tracks.count - 1]
+        let event = AVMIDINoteEvent(
+            channel: UInt32(channel),
+            key: 37,          // GM side stick
+            velocity: 100,
+            duration: 0.1
+        )
+        track.addEvent(event, at: beat)
+        graphLogger.info(
+            "scheduleMetronomeClick at beat=\(beat, privacy: .public) ch=\(channel, privacy: .public)"
+        )
     }
 
     /// Detach all pipeline nodes from the shared engine. Idempotent.

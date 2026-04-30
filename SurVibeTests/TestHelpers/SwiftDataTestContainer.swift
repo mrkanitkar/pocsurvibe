@@ -27,7 +27,7 @@ enum SwiftDataTestContainer {
     /// subset still get the full schema — there is no cost to including
     /// unused types in an empty store.
     ///
-    /// Must stay in sync with `SurVibeApp.appSchema` — all 14 models.
+    /// Must stay in sync with `SurVibeApp.appSchema` — all 15 models.
     static let schema = Schema([
         UserProfile.self,
         RiyazEntry.self,
@@ -43,6 +43,7 @@ enum SwiftDataTestContainer {
         MIDIEventEntry.self,
         PitchLogEntry.self,
         RecordedTake.self,
+        PlayAlongSession.self,
     ])
 
     /// Process-global container — created once on first access.
@@ -82,6 +83,7 @@ enum SwiftDataTestContainer {
         try context.delete(model: MIDIEventEntry.self)
         try context.delete(model: PitchLogEntry.self)
         try context.delete(model: RecordedTake.self)
+        try context.delete(model: PlayAlongSession.self)
         try context.save()
         return context
     }
@@ -99,7 +101,7 @@ enum SwiftDataTestContainer {
 struct SwiftDataSchemaSyncTests {
     /// Hard-coded model count. Bumping this is the checkpoint that forces
     /// a human to revisit all three sync points above.
-    private static let expectedModelCount = 14
+    private static let expectedModelCount = 15
 
     @Test("Test container schema matches the hard-coded model count")
     func testContainerSchemaCountMatchesExpected() {

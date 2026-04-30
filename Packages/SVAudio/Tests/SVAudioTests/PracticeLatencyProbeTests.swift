@@ -1,15 +1,15 @@
 import Testing
 @testable import SVAudio
 
-struct LatencyProbeTests {
+struct PracticeLatencyProbeTests {
 
     @Test func sharedInstanceExists() {
-        let probe = LatencyProbe.shared
+        let probe = PracticeLatencyProbe.shared
         #expect(probe != nil)
     }
 
     @Test func recordCompletedTokenIncreasesCount() {
-        let probe = LatencyProbe.shared
+        let probe = PracticeLatencyProbe.shared
         probe.reset()
 
         var token = ProbeToken()
@@ -23,7 +23,7 @@ struct LatencyProbeTests {
     }
 
     @Test func recordIncompleteTokenIsIgnored() {
-        let probe = LatencyProbe.shared
+        let probe = PracticeLatencyProbe.shared
         probe.reset()
 
         var token = ProbeToken()
@@ -35,7 +35,7 @@ struct LatencyProbeTests {
     }
 
     @Test func resetClearsCount() {
-        let probe = LatencyProbe.shared
+        let probe = PracticeLatencyProbe.shared
         probe.reset()
 
         var token = ProbeToken()

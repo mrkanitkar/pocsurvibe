@@ -1,3 +1,4 @@
+// swiftlint:disable type_body_length
 import SVAudio
 import SVCore
 import SVLearning
@@ -159,53 +160,44 @@ struct SongPlayAlongView: View {
     // MARK: - Body
 
     var body: some View {
-        ZStack {
-            // Layer 1 — theme gradient background
+        let _ = MultiChannelLog.shared.log(.info, "BODY-EVAL SongPlayAlongView body recomputed (song=\(song.title))")
+        // PlayTab-style linear layout — simple VStack so each child owns its
+        // own observation scope. Heavy ticking subviews (toolbar, content,
+        // piano) read viewModel directly; the parent body only re-renders
+        // on a small set of properties (chromeVisibility, playbackState).
+        VStack(spacing: 0) {
+            // 1. Top toolbar — full width.
+            playAlongToolbarSection
+
+            // 2. Content area (notation / falling notes / staff) — flexible.
+            contentArea
+                .frame(maxWidth: .infinity, maxHeight: .infinity)
+
+            // 3. Bottom transport bar with big play button.
+            bottomTransportBar
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
+
+            // 4. Piano keyboard — fixed height like Play tab.
+            keyboardContent
+                .frame(height: 280)
+        }
+        .background(
             LinearGradient(
                 colors: themeManager.resolved.backgroundGradient,
                 startPoint: .topLeading,
                 endPoint: .bottomTrailing
             )
             .ignoresSafeArea()
-
-            // Layer 2 — main content (toolbar + notation + piano),
-            // side-by-side in landscape / regular-width, stacked otherwise.
-            layoutContent
-
-            // Layer 3 — persistent chrome overlays (always on top of content)
-            VStack {
-                HStack(alignment: .top) {
-                    tanpuraRagaPill
-                    Spacer()
-                    micSourcePill
-                        .allowsHitTesting(false)
-                }
-                .padding(.horizontal, 16)
-                .padding(.top, 16)
-                Spacer()
-            }
-
-            // Layer 4 — persistent pause dot, above the piano keyboard
-            VStack {
-                Spacer()
-                PersistentPauseDot(
-                    isPlaying: viewModel.playbackState == .playing,
-                    foregroundColor: themeManager.resolved.primaryTextColor,
-                    onToggle: handlePlayPause
-                )
-                .padding(.bottom, 20)
-            }
-
-            // Layer 5 — first-time coach mark (auto-dismisses, AppStorage-gated)
-            FirstTimeCoachMark()
+        )
+        .overlay(alignment: .topLeading) { tanpuraRagaPill.padding(16) }
+        .overlay(alignment: .topTrailing) {
+            micSourcePill.padding(16).allowsHitTesting(false)
         }
+        .overlay { FirstTimeCoachMark() }
         .onAppear {
             MultiChannelLog.shared.log(.info, "ZSTACK SongPlayAlongView onAppear fired")
         }
-        .animation(
-            reduceMotion ? nil : .easeInOut(duration: 0.25),
-            value: viewModel.chromeVisibility
-        )
         .overlay(alignment: .top) {
             // Correctness flash banner — shows briefly on each note attempt
             if showCorrectnessBanner {
@@ -230,7 +222,10 @@ struct SongPlayAlongView: View {
             MicPermissionPrePrompt(onContinue: {})
         }
         .task {
-            MultiChannelLog.shared.log(.info, ">>> SongPlayAlongView.task song=\(song.title)")
+            MultiChannelLog.shared.log(.info, ">>> SongPlayAlongView.task ENTERED song=\(song.title) cancelled=\(Task.isCancelled)")
+            defer {
+                MultiChannelLog.shared.log(.info, "<<< SongPlayAlongView.task EXITING song=\(song.title) cancelled=\(Task.isCancelled)")
+            }
             viewModel.modelContext = modelContext
             // Derive view mode and notation from the active theme preset
             viewModel.viewMode = themeManager.currentPreset.viewMode
@@ -307,6 +302,8 @@ struct SongPlayAlongView: View {
             PlayAlongResultsOverlay(
                 songTitle: song.title,
                 accuracy: viewModel.accuracy,
+                notesCorrectPercent: viewModel.notesCorrectPercent,
+                timingAccuracyPercent: viewModel.timingAccuracyPercent,
                 notesHit: viewModel.notesHit,
                 totalNotes: viewModel.noteEvents.count,
                 streak: viewModel.longestStreak,
@@ -330,6 +327,15 @@ struct SongPlayAlongView: View {
         }
         .sheet(isPresented: $showTanpuraSheet) {
             tanpuraSettingsSheetContent
+        }
+        .sheet(isPresented: $viewModel.showLoopBuilder) {
+            LoopBuilderView(
+                totalMeasures: viewModel.totalMeasures,
+                initialStart: viewModel.loopRegion?.startMeasure ?? 1,
+                initialEnd: viewModel.loopRegion?.endMeasure
+            ) { region in
+                viewModel.loopRegion = region
+            }
         }
         .sheet(isPresented: $showAppearanceSheet) {
             NavigationStack {
@@ -367,6 +373,71 @@ struct SongPlayAlongView: View {
 
     // MARK: - Layout
 
+    /// Top toolbar wrapper for the new linear layout. Reads viewModel
+    /// internally so parent body doesn't tick on toolbar state.
+    @ViewBuilder
+    private var playAlongToolbarSection: some View {
+        PlayAlongToolbar(
+            viewModel: viewModel,
+            playbackState: viewModel.playbackState,
+            tempoScale: viewModel.tempoScale,
+            isWaitModeEnabled: viewModel.isWaitModeEnabled,
+            isSoundEnabled: viewModel.isSoundEnabled,
+            isMIDIConnected: viewModel.isMIDIConnected,
+            midiDeviceName: viewModel.midiDeviceName,
+            baseBPM: song.tempo,
+            songTitle: song.title,
+            songSubtitle: song.artist.isEmpty ? "Aaroha" : song.artist,
+            playbackProgress: viewModel.playbackProgress,
+            playbackDuration: viewModel.playbackDuration,
+            onPlayPause: handlePlayPause,
+            onStop: handleStop,
+            onTempoChange: { viewModel.tempoScale = $0 },
+            onWaitModeToggle: {
+                viewModel.toggleWaitMode()
+                storedWaitMode = viewModel.isWaitModeEnabled
+            },
+            onSoundToggle: {
+                viewModel.isSoundEnabled.toggle()
+                tanpura.setSoundEnabled(viewModel.isSoundEnabled)
+            },
+            onTanpuraToggle: { tanpura.toggleEnabled() },
+            onModeTapped: { showAppearanceSheet = true },
+            onSeek: { viewModel.seek(to: $0) }
+        )
+        .frame(maxWidth: .infinity)
+        .padding(.horizontal, 16)
+        .padding(.top, 60)  // leave room for tanpura/mic pills overlay
+    }
+
+    /// Bottom transport bar with a big, obvious play button.
+    /// The play button always responds to taps — independent of body re-eval rate.
+    @ViewBuilder
+    private var bottomTransportBar: some View {
+        let isPlaying = viewModel.playbackState == .playing
+        HStack(spacing: 24) {
+            Button { handleStop() } label: {
+                Image(systemName: "stop.fill")
+                    .font(.system(size: 24))
+                    .frame(width: 56, height: 56)
+                    .background(.thinMaterial, in: Circle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel("Stop")
+
+            Button { handlePlayPause() } label: {
+                Image(systemName: isPlaying ? "pause.fill" : "play.fill")
+                    .font(.system(size: 32))
+                    .frame(width: 72, height: 72)
+                    .background(themeManager.resolved.accentColor, in: Circle())
+                    .foregroundStyle(.white)
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(isPlaying ? "Pause" : "Play")
+        }
+        .frame(maxWidth: .infinity)
+    }
+
     /// Notation, toolbar, scoring HUD, and pitch feedback — everything above (or
     /// beside) the keyboard. Extracted so `layoutContent` can place it in either
     /// a `VStack` or an `HStack` depending on `shouldUseLandscapeLayout`.
@@ -376,6 +447,7 @@ struct SongPlayAlongView: View {
             if viewModel.chromeVisibility == .summoned {
                 // Transport toolbar — theme-driven, only visible when chrome is summoned.
                 PlayAlongToolbar(
+                    viewModel: viewModel,
                     playbackState: viewModel.playbackState,
                     tempoScale: viewModel.tempoScale,
                     isWaitModeEnabled: viewModel.isWaitModeEnabled,
@@ -670,17 +742,21 @@ struct SongPlayAlongView: View {
 
     /// Handle the play/pause button tap based on current playback state.
     private func handlePlayPause() {
-        switch viewModel.playbackState {
+        let state = viewModel.playbackState
+        MultiChannelLog.shared.log(.info, "==> handlePlayPause TAP state=\(state) arrangementWired=\(viewModel.arrangementPlayer != nil)")
+        switch state {
         case .idle, .stopped:
             Task {
+                MultiChannelLog.shared.log(.info, "... handlePlayPause: calling startSession")
                 await viewModel.startSession()
+                MultiChannelLog.shared.log(.info, "... handlePlayPause: startSession returned, newState=\(viewModel.playbackState)")
             }
         case .playing:
             viewModel.pauseSession()
         case .paused:
             viewModel.resumeSession()
         case .loading, .error:
-            break
+            MultiChannelLog.shared.log(.warning, "... handlePlayPause: ignored — state=\(state)")
         }
     }
 

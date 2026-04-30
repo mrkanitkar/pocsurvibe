@@ -86,6 +86,20 @@ final class NoteRouter {
         return []
     }
 
+    // MARK: - External hooks (Wave 5 E1)
+
+    /// Optional observer fired on every MIDI note-on event after Phase-1
+    /// highlight processing, before the MainActor scoring hop.
+    ///
+    /// Used by `PlayAlongViewModel` (Wave 5 E1) to forward events into
+    /// `ScoringAdapter` for the Learn-a-Song play-along scoring path.
+    /// `nil` (the default) leaves behavior unchanged.
+    ///
+    /// Called on CoreMIDI's high-priority thread — closures must be
+    /// real-time-safe and dispatch any `@MainActor` work to a `Task`
+    /// themselves.
+    var onMIDINoteOnObserved: (@Sendable (MIDIInputEvent) -> Void)?
+
     // MARK: - Dependencies (injected) — ALL PRIVATE
 
     private let midiInput: any MIDIInputProviding
@@ -341,6 +355,16 @@ final class NoteRouter {
                 coordinator.noteOn(midiNote)
             } else {
                 coordinator.noteOff(midiNote, channel: event.channel)
+            }
+
+            // Wave 5 E1: forward note-on events to optional external observer
+            // (PlayAlongViewModel uses this to drive ScoringAdapter). Hop
+            // to the main actor to read the observer property because the
+            // surrounding closure runs on CoreMIDI's high-priority thread.
+            if event.isNoteOn {
+                Task { @MainActor [weak self] in
+                    self?.onMIDINoteOnObserved?(event)
+                }
             }
 
             // Phase 2: MainActor — scoring only.

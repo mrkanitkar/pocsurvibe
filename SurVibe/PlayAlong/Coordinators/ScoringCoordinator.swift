@@ -47,10 +47,24 @@ final class ScoringCoordinator {
     /// XP earned. Computed by `finalize(songDifficulty:)`.
     private(set) var xpEarned: Int = 0
 
+    /// Percentage of expected notes the user pressed correctly (0.0–1.0).
+    ///
+    /// Set by `finalize(songDifficulty:)`. Equals `notesHit / max(1, noteScores.count)`.
+    /// Zero until finalization runs.
+    private(set) var notesCorrectPercent: Double = 0
+
+    /// Weighted timing accuracy (0.0–1.0): perfect=1.0, good=0.7, late/early=0.4, miss=0.0.
+    ///
+    /// Set by `finalize(songDifficulty:)`. Zero until finalization runs.
+    private(set) var timingAccuracyPercent: Double = 0
+
     // MARK: - Internal state
 
     /// Running sum of accuracy values for O(1) average maintenance.
     private var accuracySum: Double = 0
+
+    /// Running sum of per-note timing weights for `timingAccuracyPercent`.
+    private var timingWeightSum: Double = 0
 
     // MARK: - Recording
 
@@ -61,6 +75,7 @@ final class ScoringCoordinator {
     func record(_ score: NoteScore) {
         noteScores.append(score)
         accuracySum += score.accuracy
+        timingWeightSum += timingWeight(for: score.grade)
         if score.grade != .miss {
             notesHit += 1
         }
@@ -68,6 +83,20 @@ final class ScoringCoordinator {
             noteScores.isEmpty
             ? 0
             : accuracySum / Double(noteScores.count)
+    }
+
+    // MARK: - Private Helpers
+
+    /// Timing weight used for `timingAccuracyPercent` aggregation.
+    ///
+    /// Mirrors the spec §5.1 weighting: perfect=1.0, good=0.7, fair=0.4, miss=0.0.
+    private func timingWeight(for grade: NoteGrade) -> Double {
+        switch grade {
+        case .perfect: return 1.0
+        case .good: return 0.7
+        case .fair: return 0.4
+        case .miss: return 0.0
+        }
     }
 
     /// Update `streak` and `longestStreak` after a note.
@@ -86,6 +115,7 @@ final class ScoringCoordinator {
     // MARK: - Finalization
 
     /// Compute session-final metrics: final accuracy, star rating, XP,
+    /// split scoring (notesCorrectPercent, timingAccuracyPercent),
     /// and a streak-from-grade-sequence recomputation.
     ///
     /// Called once at session completion by `PlayAlongViewModel.completeSession`
@@ -93,10 +123,19 @@ final class ScoringCoordinator {
     ///
     /// - Parameter songDifficulty: The song's `difficulty` field (1–5).
     func finalize(songDifficulty: Int) {
+        let count = noteScores.count
         accuracy =
-            noteScores.isEmpty
+            count == 0
             ? 0
-            : accuracySum / Double(noteScores.count)
+            : accuracySum / Double(count)
+        notesCorrectPercent =
+            count == 0
+            ? 0
+            : Double(notesHit) / Double(count)
+        timingAccuracyPercent =
+            count == 0
+            ? 0
+            : timingWeightSum / Double(count)
         starRating = PracticeScoring.starRating(accuracy: accuracy)
         xpEarned = PracticeScoring.xpEarned(
             accuracy: accuracy,
@@ -119,6 +158,9 @@ final class ScoringCoordinator {
         longestStreak = 0
         starRating = 0
         xpEarned = 0
+        notesCorrectPercent = 0
+        timingAccuracyPercent = 0
         accuracySum = 0
+        timingWeightSum = 0
     }
 }

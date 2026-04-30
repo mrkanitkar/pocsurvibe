@@ -5,7 +5,6 @@
 	<key>UIBackgroundModes</key>
 	<array>
 		<string>remote-notification</string>
-		<string>audio</string>
 	</array>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>SurVibe needs microphone access to detect the notes you play on your piano.</string>

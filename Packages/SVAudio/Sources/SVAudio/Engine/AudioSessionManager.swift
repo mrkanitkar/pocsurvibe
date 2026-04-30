@@ -1,6 +1,21 @@
 import AVFoundation
 import os
 
+/// Classification of the granted I/O buffer duration after audio session activation.
+///
+/// iPad hardware may grant a buffer duration different from the requested hint.
+/// This enum classifies the granted duration to help diagnose latency issues.
+public enum BufferGrantTier: Sendable {
+    /// Session has not been configured yet.
+    case unknown
+    /// Granted buffer duration is 7 ms or less — ideal for real-time MIDI playback.
+    case excellent
+    /// Granted buffer duration is between 7 ms and 12 ms — acceptable latency.
+    case acceptable
+    /// Granted buffer duration exceeds 12 ms — may cause perceptible latency.
+    case degraded
+}
+
 /// Manages AVAudioSession configuration for simultaneous input/output.
 /// Uses @MainActor isolation for thread-safe callback management.
 ///
@@ -23,6 +38,12 @@ public final class AudioSessionManager {
     /// When `true`, the audio session is in `.playback` mode because `.playAndRecord`
     /// failed (e.g., MDM restriction). SoundFont playback works; mic input does not.
     public private(set) var isMicUnavailable: Bool = false
+
+    /// The buffer grant tier from the most recent session activation.
+    ///
+    /// Updated after each call to `configure()` or `configureForPlayback()`.
+    /// Remains `.unknown` until the first successful activation.
+    public private(set) var lastBufferGrantTier: BufferGrantTier = .unknown
 
     /// Observer tokens for NotificationCenter — removed in `deinit` to prevent leaks.
     /// `nonisolated(unsafe)` is required because `deinit` is nonisolated but these
@@ -48,10 +69,13 @@ public final class AudioSessionManager {
 
     /// Configure audio session for simultaneous playback and recording.
     ///
-    /// Uses a 256-frame I/O buffer (~5.8ms at 44100 Hz) to minimise
+    /// Uses a 256-frame I/O buffer (~5.33 ms at 48 kHz) to minimise
     /// SoundFont playback latency for MIDI-triggered notes. Pitch detection
     /// in `PracticeAudioProcessor` accumulates its own internal buffer, so it
     /// is unaffected by this smaller hardware I/O window.
+    ///
+    /// iPad native hardware rate is 48 kHz. Requesting 44.1 kHz forced an
+    /// OS-level sample-rate-conversion stage that added unnecessary latency.
     ///
     /// A 46ms buffer (2048 frames) was unnecessarily large; professional
     /// MIDI playback apps typically use 128–256 frames.
@@ -62,12 +86,13 @@ public final class AudioSessionManager {
                 mode: .measurement,
                 options: [.defaultToSpeaker, .mixWithOthers]
             )
-            // Request 44100 Hz sample rate per spec
-            try session.setPreferredSampleRate(44100)
-            // 256 frames at 44100 Hz ≈ 5.8 ms — low-latency for MIDI-triggered SoundFont playback.
+            // Request 48 kHz — iPad native rate avoids OS sample-rate conversion.
+            try session.setPreferredSampleRate(48000)
+            // 256 frames at 48 kHz ≈ 5.33 ms — low-latency for MIDI-triggered SoundFont playback.
             // PracticeAudioProcessor accumulates its own buffer, so pitch detection is unaffected.
-            try session.setPreferredIOBufferDuration(256.0 / 44100.0)
+            try session.setPreferredIOBufferDuration(256.0 / 48000.0)
             try session.setActive(true)
+            classifyBufferGrant()
             // Some iPad models ship with inputGain=0.5; quiet voice/acoustic
             // playing then registers below the DSP's 0.002 RMS gate. Raise to
             // full scale when the hardware allows it — does not affect
@@ -98,8 +123,9 @@ public final class AudioSessionManager {
                 mode: .default,
                 options: [.mixWithOthers]
             )
-            try session.setPreferredSampleRate(44100)
+            try session.setPreferredSampleRate(48000)
             try session.setActive(true)
+            classifyBufferGrant()
             Self.logger.warning("Audio session fallback active: .playback (mic unavailable)")
         }
     }
@@ -108,14 +134,22 @@ public final class AudioSessionManager {
     ///
     /// Uses `.playback` category to avoid triggering a microphone permission prompt.
     /// Suitable for SoundFont-based MIDI playback via AVAudioUnitSampler.
+    ///
+    /// Requests 48 kHz sample rate (iPad native) and a 256-frame I/O buffer
+    /// (~5.33 ms). After activation, classifies the granted buffer duration
+    /// into a ``BufferGrantTier`` for latency diagnostics.
     public func configureForPlayback() throws {
         try session.setCategory(
             .playback,
             mode: .default,
             options: [.mixWithOthers]
         )
-        try session.setPreferredSampleRate(44100)
+        // 48 kHz — iPad native rate avoids OS sample-rate conversion.
+        try session.setPreferredSampleRate(48000)
+        // 256 frames at 48 kHz ≈ 5.33 ms — low-latency for MIDI playback.
+        try session.setPreferredIOBufferDuration(256.0 / 48000.0)
         try session.setActive(true)
+        classifyBufferGrant()
     }
 
     /// Deactivate the audio session.
@@ -138,6 +172,28 @@ public final class AudioSessionManager {
         session.sampleRate
     }
 
+    // MARK: - Buffer Grant Classification
+
+    /// Read the granted `ioBufferDuration` and classify it into a tier.
+    ///
+    /// Called after every successful `setActive(true)` to record what the
+    /// hardware actually granted (which may differ from the preferred hint).
+    private func classifyBufferGrant() {
+        let granted = session.ioBufferDuration
+        let grantedMs = granted * 1000.0
+        if grantedMs <= 7.0 {
+            lastBufferGrantTier = .excellent
+        } else if grantedMs <= 12.0 {
+            lastBufferGrantTier = .acceptable
+        } else {
+            lastBufferGrantTier = .degraded
+        }
+        let tierName = String(describing: lastBufferGrantTier)
+        Self.logger.info(
+            "IO buffer granted: \(grantedMs, format: .fixed(precision: 2), privacy: .public) ms → \(tierName, privacy: .public)"
+        )
+    }
+
     // MARK: - Interruption Handling
 
     /// Callback invoked when audio is interrupted (phone call, Siri, etc.).
@@ -156,6 +212,13 @@ public final class AudioSessionManager {
     ///
     /// Marked `@Sendable` — see `onInterruptionBegan` for rationale.
     public var onRouteChange: (@Sendable () -> Void)?
+
+    /// Fired alongside `onRouteChange` but carries the specific reason.
+    ///
+    /// Use this for Play Along to distinguish `.oldDeviceUnavailable` (pause + toast)
+    /// from other route changes such as `.newDeviceAvailable` or `.categoryChange`.
+    /// Marked `@Sendable` — see `onInterruptionBegan` for rationale.
+    public var onRouteChangeWithReason: (@Sendable (AVAudioSession.RouteChangeReason) -> Void)?
 
     private func setupInterruptionObserver() {
         interruptionObserver = NotificationCenter.default.addObserver(
@@ -178,14 +241,31 @@ public final class AudioSessionManager {
             forName: AVAudioSession.routeChangeNotification,
             object: session,
             queue: .main
-        ) { [weak self] _ in
+        ) { [weak self] notification in
+            // Extract Sendable values before crossing isolation boundary
+            // (Notification is not Sendable — cannot be passed into Task)
+            let reasonValue = notification.userInfo?[AVAudioSessionRouteChangeReasonKey] as? UInt
             Task { @MainActor in
-                self?.onRouteChange?()
+                let reason = reasonValue.flatMap(AVAudioSession.RouteChangeReason.init(rawValue:))
+                self?.handleRouteChange(reason: reason)
             }
         }
     }
 
-    private func handleInterruption(typeValue: UInt?, optionsValue: UInt?) {
+    /// Handle a route change, firing both legacy and reason-carrying callbacks.
+    ///
+    /// Extracted as an internal method so tests can invoke it directly without
+    /// posting a `routeChangeNotification`.
+    ///
+    /// - Parameter reason: The route change reason, or `nil` if unknown.
+    func handleRouteChange(reason: AVAudioSession.RouteChangeReason?) {
+        onRouteChange?()
+        if let reason {
+            onRouteChangeWithReason?(reason)
+        }
+    }
+
+    func handleInterruption(typeValue: UInt?, optionsValue: UInt?) {
         guard let typeValue,
             let type = AVAudioSession.InterruptionType(rawValue: typeValue)
         else {

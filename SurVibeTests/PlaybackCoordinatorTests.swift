@@ -6,19 +6,32 @@ import Testing
 
 @testable import SurVibe
 
-/// Unit tests for `PlaybackCoordinator` (SP-3b).
+/// Unit tests for the visualization-only `PlaybackCoordinator` (Wave 4 D3).
 ///
-/// `PlaybackCoordinator` is the transport state machine + scheduling +
-/// session-completion + `PracticeSessionRecorder`-mediated SwiftData write
-/// extracted from `PlayAlongViewModel`. Owns the playback domain only;
-/// pitch detection / MIDI input remain on the VM facade until SP-3d.
+/// As of D3, `PlaybackCoordinator` no longer owns audio scheduling. The audio
+/// transport is owned by `ArrangementPlayer` (Wave 5 E1). PlaybackCoordinator
+/// is a pure visualization-state owner: `noteEvents`, `currentTime`,
+/// `currentNoteIndex`, `noteStates`, `playbackState`. Tests below assert the
+/// simplified contract: external setters mutate state, no audio is emitted,
+/// and `loadSong` populates the visualization model.
 ///
-/// ## Mock surface
-/// - `MockAudioEngineProvider` (SP-0) — exposes `startCallCount`, `stopCallCount`.
-/// - `MockSoundFontPlayer` (SP-0) — exposes `stopAllNotesCallCount`.
-/// - `MockMetronomePlayer` (SP-0) — exposes `startCallCount`, `stopCallCount`, `bpm`.
-/// - `MockAnalyticsProvider` (SP-1) — records tracked events.
-/// - `NoteEventFactory` (test helper) — builds NoteEvents with correct UInt8 types.
+/// ## Removed in D3 (audio-scheduling tests)
+/// The previous suite tested transport mechanics — `startScheduling` engine
+/// startup, metronome BPM under tempo scaling, pause/resume preserving an
+/// internal clock, and cleanup tearing down audio. All of those mechanics
+/// moved out of this coordinator with the D3 rework, so those tests were
+/// removed (see commit message).
+///
+/// ## What remains
+/// - `loadSong` data-prep (note events + duration + per-note state).
+/// - External transport setters (`setCurrentTime`, `setPlaybackState`,
+///   `setCurrentNoteIndex`, `setPlaybackStartDate`).
+/// - `seek` paused-only timeline scrub.
+/// - `completeSession` finalising scoring + persisting via
+///   `PracticeSessionRecorder`.
+/// - `clearSong` resetting visualization state.
+/// - "No audio" invariant: there is no `soundFont` dependency at all — the
+///   init no longer accepts one, so any audio call is a compile error.
 @MainActor
 @Suite("PlaybackCoordinator")
 struct PlaybackCoordinatorTests {
@@ -49,41 +62,21 @@ struct PlaybackCoordinatorTests {
         ]
     }
 
-    /// Build a coordinator with fully customisable dependencies.
-    ///
-    /// Default parameter expressions for `@MainActor` types cannot be used
-    /// in function signatures (evaluated in nonisolated context), so each
-    /// parameter is mandatory; callers that don't need to inspect a mock
-    /// should pass a freshly-created instance inline.
-    private func makeCoordinator(
-        engine: MockAudioEngineProvider,
-        soundFont: MockSoundFontPlayer,
-        metronome: MockMetronomePlayer,
-        scoring: ScoringCoordinator,
-        analytics: MockAnalyticsProvider
-    ) -> PlaybackCoordinator {
-        PlaybackCoordinator(
-            soundFont: soundFont,
-            audioEngine: engine,
-            metronome: metronome,
-            clock: RealClock(),
-            scoring: scoring,
-            analytics: analytics
-        )
-    }
-
-    /// Convenience overload — creates fresh mocks for tests that don't inspect them.
+    /// Build a coordinator with a fresh scoring + analytics mock.
     private func makeCoordinator() -> PlaybackCoordinator {
-        makeCoordinator(
-            engine: MockAudioEngineProvider(),
-            soundFont: MockSoundFontPlayer(),
-            metronome: MockMetronomePlayer(),
+        PlaybackCoordinator(
             scoring: ScoringCoordinator(),
             analytics: MockAnalyticsProvider()
         )
     }
 
-    // MARK: - Tests
+    /// Build a coordinator using a caller-supplied scoring instance for tests
+    /// that need to inspect scoring state after `completeSession()`.
+    private func makeCoordinator(scoring: ScoringCoordinator) -> PlaybackCoordinator {
+        PlaybackCoordinator(scoring: scoring, analytics: MockAnalyticsProvider())
+    }
+
+    // MARK: - Tests — visualization data prep
 
     @Test
     func loadSongPopulatesNoteEventsAndDuration() async {
@@ -94,113 +87,154 @@ struct PlaybackCoordinatorTests {
 
         #expect(coord.noteEvents.count == 2)
         #expect(coord.duration == 0.75)
-        #expect(coord.currentNoteIndex == nil)
         #expect(coord.playbackState == .idle)
+        #expect(coord.noteStates.count == 2)
+        #expect(coord.noteStates.values.allSatisfy { $0 == .upcoming })
     }
 
     @Test
-    func startSchedulingTransitionsToPlaying() async throws {
-        let engine = MockAudioEngineProvider()
-        let metronome = MockMetronomePlayer()
-        let coord = makeCoordinator(
-            engine: engine,
-            soundFont: MockSoundFontPlayer(),
-            metronome: metronome,
-            scoring: ScoringCoordinator(),
-            analytics: MockAnalyticsProvider()
-        )
+    func loadSongWithoutDataSetsErrorState() {
+        let coord = makeCoordinator()
+        // A Song with no MIDI data and no decoded notation should fail.
+        let song = Song(slugId: "empty", title: "Empty", tempo: 120)
+
+        let success = coord.loadSong(song)
+
+        #expect(success == false)
+        if case .error = coord.playbackState {
+            // expected
+        } else {
+            Issue.record("Expected playbackState == .error after empty load, got \(coord.playbackState)")
+        }
+    }
+
+    // MARK: - Tests — external transport drives visualization
+
+    @Test
+    func setCurrentTimeAdvancesViaExternalDriver() {
+        let coord = makeCoordinator()
         coord.installNoteEventsForTesting(makeTestNoteEvents())
 
-        await coord.startScheduling()
+        // Simulate ArrangementPlayer pushing master-clock ticks.
+        coord.setCurrentTime(0.0)
+        #expect(coord.currentTime == 0.0)
 
+        coord.setCurrentTime(0.5)
+        #expect(coord.currentTime == 0.5)
+
+        coord.setCurrentTime(0.75)
+        #expect(coord.currentTime == 0.75)
+        // playbackProgress should track currentTime / duration.
+        #expect(coord.playbackProgress == 1.0)
+    }
+
+    @Test
+    func setPlaybackStateReflectsExternalTransport() {
+        let coord = makeCoordinator()
+        coord.installNoteEventsForTesting(makeTestNoteEvents())
+
+        // Simulate ArrangementPlayer driving the state machine externally.
+        #expect(coord.playbackState == .idle)
+
+        coord.setPlaybackState(.playing)
         #expect(coord.playbackState == .playing)
-        #expect(engine.startCallCount == 1, "Engine started exactly once")
-        #expect(metronome.startCallCount == 1, "Metronome started")
-        #expect(coord.playbackStartDate != nil, "Self-driving timeline date set")
-    }
 
-    @Test
-    func pauseSchedulingPreservesPauseElapsedAndStopsMetronome() async throws {
-        let metronome = MockMetronomePlayer()
-        let coord = makeCoordinator(
-            engine: MockAudioEngineProvider(),
-            soundFont: MockSoundFontPlayer(),
-            metronome: metronome,
-            scoring: ScoringCoordinator(),
-            analytics: MockAnalyticsProvider()
-        )
-        coord.installNoteEventsForTesting(makeTestNoteEvents())
-
-        await coord.startScheduling()
-        // Allow a brief slice of wall-clock time to accumulate.
-        try await Task.sleep(for: .milliseconds(20))
-        coord.pauseScheduling()
-
+        coord.setPlaybackState(.paused)
         #expect(coord.playbackState == .paused)
-        #expect(metronome.stopCallCount >= 1)
-        #expect(coord.playbackStartDate == nil, "Date frozen on pause")
+
+        coord.setPlaybackState(.stopped)
+        #expect(coord.playbackState == .stopped)
     }
 
     @Test
-    func resumeSchedulingTransitionsBackToPlaying() async throws {
-        let metronome = MockMetronomePlayer()
-        let coord = makeCoordinator(
-            engine: MockAudioEngineProvider(),
-            soundFont: MockSoundFontPlayer(),
-            metronome: metronome,
-            scoring: ScoringCoordinator(),
-            analytics: MockAnalyticsProvider()
-        )
+    func setCurrentNoteIndexReflectsExternalDriver() {
+        let coord = makeCoordinator()
         coord.installNoteEventsForTesting(makeTestNoteEvents())
 
-        await coord.startScheduling()
-        try await Task.sleep(for: .milliseconds(20))
-        coord.pauseScheduling()
-        coord.resumeScheduling()
+        coord.setCurrentNoteIndex(1)
+        #expect(coord.currentNoteIndex == 1)
 
+        coord.setCurrentNoteIndex(nil)
+        #expect(coord.currentNoteIndex == nil)
+    }
+
+    @Test
+    func setPlaybackStartDateAffectsAnimationAnchor() {
+        let coord = makeCoordinator()
+        coord.installNoteEventsForTesting(makeTestNoteEvents())
+
+        #expect(coord.playbackStartDate == nil)
+
+        let anchor = Date()
+        coord.setPlaybackStartDate(anchor)
+        #expect(coord.playbackStartDate == anchor)
+
+        coord.setPlaybackStartDate(nil)
+        #expect(coord.playbackStartDate == nil)
+    }
+
+    // MARK: - Tests — visualization-only invariant (no audio dependency)
+
+    @Test
+    func initializerHasNoAudioDependencies() {
+        // The fact that this compiles and runs without passing a soundFont,
+        // audioEngine, metronome, or clock is itself the invariant: there is
+        // no audio dependency to mock. D3 narrowed PlaybackCoordinator to
+        // visualization-only — no `soundFont.playNote(...)` site exists.
+        let coord = PlaybackCoordinator(scoring: ScoringCoordinator())
+        coord.installNoteEventsForTesting(makeTestNoteEvents())
+        coord.setPlaybackState(.playing)
+        coord.setCurrentTime(0.5)
+
+        // No way to assert "no audio was emitted" except by construction:
+        // there is no soundFont reference to call. If a regression added one,
+        // `init(scoring:)` would no longer compile.
         #expect(coord.playbackState == .playing)
-        #expect(metronome.startCallCount >= 2, "Metronome started on resume")
-        #expect(coord.playbackStartDate != nil, "Date re-set on resume")
+        #expect(coord.currentTime == 0.5)
+    }
+
+    // MARK: - Tests — seek + clear
+
+    @Test
+    func seekUpdatesCurrentTimeProportionally() {
+        let coord = makeCoordinator()
+        coord.installNoteEventsForTesting(makeTestNoteEvents())  // duration = 0.75
+
+        coord.seek(to: 0.5)
+        #expect(abs(coord.currentTime - 0.375) < 0.001)
+
+        coord.seek(to: 1.0)
+        #expect(abs(coord.currentTime - 0.75) < 0.001)
     }
 
     @Test
-    func tempoScaleSetterUpdatesMetronomeBPM() async {
-        let metronome = MockMetronomePlayer()
-        let coord = makeCoordinator(
-            engine: MockAudioEngineProvider(),
-            soundFont: MockSoundFontPlayer(),
-            metronome: metronome,
-            scoring: ScoringCoordinator(),
-            analytics: MockAnalyticsProvider()
-        )
+    func clearSongResetsAllVisualizationState() {
+        let coord = makeCoordinator()
         coord.installNoteEventsForTesting(makeTestNoteEvents())
-        coord.installSongTempoForTesting(120)
+        coord.setPlaybackState(.playing)
+        coord.setCurrentTime(0.5)
+        coord.setCurrentNoteIndex(1)
+        coord.setPlaybackStartDate(Date())
 
-        // Start first so metronome.isPlaying == true, allowing the didSet branch to fire.
-        await coord.startScheduling()
-        coord.tempoScale = 0.5
+        coord.clearSong()
 
-        // tempoScale 0.5 on a 120-BPM song → setBPM(60).
-        #expect(
-            metronome.bpm == 60.0,
-            "tempoScale 0.5 on 120 BPM song → metronome BPM == 60"
-        )
+        #expect(coord.noteEvents.isEmpty)
+        #expect(coord.noteStates.isEmpty)
+        #expect(coord.currentTime == 0)
+        #expect(coord.duration == 0)
+        #expect(coord.currentNoteIndex == nil)
+        #expect(coord.playbackStartDate == nil)
+        #expect(coord.playbackState == .idle)
+        #expect(coord.song == nil)
     }
+
+    // MARK: - Tests — session completion
 
     @Test
     func stopAndCompleteFinalizesScoringAndPersistsViaRecorder() async throws {
         let scoring = ScoringCoordinator()
-        let metronome = MockMetronomePlayer()
-        let soundFont = MockSoundFontPlayer()
-
         let context = try SwiftDataTestContainer.freshContext()
-        let coord = makeCoordinator(
-            engine: MockAudioEngineProvider(),
-            soundFont: soundFont,
-            metronome: metronome,
-            scoring: scoring,
-            analytics: MockAnalyticsProvider()
-        )
+        let coord = makeCoordinator(scoring: scoring)
         coord.modelContext = context
         coord.installNoteEventsForTesting(makeTestNoteEvents())
         coord.installSongInfoForTesting(
@@ -210,12 +244,12 @@ struct PlaybackCoordinatorTests {
             difficulty: 2
         )
 
+        // Simulate external driver: enter .playing then request early stop.
         await coord.startScheduling()
-        try await Task.sleep(for: .milliseconds(20))
+        coord.setCurrentTime(0.5)
         coord.stopAndComplete()
 
         #expect(coord.playbackState == .stopped)
-        #expect(soundFont.stopAllNotesCallCount >= 1, "Stops sounding notes on completion")
         #expect(scoring.starRating >= 0, "scoring.finalize was invoked")
 
         // Recorder write verified by the SongProgress count in the in-memory store.
@@ -227,26 +261,56 @@ struct PlaybackCoordinatorTests {
     }
 
     @Test
-    func cleanupCancelsTasksStopsAudioAndResetsState() async throws {
-        let engine = MockAudioEngineProvider()
-        let metronome = MockMetronomePlayer()
-        let soundFont = MockSoundFontPlayer()
-        let coord = makeCoordinator(
-            engine: engine,
-            soundFont: soundFont,
-            metronome: metronome,
-            scoring: ScoringCoordinator(),
-            analytics: MockAnalyticsProvider()
-        )
+    func completeSessionMarksUnfinishedNotesAsMissed() {
+        let scoring = ScoringCoordinator()
+        let coord = makeCoordinator(scoring: scoring)
+        coord.installNoteEventsForTesting(makeTestNoteEvents())
+
+        coord.completeSession()
+
+        // All notes were left in .upcoming; completion should mark them .missed.
+        #expect(coord.noteStates.values.allSatisfy { $0 == .missed })
+        #expect(coord.playbackState == .stopped)
+    }
+
+    // MARK: - Tests — legacy transport shims (Wave 5 E1 will replace)
+
+    @Test
+    func startSchedulingShimTransitionsToPlaying() async {
+        let coord = makeCoordinator()
         coord.installNoteEventsForTesting(makeTestNoteEvents())
 
         await coord.startScheduling()
-        try await Task.sleep(for: .milliseconds(20))
+
+        #expect(coord.playbackState == .playing)
+        #expect(coord.playbackStartDate != nil)
+    }
+
+    @Test
+    func pauseAndResumeShimsToggleState() async {
+        let coord = makeCoordinator()
+        coord.installNoteEventsForTesting(makeTestNoteEvents())
+
+        await coord.startScheduling()
+        coord.pauseScheduling()
+        #expect(coord.playbackState == .paused)
+        #expect(coord.playbackStartDate == nil)
+
+        coord.resumeScheduling()
+        #expect(coord.playbackState == .playing)
+        #expect(coord.playbackStartDate != nil)
+    }
+
+    @Test
+    func cleanupResetsToIdle() {
+        let coord = makeCoordinator()
+        coord.installNoteEventsForTesting(makeTestNoteEvents())
+        coord.setPlaybackState(.playing)
+        coord.setPlaybackStartDate(Date())
+
         coord.cleanup()
 
         #expect(coord.playbackState == .idle)
-        #expect(engine.stopCallCount == 1, "Engine stopped exactly once on cleanup")
-        #expect(metronome.stopCallCount >= 1)
-        #expect(soundFont.stopAllNotesCallCount >= 1)
+        #expect(coord.playbackStartDate == nil)
     }
 }

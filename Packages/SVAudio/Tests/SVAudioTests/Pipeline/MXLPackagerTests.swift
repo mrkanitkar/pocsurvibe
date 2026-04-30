@@ -7,7 +7,8 @@ struct MXLPackagerTests {
     @Test func mimetypeIsFirstEntry() throws {
         let mxl = try MXLPackager.package(musicXML: "<score-partwise version=\"4.0\"></score-partwise>")
         let archive = try Archive(data: mxl, accessMode: .read)
-        let first = archive.first
+        var iterator = archive.makeIterator()
+        let first = iterator.next()
         #expect(first?.path == "mimetype")
     }
 
