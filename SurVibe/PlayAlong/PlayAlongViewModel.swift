@@ -212,6 +212,86 @@ final class PlayAlongViewModel {
     /// `SongPlayAlongView+Subviews.swift` uses this to observe guided-play state.
     typealias GuidedPlayState = NoteRouter.GuidedPlayState
 
+    // MARK: - Wave 4 D1 — Toolbar state (Wave 5 E1 wires to ArrangementPlayer)
+
+    /// Backing accompaniment mode shown in the play-along toolbar.
+    ///
+    /// `.on` plays the full backing track; `.click` plays a metronome-style
+    /// click only; `.off` mutes the accompaniment entirely. Wiring to the
+    /// arrangement player is deferred to Wave 5 (E1).
+    public enum BackingMode: String, Sendable, Equatable, CaseIterable {
+        /// Full backing accompaniment plays.
+        case on
+        /// Metronome click only — no accompaniment instruments.
+        case click
+        /// Silent — no backing or click.
+        case off
+    }
+
+    /// Click-track loudness preset shown in the toolbar when
+    /// `backingMode == .click`.
+    ///
+    /// Wiring to the click sampler is deferred to Wave 5 (E1).
+    public enum ClickLevel: String, Sendable, Equatable, CaseIterable {
+        /// Quiet click — accent only.
+        case soft
+        /// Default click level.
+        case normal
+        /// Loud click — useful for noisy practice rooms.
+        case loud
+    }
+
+    /// Selected backing accompaniment mode for the play-along session.
+    ///
+    /// Defaults to `.on`. Bound to the toolbar's backing-mode picker.
+    public var backingMode: BackingMode = .on
+
+    /// Tempo multiplier in the range `0.5...1.5`.
+    ///
+    /// Set values outside the range are clamped on assignment. Defaults to
+    /// `1.0` (original tempo). Bound to the toolbar's tempo slider. The
+    /// existing `tempoScale` (delegated to `PlaybackCoordinator`) drives the
+    /// legacy 4-preset path; this Wave 4 D1 property powers the continuous
+    /// slider and is wired to `ArrangementPlayer` in Wave 5 (E1).
+    public var arrangementTempoScale: Double = 1.0 {
+        didSet {
+            let clamped = min(1.5, max(0.5, arrangementTempoScale))
+            if clamped != arrangementTempoScale {
+                arrangementTempoScale = clamped
+            }
+        }
+    }
+
+    /// Hand isolation mode for the play-along session.
+    ///
+    /// Defaults to `.both`. RH/LH are only meaningful when the loaded
+    /// arrangement contains multiple staves (`hasMultipleStaves == true`).
+    /// Bound to the toolbar's hands picker.
+    public var practiceMode: PracticeMode = .both
+
+    /// Active loop region (1-indexed inclusive measures), if any.
+    ///
+    /// `nil` means full-song playback. Bound to the toolbar's loop control.
+    public var loopRegion: LoopRegion?
+
+    /// Loudness preset for the click track when `backingMode == .click`.
+    ///
+    /// Defaults to `.normal`. Bound to the toolbar's click-level picker.
+    public var clickLevel: ClickLevel = .normal
+
+    /// Whether the loop-builder sheet should be presented.
+    ///
+    /// The toolbar flips this to `true` when the user taps "Loop" with no
+    /// active region; the host view observes it to drive sheet presentation.
+    public var showLoopBuilder: Bool = false
+
+    /// Whether the currently loaded arrangement exposes more than one
+    /// staff (e.g., separate RH and LH).
+    ///
+    /// When `false`, RH/LH options in the hands picker are disabled.
+    /// `PlayAlongSceneHost` updates this from `PartSplit` after song load.
+    public var hasMultipleStaves: Bool = false
+
     // MARK: - Chrome Visibility (v2) — delegates to chrome coordinator (SP-3c)
 
     /// Chrome visibility — delegates to `chrome.chromeVisibility`.

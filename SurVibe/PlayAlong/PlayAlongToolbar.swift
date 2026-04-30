@@ -17,6 +17,15 @@ import SwiftUI
 struct PlayAlongToolbar: View {
     // MARK: - Properties
 
+    /// Bindable view model exposing Wave 4 D1 toolbar state (backing mode,
+    /// tempo slider, hands picker, loop control, click level).
+    ///
+    /// Two-way bindings flow through this object to `PlayAlongViewModel`'s
+    /// `backingMode`, `arrangementTempoScale`, `practiceMode`, `loopRegion`,
+    /// `clickLevel`, and `showLoopBuilder` properties. Wave 5 E1 wires those
+    /// onward to `ArrangementPlayer`.
+    @Bindable var viewModel: PlayAlongViewModel
+
     /// Current playback state driving button icons and enabled states.
     let playbackState: PlaybackState
 
@@ -111,10 +120,142 @@ struct PlayAlongToolbar: View {
             headerRow
             timelineRow
             controlsRow
+            arrangementControlsRow
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 8)
         .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 24))
+    }
+
+    // MARK: - Row 4: Arrangement controls (Wave 4 D1)
+
+    /// Backing-mode picker, tempo slider, hands picker, loop control, and
+    /// (when backing == .click) click-level picker.
+    ///
+    /// All controls bind to `viewModel`. Wiring to `ArrangementPlayer` is
+    /// deferred to Wave 5 (E1).
+    private var arrangementControlsRow: some View {
+        HStack(spacing: 12) {
+            backingPicker
+            tempoSlider
+            handsPicker
+            loopControl
+            if viewModel.backingMode == .click {
+                clickLevelPicker
+            }
+        }
+    }
+
+    /// Backing-accompaniment mode picker — On / Click / Off.
+    private var backingPicker: some View {
+        Picker("Backing", selection: $viewModel.backingMode) {
+            Text("On").tag(PlayAlongViewModel.BackingMode.on)
+            Text("Click").tag(PlayAlongViewModel.BackingMode.click)
+            Text("Off").tag(PlayAlongViewModel.BackingMode.off)
+        }
+        .pickerStyle(.segmented)
+        .frame(width: 160)
+        .accessibilityLabel("Backing accompaniment mode")
+        .accessibilityHint("Choose full backing, click track, or silent practice")
+    }
+
+    /// Continuous tempo scale slider in the range 50%..150%.
+    private var tempoSlider: some View {
+        VStack(spacing: 2) {
+            Text(verbatim: "\(Int((viewModel.arrangementTempoScale * 100).rounded()))%")
+                .font(.caption2)
+                .monospacedDigit()
+                .foregroundStyle(.secondary)
+                .accessibilityHidden(true)
+            Slider(
+                value: $viewModel.arrangementTempoScale,
+                in: 0.5...1.5,
+                step: 0.05
+            )
+            .frame(width: 140)
+            .accessibilityLabel("Tempo scale")
+            .accessibilityValue(
+                "\(Int((viewModel.arrangementTempoScale * 100).rounded())) percent"
+            )
+            .accessibilityHint("Adjust playback speed from 50 to 150 percent")
+        }
+    }
+
+    /// Hand-isolation picker — Both / RH / LH. RH and LH disabled when the
+    /// loaded arrangement has only one staff.
+    private var handsPicker: some View {
+        Picker("Hands", selection: $viewModel.practiceMode) {
+            Text("Both").tag(PracticeMode.both)
+            Text("RH")
+                .tag(PracticeMode.rightHand)
+            Text("LH")
+                .tag(PracticeMode.leftHand)
+        }
+        .pickerStyle(.segmented)
+        .frame(width: 160)
+        .disabled(!viewModel.hasMultipleStaves)
+        .accessibilityLabel("Hand isolation mode")
+        .accessibilityHint(
+            viewModel.hasMultipleStaves
+                ? "Choose to practice both hands, right hand, or left hand"
+                : "Hand isolation requires a multi-staff arrangement"
+        )
+    }
+
+    /// Loop control — shows the active region with a clear button, or a
+    /// trigger that opens the loop builder when no region is set.
+    @ViewBuilder
+    private var loopControl: some View {
+        if let region = viewModel.loopRegion {
+            Button {
+                viewModel.loopRegion = nil
+            } label: {
+                Label(
+                    "Loop m.\(region.startMeasure)\u{2013}\(region.endMeasure) \u{00D7}",
+                    systemImage: "repeat"
+                )
+                .labelStyle(.titleOnly)
+                .font(.caption)
+                .padding(.horizontal, 8)
+                .padding(.vertical, 5)
+                .background(Color.accentColor.opacity(0.18))
+                .foregroundStyle(.primary)
+                .clipShape(Capsule())
+            }
+            .accessibilityLabel(
+                "Looping measures \(region.startMeasure) to \(region.endMeasure)"
+            )
+            .accessibilityHint("Tap to clear the loop region")
+        } else {
+            Button {
+                viewModel.showLoopBuilder = true
+            } label: {
+                Label("Loop", systemImage: "repeat")
+                    .labelStyle(.titleOnly)
+                    .font(.caption)
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 5)
+                    .background(Color(.tertiarySystemBackground))
+                    .foregroundStyle(.primary)
+                    .clipShape(Capsule())
+            }
+            .accessibilityLabel("Loop")
+            .accessibilityHint("Open the loop builder to select a measure range")
+        }
+    }
+
+    /// Click-track loudness picker — Soft / Normal / Loud. Visible only
+    /// when the backing mode is `.click`.
+    private var clickLevelPicker: some View {
+        Picker("Click", selection: $viewModel.clickLevel) {
+            Text("Soft").tag(PlayAlongViewModel.ClickLevel.soft)
+            Text("Normal").tag(PlayAlongViewModel.ClickLevel.normal)
+            Text("Loud").tag(PlayAlongViewModel.ClickLevel.loud)
+        }
+        .pickerStyle(.segmented)
+        .frame(width: 160)
+        .accessibilityLabel("Click track loudness")
+        .accessibilityHint("Choose soft, normal, or loud click volume")
     }
 
     // MARK: - Row 1: Header
@@ -404,6 +545,7 @@ struct PlayAlongToolbar: View {
 
 #Preview("Toolbar — Idle") {
     PlayAlongToolbar(
+        viewModel: PlayAlongViewModel(),
         playbackState: .idle,
         tempoScale: 1.0,
         isWaitModeEnabled: false,
@@ -429,6 +571,7 @@ struct PlayAlongToolbar: View {
 
 #Preview("Toolbar — Playing") {
     PlayAlongToolbar(
+        viewModel: PlayAlongViewModel(),
         playbackState: .playing,
         tempoScale: 0.6,
         isWaitModeEnabled: true,

@@ -378,6 +378,7 @@ struct SongPlayAlongView: View {
             if viewModel.chromeVisibility == .summoned {
                 // Transport toolbar — theme-driven, only visible when chrome is summoned.
                 PlayAlongToolbar(
+                    viewModel: viewModel,
                     playbackState: viewModel.playbackState,
                     tempoScale: viewModel.tempoScale,
                     isWaitModeEnabled: viewModel.isWaitModeEnabled,
