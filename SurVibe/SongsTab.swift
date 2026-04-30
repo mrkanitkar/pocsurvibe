@@ -40,8 +40,17 @@ struct SongsTab: View {
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
-            .navigationDestination(for: Song.self) { song in
-                SongDetailView(song: song)
+            .navigationDestination(for: AppDestination.self) { destination in
+                switch destination {
+                case .songDetail(let song):
+                    SongDetailView(song: song)
+                case .playAlong(let song):
+                    PlayAlongSceneHost(song: song)
+                case .practiceMode:
+                    EmptyView()  // PracticeSession is presented as fullScreenCover, not pushed.
+                default:
+                    EmptyView()
+                }
             }
         }
         .background(

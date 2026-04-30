@@ -241,7 +241,7 @@ struct SongLibraryView: View {
                     return .handled
                 }
         } else {
-            NavigationLink(value: song) {
+            NavigationLink(value: AppDestination.songDetail(song)) {
                 SongCardView(song: song)
             }
             .buttonStyle(.plain)

@@ -34,7 +34,7 @@ final class SeedContentLoader {
     ///       (Sukhkarta_Dukhharta, james-bond-theme) as Songs so the
     ///       Learn-a-Song play-along path has populated `midiData` +
     ///       `learnerTrackIndices` on first launch.
-    private static let currentContentVersion = 9
+    private static let currentContentVersion = 10
 
     /// Resource basenames (no extension) of the bundled MXL audition
     /// assets that should be imported as `Song` rows on first launch.

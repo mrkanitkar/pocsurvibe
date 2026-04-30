@@ -40,6 +40,14 @@ struct LearnTab: View {
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
+            .navigationDestination(for: AppDestination.self) { destination in
+                switch destination {
+                case .lessonDetail(let lesson):
+                    LessonDetailView(lesson: lesson)
+                default:
+                    EmptyView()
+                }
+            }
             .navigationDestination(for: Curriculum.self) { curriculum in
                 if let progressManager {
                     CurriculumDetailView(curriculum: curriculum)
