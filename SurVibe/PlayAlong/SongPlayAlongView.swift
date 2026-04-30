@@ -687,17 +687,21 @@ struct SongPlayAlongView: View {
 
     /// Handle the play/pause button tap based on current playback state.
     private func handlePlayPause() {
-        switch viewModel.playbackState {
+        let state = viewModel.playbackState
+        MultiChannelLog.shared.log(.info, "==> handlePlayPause TAP state=\(state) arrangementWired=\(viewModel.arrangementPlayer != nil)")
+        switch state {
         case .idle, .stopped:
             Task {
+                MultiChannelLog.shared.log(.info, "... handlePlayPause: calling startSession")
                 await viewModel.startSession()
+                MultiChannelLog.shared.log(.info, "... handlePlayPause: startSession returned, newState=\(viewModel.playbackState)")
             }
         case .playing:
             viewModel.pauseSession()
         case .paused:
             viewModel.resumeSession()
         case .loading, .error:
-            break
+            MultiChannelLog.shared.log(.warning, "... handlePlayPause: ignored — state=\(state)")
         }
     }
 

@@ -832,14 +832,24 @@ final class PlayAlongViewModel {
     ///
     /// Guards: only starts from `.idle` or `.stopped` with non-empty events.
     func startSession() async {
-        MultiChannelLog.shared.log(.info, ">>> PlayAlongViewModel.startSession")
-        MultiChannelLog.shared.log(.info, "... PlayAlongViewModel.startSession: about to await startScheduling")
+        let arrangedWired = arrangementPlayer != nil
+        let evCount = playback.noteEvents.count
+        MultiChannelLog.shared.log(.info, ">>> startSession arrangedWired=\(arrangedWired) noteEvents=\(evCount)")
         sessionStartedAt = Date()
         await playback.startScheduling()
-        MultiChannelLog.shared.log(.info, "... PlayAlongViewModel.startSession: startScheduling returned")
+        MultiChannelLog.shared.log(.info, "... startSession: scheduling returned, state=\(playback.playbackState)")
+        // E1.5: when an ArrangementPlayer is wired, force playback state to
+        // .playing even if visualization noteEvents are empty (MXL imports
+        // produce midiData with no fromMIDI-decoded events). The arrangement
+        // player drives audio; visualization may be empty for now.
+        if arrangedWired, playback.playbackState != .playing {
+            playback.setPlaybackState(.playing)
+            playback.setPlaybackStartDate(Date())
+            MultiChannelLog.shared.log(.info, "... startSession: forced state=.playing (arrangement wired, no viz events)")
+        }
         arrangementPlayer?.start(countInBars: 1)
         noteRouter.startInputDetection()
-        MultiChannelLog.shared.log(.info, "<<< PlayAlongViewModel.startSession")
+        MultiChannelLog.shared.log(.info, "<<< startSession state=\(playback.playbackState) arrangedPlaying=\(arrangementPlayer?.isPlaying ?? false)")
     }
 
     /// Pause the current play-along session.
