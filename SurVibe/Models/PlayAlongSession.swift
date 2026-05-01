@@ -7,7 +7,7 @@ import SwiftData
 /// percentage as distinct headline numbers. The composite score is kept for
 /// sorting and backward-compatible display. Created by Amendment A of the
 /// Play Tab v2 plan — replaces the ad-hoc session data previously produced by
-/// `PracticeSessionRecorder`.
+/// `SessionRecorder`.
 @Model
 public final class PlayAlongSession {
 

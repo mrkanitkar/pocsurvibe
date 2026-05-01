@@ -4,18 +4,18 @@ import SVLearning
 import SwiftData
 import os.log
 
-/// Records practice session results to SwiftData models.
+/// Records session results to SwiftData models for PlayAlong scoring.
 ///
-/// After a practice session completes, this recorder persists the results
+/// After a play-along session completes, this recorder persists the results
 /// to three models: `RiyazEntry` (daily practice log), `SongProgress`
 /// (per-song high scores), and `UserProfile` (XP accumulation).
 ///
 /// Lives in the main app target because it requires `ModelContext` access
 /// for SwiftData persistence. Pure scoring computation is in `SVLearning`.
-/// Bundles song metadata for a practice session recording.
+/// Bundles song metadata for a session recording.
 ///
 /// Groups the four song-related parameters into a single value type,
-/// keeping `PracticeSessionRecorder.recordSession` under the 5-parameter limit.
+/// keeping `SessionRecorder.recordSession` under the 5-parameter limit.
 struct SessionSongInfo: Sendable {
     /// Unique identifier of the practiced song.
     let songId: String
@@ -31,18 +31,18 @@ struct SessionSongInfo: Sendable {
 }
 
 @MainActor
-final class PracticeSessionRecorder {
+final class SessionRecorder {
     // MARK: - Properties
 
     private let modelContext: ModelContext
 
-    private static let logger = Logger.survibe(category: "PracticeSessionRecorder")
+    private static let logger = Logger.survibe(category: "SessionRecorder")
 
     // MARK: - Initialization
 
     /// Create a recorder with the given SwiftData model context.
     ///
-    /// - Parameter modelContext: The model context for persisting practice data.
+    /// - Parameter modelContext: The model context for persisting session data.
     init(modelContext: ModelContext) {
         self.modelContext = modelContext
     }
@@ -96,7 +96,7 @@ final class PracticeSessionRecorder {
         }
 
         // Note: XP is now awarded by GamificationService in PracticeSessionViewModel.completePractice().
-        // PracticeSessionRecorder only handles RiyazEntry + SongProgress persistence.
+        // SessionRecorder only handles RiyazEntry + SongProgress persistence.
 
         // 3. Persist individual note scores for post-session drill-down
         let sessionID = entry.id

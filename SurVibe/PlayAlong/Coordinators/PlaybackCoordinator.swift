@@ -94,7 +94,7 @@ final class PlaybackCoordinator {
 
     // MARK: - Persistence
 
-    /// Model context for persisting session results via `PracticeSessionRecorder`.
+    /// Model context for persisting session results via `SessionRecorder`.
     /// Set by the facade from `SongPlayAlongView.onAppear`.
     var modelContext: ModelContext?
 
@@ -410,7 +410,7 @@ final class PlaybackCoordinator {
 
     private func persistSessionResults() {
         guard let modelContext, let song else { return }
-        let recorder = PracticeSessionRecorder(modelContext: modelContext)
+        let recorder = SessionRecorder(modelContext: modelContext)
         let songInfo = SessionSongInfo(
             songId: song.slugId.isEmpty ? song.id.uuidString : song.slugId,
             songTitle: song.title,
@@ -423,7 +423,7 @@ final class PlaybackCoordinator {
             durationMinutes: durationMinutes,
             noteScores: scoring.noteScores
         )
-        Self.logger.info("Session persisted via PracticeSessionRecorder")
+        Self.logger.info("Session persisted via SessionRecorder")
     }
 
     private func trackSessionCompletion() {

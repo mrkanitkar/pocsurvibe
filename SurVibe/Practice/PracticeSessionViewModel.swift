@@ -34,7 +34,7 @@ enum PracticePhase: Equatable, Sendable {
 ///
 /// ## Architecture
 /// Lives in the main app target because it requires `ModelContext` (for
-/// `PracticeSessionRecorder`) and direct access to `Song` (@Model).
+/// `SessionRecorder`) and direct access to `Song` (@Model).
 /// Pure scoring computation delegates to `SVLearning` types.
 @Observable
 @MainActor
@@ -158,7 +158,7 @@ final class PracticeSessionViewModel {
     var ragaMapper: RagaAwareMapper?
 
     /// Recorder for persisting practice results to SwiftData.
-    private var recorder: PracticeSessionRecorder?
+    private var recorder: SessionRecorder?
 
     /// Gamification service for XP awards, rang progression, and achievements.
     var gamificationService: GamificationService?
@@ -187,7 +187,7 @@ final class PracticeSessionViewModel {
     init(modelContext: ModelContext, gamificationService: GamificationService? = nil) {
         self.metronomeEngine = MetronomeEngine(bpm: 60.0, volume: 0.5)
         self.tanpuraEngine = TanpuraEngine(saFrequency: 261.63, volume: 0.3)
-        self.recorder = PracticeSessionRecorder(modelContext: modelContext)
+        self.recorder = SessionRecorder(modelContext: modelContext)
         self.gamificationService = gamificationService
     }
 
@@ -374,7 +374,7 @@ final class PracticeSessionViewModel {
     /// Complete the practice session and compute results.
     ///
     /// Stops audio processing, computes aggregate scores, persists results
-    /// via `PracticeSessionRecorder`, and transitions to the completed phase.
+    /// via `SessionRecorder`, and transitions to the completed phase.
     func completePractice() {
         guard phase == .practiceAlong else { return }
 

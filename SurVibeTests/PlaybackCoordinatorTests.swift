@@ -28,7 +28,7 @@ import Testing
 ///   `setCurrentNoteIndex`, `setPlaybackStartDate`).
 /// - `seek` paused-only timeline scrub.
 /// - `completeSession` finalising scoring + persisting via
-///   `PracticeSessionRecorder`.
+///   `SessionRecorder`.
 /// - `clearSong` resetting visualization state.
 /// - "No audio" invariant: there is no `soundFont` dependency at all — the
 ///   init no longer accepts one, so any audio call is a compile error.
@@ -257,7 +257,7 @@ struct PlaybackCoordinatorTests {
             predicate: #Predicate { $0.songId == "test_song" }
         )
         let progress = try context.fetch(descriptor)
-        #expect(progress.count == 1, "SongProgress recorded via PracticeSessionRecorder")
+        #expect(progress.count == 1, "SongProgress recorded via SessionRecorder")
     }
 
     @Test
