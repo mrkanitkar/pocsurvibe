@@ -27,6 +27,7 @@ xcodebuild test \
   -project SurVibe.xcodeproj \
   -scheme SurVibe \
   -destination 'platform=iOS Simulator,name=iPhone 16' \
+  -derivedDataPath /private/tmp/SurVibe-DD \
   -only-testing:SurVibeTests/AudioPipelineMemoryTests \
   -only-testing:SurVibeTests/StructuredLoggingTests \
   2>&1 | tail -30

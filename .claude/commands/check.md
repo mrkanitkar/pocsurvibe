@@ -21,13 +21,13 @@ xcrun swift-format lint --configuration .swift-format <all source files>
 ### 3. Build
 Use Xcode MCP `BuildProject` or:
 ```
-xcodebuild build -scheme SurVibe -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -quiet
+xcodebuild build -scheme SurVibe -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /private/tmp/SurVibe-DD -quiet
 ```
 - If build fails: STOP, report errors
 
 ### 4. Tests
 ```
-xcodebuild test -scheme SurVibe -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -quiet
+xcodebuild test -scheme SurVibe -destination 'platform=iOS Simulator,name=iPhone 17 Pro' -derivedDataPath /private/tmp/SurVibe-DD -quiet
 ```
 - Report pass/fail counts
 

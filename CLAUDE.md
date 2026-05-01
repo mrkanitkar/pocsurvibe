@@ -288,6 +288,63 @@ xcrun swift-format lint --configuration .swift-format <file>
 
 ---
 
+## STORAGE & BUILD HYGIENE (MANDATORY)
+
+> SurVibe builds can balloon to **100GB/hour** without these rules. Each `xcodebuild` without `-derivedDataPath` writes a fresh multi-GB folder; subagent worktrees + multiple sessions multiply this fast. Treat disk like a shared resource.
+
+### The Single Shared Path
+
+**ALL `xcodebuild` invocations MUST use:**
+
+```
+-derivedDataPath /private/tmp/SurVibe-DD
+```
+
+This applies to: slash commands (`/test`, `/check`, `/audio-test`), subagent runs, ad-hoc shell builds, CI parity checks. Do NOT invent new paths like `/private/tmp/svtest-xyz/` or `~/Documents/.../dd`. One path, reused, incrementally rebuilt.
+
+**Why:** Reusing a single DerivedData lets Xcode incrementally rebuild — typically <1GB churn per build instead of a fresh 4-6GB tree per invocation.
+
+### Hard Rules
+
+| Rule | Why |
+|------|-----|
+| Never run `xcodebuild` without `-derivedDataPath /private/tmp/SurVibe-DD` | Stops the per-invocation multi-GB sprawl |
+| Never write logs to `/private/tmp/log*.txt` | Use stdout, or write to a single named file you delete after |
+| Never create ad-hoc DerivedData dirs (`/tmp/svtest`, `/tmp/SVAudio-dd`, etc.) | Use the shared path |
+| Never store test app containers or `.xcappdata` in `/tmp` long-term | Move to `docs/` or delete |
+| When dispatching subagents that build, instruct them to use the same `-derivedDataPath` | Otherwise each worktree gets its own 4GB cache |
+| Run `/clean` before any session where disk is <30GB free | Reclaims space, doesn't break builds |
+| Use `xcrun simctl delete unavailable` after Xcode upgrades | Old simulator runtimes pile up to 10+ GB |
+| Use `git worktree prune` after subagent-driven dev sessions end | Removes orphaned worktree metadata |
+
+### Subagent Builds
+
+When dispatching subagents that need to build/test:
+- **Pass `-derivedDataPath /private/tmp/SurVibe-DD` in their prompt** if they will run `xcodebuild`
+- Prefer `mcp__XcodeBuildMCP__build_sim` / `test_sim` tools — they reuse derived data automatically
+- If using `isolation: "worktree"`, prefer `swift test --package-path Packages/<X>` over full app builds (no DerivedData explosion)
+
+### Forbidden Storage Patterns
+
+| Pattern | Use Instead |
+|---------|------------|
+| `xcodebuild ... ` without `-derivedDataPath` | Always include `-derivedDataPath /private/tmp/SurVibe-DD` |
+| New random `/tmp/<dd-name>/` folders | The single shared path |
+| Saving long-lived logs to `/private/tmp/` | Stream to stdout; if persistence needed, use `docs/` (gitignored) |
+| Manually `rm -rf` simulator devices | `xcrun simctl delete <udid>` so Xcode stays in sync |
+| Force-deleting active git worktrees | `git worktree remove <path>` (validates first) |
+
+### Periodic Maintenance
+
+Run `/clean` weekly (or when free disk <30GB). It will:
+1. Wipe `/private/tmp/SurVibe-DD` and any legacy ad-hoc DerivedData
+2. Remove `~/Library/Developer/Xcode/DerivedData/SurVibe-*`
+3. Run `xcrun simctl delete unavailable`
+4. Prune stale git worktrees
+5. Report before/after disk usage
+
+---
+
 ## BANNED PATTERNS (Will Be Rejected in Review)
 
 | Pattern | Why | Use Instead |
@@ -347,6 +404,7 @@ When generating UI text, use these Hindi/Urdu music terms naturally. The app's p
 | `/test` | After code changes — builds and runs full test suite |
 | `/lint` | Quick lint pass — SwiftLint on changed files |
 | `/format` | Quick format pass — swift-format on changed files |
+| `/clean` | Reclaim disk — wipe stale DerivedData, sims, worktrees |
 
 ### Mandatory Skill Usage
 
