@@ -6,6 +6,19 @@ import SwiftData
 /// Module-level logger for SongProgress model mutations.
 private let songProgressLogger = Logger.survibe(category: "SongProgressModel")
 
+// MARK: - Conflict Resolution
+//
+// SongProgress uses CloudKit's default whole-record last-write-wins.
+// Per-field merge is NOT possible — the entire record is one CKRecord.
+//
+// Additive fields (`bestScore`, `timesPlayed`, `xpEarnedTotal`) are
+// merged at the application level inside `recordPlay(...)` via max()
+// and additive increments. Pref fields (preferredTempoScale, etc.)
+// use last-write-wins as the desired UX.
+//
+// DO NOT introduce per-field merge expectations — they cannot be
+// honored at the persistence layer.
+
 /// Tracks progress on a song. Max-wins merge for bestScore and timesPlayed.
 @Model
 final class SongProgress {
@@ -21,6 +34,27 @@ final class SongProgress {
     /// song's default derived from `keySignatureRaw`. Persists the *effective* Hz
     /// (grid × cents factor); decomposition happens in `TanpuraController`.
     var preferredSaHz: Double? = nil
+
+    /// Preferred hand isolation mode: "both", "rh", or "lh".
+    var preferredHands: String = "both"
+    /// Preferred tempo scaling factor, clamped to [0.5, 1.5].
+    var preferredTempoScale: Double = 1.0
+    /// Index of the preferred learner track in a multi-track arrangement.
+    var preferredLearnerTrackIndex: Int = 0
+    /// Whether wait mode is enabled for this song.
+    var waitModeEnabled: Bool = false
+    /// Whether the click track is enabled for this song.
+    var clickTrackEnabled: Bool = false
+    /// Click track loudness preset: "soft", "normal", or "loud".
+    var clickTrackLevel: String = "normal"
+    /// Whether the tanpura drone is enabled for this song.
+    var tanpuraEnabled: Bool = false
+    /// Raga override for the tanpura drone. Empty string uses song default.
+    var tanpuraRaga: String = ""
+    /// Start bar index of the loop region, or nil for no loop.
+    var loopRegionStart: Int? = nil
+    /// End bar index of the loop region, or nil for no loop.
+    var loopRegionEnd: Int? = nil
 
     init(
         songId: String = "",
