@@ -800,16 +800,32 @@ final class PlayAlongViewModel {
                 MultiChannelLog.shared.log(.warning, "<<< loadArrangementIfPossible: noPlayableLearnerPart — viz-only")
                 return
             }
-            MultiChannelLog.shared.log(.info, "... loadArrangementIfPossible: building MultiTrackSamplerGraph trackCount=\(rendered.trackCount)")
-            let graph = try MultiTrackSamplerGraph(trackCount: rendered.trackCount)
+            // ArrangementPlayer.load(split) hands ONLY split.accompaniment
+            // bytes to the sequencer (the learner part is silenced so the
+            // user plays it). The graph's track-to-sampler-to-preset mapping
+            // must align with that accompaniment SMF — NOT the full song's
+            // trackInfo. Re-summarize the accompaniment so samplers render
+            // the correct instruments. Without this, sampler[i] plays
+            // accompaniment track[i]'s notes through the full song's
+            // track[i] program, producing "completely different notes".
+            let accompanimentSummary = try? VerovioBridge.summarizeSMF(split.accompaniment)
+            let accTrackCount = accompanimentSummary?.trackCount ?? rendered.trackCount
+            let accTrackInfo = accompanimentSummary?.trackInfo ?? rendered.trackInfo
+            MultiChannelLog.shared.log(
+                .info,
+                "... loadArrangementIfPossible: accSummary tracks=\(accTrackCount) (full=\(rendered.trackCount))"
+            )
+            MultiChannelLog.shared.log(
+                .info,
+                "... loadArrangementIfPossible: building MultiTrackSamplerGraph trackCount=\(accTrackCount)"
+            )
+            let graph = try MultiTrackSamplerGraph(trackCount: accTrackCount)
             // Load the bundled MuseScore_General SF2 with per-track GM
-            // presets BEFORE handing the graph to ArrangementPlayer. Without
-            // this the samplers render through default/empty presets and the
-            // output is the "horrible sound" the user reported. Mirrors the
-            // bank load done by AuditionPipelineSection.loadSong.
+            // presets BEFORE handing the graph to ArrangementPlayer. Mirrors
+            // the bank load done by AuditionPipelineSection.loadSong.
             if let bankURL = MultiTrackSamplerGraph.bundledMuseScoreGeneralSF2URL {
                 let presets: [UInt8] = (0..<graph.samplers.count).map { i in
-                    if i < rendered.trackInfo.count, let prog = rendered.trackInfo[i].program {
+                    if i < accTrackInfo.count, let prog = accTrackInfo[i].program {
                         return prog
                     }
                     return 0  // fallback: GM 0 = Acoustic Grand Piano
