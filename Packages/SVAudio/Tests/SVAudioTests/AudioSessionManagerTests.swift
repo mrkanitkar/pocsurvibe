@@ -4,6 +4,24 @@ import Testing
 
 @testable import SVAudio
 
+// MARK: - AudioSessionDeactivatingSpy
+
+/// Records every `setActive(_:options:)` call so tests can assert options.
+final class AudioSessionDeactivatingSpy: AudioSessionDeactivating, @unchecked Sendable {
+    struct Call {
+        let active: Bool
+        let options: AVAudioSession.SetActiveOptions
+    }
+
+    private(set) var calls: [Call] = []
+
+    func setActive(_ active: Bool, options: AVAudioSession.SetActiveOptions) throws {
+        calls.append(Call(active: active, options: options))
+    }
+}
+
+// MARK: - AudioSessionManager Tests
+
 @Suite("AudioSessionManager Tests")
 struct AudioSessionManagerTests {
     @Test("Singleton exists")
@@ -25,6 +43,36 @@ struct AudioSessionManagerTests {
         // Calling deactivate without prior configure should log a warning
         // but not crash or throw.
         AudioSessionManager.shared.deactivate()
+    }
+
+    /// Verifies Apple HIG compliance: deactivate always passes
+    /// `.notifyOthersOnDeactivation` so other apps (Music, Podcasts, etc.)
+    /// know to ramp their audio back up after SurVibe stops.
+    /// See: https://developer.apple.com/documentation/avfaudio/avaudiosession/setactiveoptions/notifyothersondeactivation
+    @Test("deactivate passes .notifyOthersOnDeactivation — Apple HIG compliance")
+    @MainActor
+    func deactivatePassesNotifyOthersOnDeactivation() {
+        let spy = AudioSessionDeactivatingSpy()
+        let manager = AudioSessionManager(deactivatingSession: spy)
+
+        manager.deactivate()
+
+        #expect(spy.calls.count == 1)
+        #expect(spy.calls.first?.active == false)
+        #expect(spy.calls.first?.options.contains(.notifyOthersOnDeactivation) == true)
+    }
+
+    @Test("deactivate passes .notifyOthersOnDeactivation on repeated calls")
+    @MainActor
+    func deactivateAlwaysPassesNotifyOthersOnDeactivation() {
+        let spy = AudioSessionDeactivatingSpy()
+        let manager = AudioSessionManager(deactivatingSession: spy)
+
+        manager.deactivate()
+        manager.deactivate()
+
+        #expect(spy.calls.count == 2)
+        #expect(spy.calls.allSatisfy { $0.options.contains(.notifyOthersOnDeactivation) })
     }
 
     @Test("Interruption callbacks default to nil")

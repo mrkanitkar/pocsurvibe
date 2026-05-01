@@ -16,6 +16,18 @@ public enum BufferGrantTier: Sendable {
     case degraded
 }
 
+/// Protocol for the AVAudioSession deactivation call.
+///
+/// Used internally to allow test doubles to verify that
+/// `.notifyOthersOnDeactivation` is always passed per Apple HIG.
+/// See: https://developer.apple.com/documentation/avfaudio/avaudiosession/setactiveoptions/notifyothersondeactivation
+protocol AudioSessionDeactivating: Sendable {
+    /// Activates or deactivates the audio session with the given options.
+    func setActive(_ active: Bool, options: AVAudioSession.SetActiveOptions) throws
+}
+
+extension AVAudioSession: AudioSessionDeactivating {}
+
 /// Manages AVAudioSession configuration for simultaneous input/output.
 /// Uses @MainActor isolation for thread-safe callback management.
 ///
@@ -32,6 +44,12 @@ public final class AudioSessionManager {
     private static let logger = Logger.survibe(category: "AudioSessionManager")
 
     private let session = AVAudioSession.sharedInstance()
+
+    /// Backing session used exclusively for `deactivate()`.
+    ///
+    /// Defaults to `AVAudioSession.sharedInstance()`. Overridden in tests with
+    /// a spy to assert `.notifyOthersOnDeactivation` is passed every time.
+    let deactivatingSession: any AudioSessionDeactivating
 
     /// Whether the microphone is unavailable due to session configuration fallback.
     ///
@@ -54,6 +72,16 @@ public final class AudioSessionManager {
     nonisolated(unsafe) private var routeChangeObserver: (any NSObjectProtocol)?
 
     private init() {
+        deactivatingSession = AVAudioSession.sharedInstance()
+        setupInterruptionObserver()
+        setupRouteChangeObserver()
+    }
+
+    /// Package-internal initialiser used by tests to inject a deactivation spy.
+    ///
+    /// - Parameter deactivatingSession: A test double that records `setActive(_:options:)` calls.
+    init(deactivatingSession: any AudioSessionDeactivating) {
+        self.deactivatingSession = deactivatingSession
         setupInterruptionObserver()
         setupRouteChangeObserver()
     }
@@ -152,11 +180,17 @@ public final class AudioSessionManager {
         classifyBufferGrant()
     }
 
-    /// Deactivate the audio session.
+    /// Deactivate the audio session and notify other apps.
+    ///
+    /// Passes `.notifyOthersOnDeactivation` so that apps that ducked their
+    /// audio for SurVibe (Music, Podcasts, etc.) receive a signal to ramp
+    /// back up. Required by Apple HIG for apps that play temporary audio.
+    /// See: https://developer.apple.com/documentation/avfaudio/avaudiosession/setactiveoptions/notifyothersondeactivation
+    ///
     /// Logs a warning on failure rather than silently swallowing the error.
     public func deactivate() {
         do {
-            try session.setActive(false, options: .notifyOthersOnDeactivation)
+            try deactivatingSession.setActive(false, options: .notifyOthersOnDeactivation)
         } catch {
             Self.logger.warning("Audio session deactivation failed: \(error.localizedDescription, privacy: .public)")
         }
