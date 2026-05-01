@@ -21,7 +21,7 @@ struct PlayAlongToolbar: View {
     /// tempo slider, hands picker, loop control, click level).
     ///
     /// Two-way bindings flow through this object to `PlayAlongViewModel`'s
-    /// `backingMode`, `arrangementTempoScale`, `practiceMode`, `loopRegion`,
+    /// `backingMode`, `tempoScale`, `practiceMode`, `loopRegion`,
     /// `clickLevel`, and `showLoopBuilder` properties. Wave 5 E1 wires those
     /// onward to `ArrangementPlayer`.
     @Bindable var viewModel: PlayAlongViewModel
@@ -162,20 +162,20 @@ struct PlayAlongToolbar: View {
     /// Continuous tempo scale slider in the range 50%..150%.
     private var tempoSlider: some View {
         VStack(spacing: 2) {
-            Text(verbatim: "\(Int((viewModel.arrangementTempoScale * 100).rounded()))%")
+            Text(verbatim: "\(Int((viewModel.tempoScale * 100).rounded()))%")
                 .font(.caption2)
                 .monospacedDigit()
                 .foregroundStyle(.secondary)
                 .accessibilityHidden(true)
             Slider(
-                value: $viewModel.arrangementTempoScale,
+                value: $viewModel.tempoScale,
                 in: 0.5...1.5,
                 step: 0.05
             )
             .frame(width: 140)
             .accessibilityLabel("Tempo scale")
             .accessibilityValue(
-                "\(Int((viewModel.arrangementTempoScale * 100).rounded())) percent"
+                "\(Int((viewModel.tempoScale * 100).rounded())) percent"
             )
             .accessibilityHint("Adjust playback speed from 50 to 150 percent")
         }
@@ -536,13 +536,6 @@ struct PlayAlongToolbar: View {
         formatTempoLabel(scale)
     }
 
-    /// Clamp a tempo scale value to the valid range (40%-100%).
-    ///
-    /// - Parameter scale: The raw tempo multiplier.
-    /// - Returns: Value clamped to 0.4...1.0.
-    static func clampTempoScale(_ scale: Double) -> Double {
-        min(1.0, max(0.4, scale))
-    }
 }
 
 // MARK: - Preview

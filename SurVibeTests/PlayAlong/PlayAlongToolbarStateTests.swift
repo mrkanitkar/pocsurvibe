@@ -30,7 +30,7 @@ struct PlayAlongToolbarStateTests {
 
     @Test func defaultTempoScaleIs1_0() {
         let vm = makeViewModel()
-        #expect(vm.arrangementTempoScale == 1.0)
+        #expect(vm.tempoScale == 1.0)
     }
 
     @Test func defaultPracticeModeIsBoth() {
@@ -61,15 +61,15 @@ struct PlayAlongToolbarStateTests {
     @Test func tempoScaleClampsTo0_5To1_5() {
         let vm = makeViewModel()
 
-        vm.arrangementTempoScale = 0.4
-        #expect(vm.arrangementTempoScale == 0.5)
+        vm.tempoScale = 0.4
+        #expect(vm.tempoScale == 0.5)
 
-        vm.arrangementTempoScale = 1.6
-        #expect(vm.arrangementTempoScale == 1.5)
+        vm.tempoScale = 1.6
+        #expect(vm.tempoScale == 1.5)
 
         // Values inside the range are preserved.
-        vm.arrangementTempoScale = 0.75
-        #expect(vm.arrangementTempoScale == 0.75)
+        vm.tempoScale = 0.75
+        #expect(vm.tempoScale == 0.75)
     }
 
     @Test func backingModeIsCaseIterable() {

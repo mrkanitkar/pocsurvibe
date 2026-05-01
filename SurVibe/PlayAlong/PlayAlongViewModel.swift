@@ -120,7 +120,6 @@ final class PlayAlongViewModel {
         set {
             let clamped = min(1.5, max(0.5, newValue))
             playback.tempoScale = clamped
-            arrangementTempoScale = clamped
             arrangementPlayer?.setTempoScale(Float(clamped))
         }
     }
@@ -259,31 +258,6 @@ final class PlayAlongViewModel {
     ///
     /// Defaults to `.on`. Bound to the toolbar's backing-mode picker.
     public var backingMode: BackingMode = .on
-
-    /// Tempo multiplier in the range `0.5...1.5`.
-    ///
-    /// Set values outside the range are clamped on assignment. Defaults to
-    /// `1.0` (original tempo). Bound to the toolbar's tempo slider. The
-    /// existing `tempoScale` (delegated to `PlaybackCoordinator`) drives the
-    /// legacy 4-preset path; this Wave 4 D1 property powers the continuous
-    /// slider and is wired to `ArrangementPlayer` in Wave 5 (E1).
-    public var arrangementTempoScale: Double = 1.0 {
-        didSet {
-            let clamped = min(1.5, max(0.5, arrangementTempoScale))
-            if clamped != arrangementTempoScale {
-                arrangementTempoScale = clamped
-                return
-            }
-            // Mirror the slider value into the legacy `tempoScale` and
-            // push to ArrangementPlayer. Guarded against the recursive
-            // `tempoScale` setter (which clamps + re-assigns this same
-            // property) by checking that the legacy value differs.
-            if abs(playback.tempoScale - clamped) > 0.0001 {
-                playback.tempoScale = clamped
-            }
-            arrangementPlayer?.setTempoScale(Float(clamped))
-        }
-    }
 
     /// Hand isolation mode for the play-along session.
     ///
@@ -600,7 +574,7 @@ final class PlayAlongViewModel {
             velocity: event.velocity,
             hostTime: now,
             sequencerStartHostTime: startHost,
-            currentTempoScale: Float(arrangementTempoScale)
+            currentTempoScale: Float(tempoScale)
         )
     }
 
@@ -625,7 +599,7 @@ final class PlayAlongViewModel {
         try await player.load(split)
         player.practiceMode = practiceMode
         player.hearOtherHand = hearOtherHand
-        player.setTempoScale(Float(arrangementTempoScale))
+        player.setTempoScale(Float(tempoScale))
         player.setLoop(loopRegion)
 
         arrangementPlayer = player
@@ -654,7 +628,7 @@ final class PlayAlongViewModel {
     /// — without an external driver it would stay pinned at zero. This
     /// hook converts the player's musical-time `currentBeat` to
     /// wall-clock seconds using the loaded learner score's
-    /// `originalBPM` and the active `arrangementTempoScale`, then
+    /// `originalBPM` and the active `tempoScale`, then
     /// pushes the value via `playback.setCurrentTime(_:)`. Negative
     /// beats during count-in clamp to zero so the visualization stays
     /// at the start of the song while the user counts in.
@@ -667,7 +641,7 @@ final class PlayAlongViewModel {
         let secondsPerBeat = 60.0 / originalBPM
         arrangementPlayer?.onBeatTick = { [weak self] beat in
             guard let self else { return }
-            let scale = max(0.0001, self.arrangementTempoScale)
+            let scale = max(0.0001, self.tempoScale)
             let elapsed = max(0.0, beat) * secondsPerBeat / scale
             self.playback.setCurrentTime(elapsed)
         }
@@ -714,7 +688,7 @@ final class PlayAlongViewModel {
         )
         session.endedAt = endedAt
         session.compositeScore = summary.composite.accuracy
-        session.tempoScale = arrangementTempoScale
+        session.tempoScale = tempoScale
         session.practiceMode = practiceMode.rawValue
 
         context.insert(session)

@@ -176,7 +176,7 @@ struct LearnASongIntegrationTests {
 
         vm.tempoScale = 0.75
         #expect(mock.lastSetTempoScale == 0.75)
-        #expect(vm.arrangementTempoScale == 0.75)
+        #expect(vm.tempoScale == 0.75)
 
         vm.cleanup()
     }

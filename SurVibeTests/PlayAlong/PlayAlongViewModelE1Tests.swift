@@ -86,14 +86,14 @@ struct PlayAlongViewModelE1Tests {
         vm.tempoScale = 0.75
         #expect(mock.lastSetTempoScale == 0.75)
         // Both legacy + slider state stay in sync.
-        #expect(vm.arrangementTempoScale == 0.75)
+        #expect(vm.tempoScale == 0.75)
     }
 
-    @Test("arrangementTempoScale slider also drives ArrangementPlayer")
-    func arrangementTempoSliderForwardsToPlayer() async throws {
+    @Test("tempoScale slider also drives ArrangementPlayer")
+    func tempoScaleSliderForwardsToPlayer() async throws {
         let vm = makeViewModel()
         let mock = try await loadArrangement(on: vm)
-        vm.arrangementTempoScale = 1.25
+        vm.tempoScale = 1.25
         #expect(mock.lastSetTempoScale == 1.25)
         #expect(vm.tempoScale == 1.25)
     }
@@ -269,7 +269,7 @@ struct PlayAlongViewModelE1Tests {
         let rows = try context.fetch(descriptor)
         #expect(rows.count >= 1)
         if let row = rows.first {
-            #expect(row.tempoScale == vm.arrangementTempoScale)
+            #expect(row.tempoScale == vm.tempoScale)
             #expect(row.practiceMode == vm.practiceMode.rawValue)
         }
         vm.cleanup()

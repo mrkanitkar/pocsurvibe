@@ -40,40 +40,9 @@ struct PlayAlongToolbarIconTests {
 
 // MARK: - Tempo Scale Tests
 
-// clampTempoScale valid range is 0.4–1.0 (matches the 40%–100% slider).
 // formatTempoScale returns a percentage string, e.g. "75%".
 @MainActor
 struct PlayAlongToolbarTempoTests {
-
-    @Test func tempoScaleClampedToMinimum() {
-        let clamped = PlayAlongToolbar.clampTempoScale(0.1)
-        #expect(clamped == 0.4) // slider minimum is 40%
-    }
-
-    @Test func tempoScaleClampedToMaximum() {
-        let clamped = PlayAlongToolbar.clampTempoScale(3.0)
-        #expect(clamped == 1.0) // slider maximum is 100%
-    }
-
-    @Test func tempoScaleWithinRangeUnchanged() {
-        let clamped = PlayAlongToolbar.clampTempoScale(0.75)
-        #expect(clamped == 0.75)
-    }
-
-    @Test func tempoScaleMinBoundary() {
-        let clamped = PlayAlongToolbar.clampTempoScale(0.4)
-        #expect(clamped == 0.4)
-    }
-
-    @Test func tempoScaleMaxBoundary() {
-        let clamped = PlayAlongToolbar.clampTempoScale(1.0)
-        #expect(clamped == 1.0)
-    }
-
-    @Test func tempoScaleNegativeClampedToMinimum() {
-        let clamped = PlayAlongToolbar.clampTempoScale(-1.0)
-        #expect(clamped == 0.4)
-    }
 
     @Test func formatTempoScaleShowsPercentForFullSpeed() {
         let formatted = PlayAlongToolbar.formatTempoScale(1.0)
