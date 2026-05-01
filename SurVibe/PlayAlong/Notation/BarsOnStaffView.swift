@@ -6,6 +6,21 @@ import SwiftUI
 /// Each bar's Y position encodes pitch, width encodes duration, color encodes
 /// the performing hand (RH blue / LH red / both purple).
 ///
+/// ## Hand shape coding (T11', HIG)
+/// In addition to color, every bar carries a leading **notehead** whose shape
+/// encodes the performing hand independently of color, satisfying the
+/// "convey information with more than color alone" guideline:
+///   - Right hand → circle notehead.
+///   - Left hand  → square notehead.
+///   - Chord (≥2 simultaneous notes) → filled diamond notehead.
+/// See [Apple HIG — Color](https://developer.apple.com/design/human-interface-guidelines/color).
+///
+/// ## Reduce Motion
+/// This view does not animate continuously; it draws each frame from
+/// `currentTime` directly via `Canvas`. Position changes are tied to the
+/// playback clock, not to a SwiftUI animation, so Reduce Motion needs no
+/// extra branching here — there is no peripheral SwiftUI motion to suppress.
+///
 /// ## Latency contract
 /// All colors arrive as `let` parameters. This view MUST NOT read
 /// `@Environment(AppThemeManager.self)` — doing so would trigger 120Hz
@@ -92,14 +107,11 @@ struct BarsOnStaffView: View {
             let barWidth = max(4, CGFloat(event.duration) * pixelsPerSecond)
             if startX + barWidth < 0 || startX > size.width { continue }
 
+            let isChord = chordGroups.contains { group in
+                group.contains(event.id) && chordActiveAtTime(group: group, time: currentTime)
+            }
             let color: Color = {
-                // If this event belongs to a chord group active at the current beat,
-                // render chord color.
-                if chordGroups.contains(where: { group in
-                    group.contains(event.id) && chordActiveAtTime(group: group, time: currentTime)
-                }) {
-                    return chordColor
-                }
+                if isChord { return chordColor }
                 return event.hand == .right ? rhColor : lhColor
             }()
             let y = yForMidiNote(Int(event.midiNote), size: size)
@@ -113,7 +125,55 @@ struct BarsOnStaffView: View {
                 with: .color(.white.opacity(0.5)),
                 lineWidth: 0.5
             )
+
+            // Hand-shape coded notehead at the bar's leading edge.
+            // RH=circle, LH=square, chord=filled diamond — see HIG comment above.
+            drawNotehead(
+                ctx: ctx,
+                centerX: startX,
+                centerY: rect.midY,
+                hand: event.hand,
+                isChord: isChord,
+                color: color
+            )
         }
+    }
+
+    /// Draw a leading-edge notehead whose **shape** encodes the performing hand
+    /// independently of color (HIG: convey information with more than color alone).
+    private func drawNotehead(
+        ctx: GraphicsContext,
+        centerX: CGFloat,
+        centerY: CGFloat,
+        hand: Hand,
+        isChord: Bool,
+        color: Color
+    ) {
+        let radius: CGFloat = 7
+        let path: Path = {
+            if isChord {
+                // Filled diamond
+                var p = Path()
+                p.move(to: CGPoint(x: centerX, y: centerY - radius))
+                p.addLine(to: CGPoint(x: centerX + radius, y: centerY))
+                p.addLine(to: CGPoint(x: centerX, y: centerY + radius))
+                p.addLine(to: CGPoint(x: centerX - radius, y: centerY))
+                p.closeSubpath()
+                return p
+            }
+            switch hand {
+            case .right:
+                return Path(ellipseIn: CGRect(
+                    x: centerX - radius, y: centerY - radius,
+                    width: radius * 2, height: radius * 2))
+            case .left:
+                return Path(CGRect(
+                    x: centerX - radius, y: centerY - radius,
+                    width: radius * 2, height: radius * 2))
+            }
+        }()
+        ctx.fill(path, with: .color(color))
+        ctx.stroke(path, with: .color(.white.opacity(0.85)), lineWidth: 1)
     }
 
     /// Group events whose start times fall within 10ms of each other.

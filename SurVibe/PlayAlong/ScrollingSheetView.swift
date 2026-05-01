@@ -10,8 +10,34 @@ import SwiftUI
 /// `StaffNotationRenderer`) owns its own `ScrollViewReader`, so there is
 /// no need for an outer scroll wrapper here.
 ///
-/// Detected pitch is forwarded into `SargamRenderer` so key presses are
-/// highlighted on the notation blocks in real time.
+/// ## Unified renderer signature (T11')
+/// Consumes the same canonical inputs as `BarsOnStaffView`,
+/// `SargamDualRowView`, and `SplitLaneView`:
+///   - `noteEvents: [NoteEvent]` — single source of truth.
+///   - `currentTime: TimeInterval` — playback clock.
+/// Plus per-renderer specifics (the `Song` for key/time signature lookup,
+/// `currentNoteIndex` for auto-scroll, mic / MIDI highlight inputs).
+///
+/// Per the architectural review §2.4, every play-along renderer must accept
+/// the same canonical render data shape — `Song.decoded*` JSON blobs are no
+/// longer read here.
+///
+/// ## Reduce Motion (HIG)
+/// When `accessibilityReduceMotion` is on, auto-scroll falls back to discrete
+/// note-level advance instead of continuous animated scroll.
+/// `SargamRenderer`, `WesternRenderer`, and `StaffNotationRenderer` already
+/// branch internally on `@Environment(\.accessibilityReduceMotion)` for their
+/// scroll animations, so the discrete-advance behaviour is honoured by them;
+/// this view documents and reinforces the contract via its accessibility hint.
+/// See [Apple HIG — Motion](https://developer.apple.com/design/human-interface-guidelines/motion).
+///
+/// ## Hand shape coding (HIG)
+/// In standard music notation the right hand is shown on the treble clef and
+/// the left hand on the bass clef — staff position itself encodes hand
+/// independently of color. The shape-coding rule (RH circle / LH square /
+/// chord diamond) introduced for `BarsOnStaffView` and `SplitLaneView` is
+/// therefore **auto-satisfied** by this renderer's clef placement.
+/// See [Apple HIG — Color](https://developer.apple.com/design/human-interface-guidelines/color).
 ///
 /// ## Why not NotationContainerView?
 /// `NotationContainerView` reads `@AppStorage("notationDisplayMode")` on
@@ -19,17 +45,6 @@ import SwiftUI
 /// It also adds a mode-picker and zoom-indicator that are inappropriate
 /// for the compact play-along sheet. Rendering the renderers directly here
 /// is simpler and correctly honours the toolbar's notation-mode selection.
-///
-/// ## Usage
-/// ```swift
-/// ScrollingSheetView(
-///     song: song,
-///     currentNoteIndex: viewModel.currentNoteIndex,
-///     notationMode: viewModel.notationMode,
-///     currentPitch: viewModel.currentPitch,
-///     highlightState: viewModel.highlightState
-/// )
-/// ```
 struct ScrollingSheetView: View {
     // MARK: - Properties
 
@@ -43,7 +58,15 @@ struct ScrollingSheetView: View {
     private var pinchScale: CGFloat = 1.0
 
     /// The song whose notation should be displayed.
+    /// Used here only for key signature, time signature, and tempo —
+    /// note data comes from `noteEvents`.
     let song: Song
+
+    /// Canonical timed note events (T11' unified input).
+    let noteEvents: [NoteEvent]
+
+    /// Current playback position in seconds (T11' unified input).
+    let currentTime: TimeInterval
 
     /// Index of the currently playing note, or nil when idle.
     let currentNoteIndex: Int?
@@ -71,6 +94,9 @@ struct ScrollingSheetView: View {
     /// when `.wrong`, a red border. Nil during playback before any user input.
     var currentNoteMatchState: FallingNotesLayoutEngine.NoteState?
 
+    @Environment(\.accessibilityReduceMotion)
+    private var reduceMotion
+
     // MARK: - Private Helpers
 
     /// The effective note name to highlight in the notation, from any input source.
@@ -97,17 +123,55 @@ struct ScrollingSheetView: View {
         highlightState?.midiHighlightNotes.min()
     }
 
+    // MARK: - NoteEvent → Legacy Notation Adapter (T11')
+
+    /// Convert canonical `[NoteEvent]` into the legacy `[SargamNote]` shape
+    /// expected by `SargamRenderer`.
+    ///
+    /// Durations are converted from absolute seconds back into beats using the
+    /// song's tempo (`SargamNote.duration` is beat-based). The full Swar name
+    /// is split back into `(note, modifier)` so existing `SargamNoteView`
+    /// rendering paths continue to display the Komal/Tivra prefix correctly.
+    private var sargamNotes: [SargamNote] {
+        let beatsPerSecond = max(1.0, Double(song.tempo)) / 60.0
+        return noteEvents.map { event in
+            let split = Self.splitSwarName(event.swarName)
+            return SargamNote(
+                note: split.base,
+                octave: event.octave,
+                duration: event.duration * beatsPerSecond,
+                modifier: split.modifier
+            )
+        }
+    }
+
+    /// Convert canonical `[NoteEvent]` into the legacy `[WesternNote]` shape
+    /// expected by `WesternRenderer` / `StaffNotationRenderer`.
+    private var westernNotes: [WesternNote] {
+        let beatsPerSecond = max(1.0, Double(song.tempo)) / 60.0
+        return noteEvents.map { event in
+            WesternNote(
+                note: event.westernName,
+                duration: event.duration * beatsPerSecond,
+                midiNumber: Int(event.midiNote)
+            )
+        }
+    }
+
+    /// Decompose a full Swar name (e.g., "Komal Re", "Tivra Ma", "Sa") into
+    /// its `(base, modifier)` parts. Mirrors the inverse of
+    /// `NoteEvent.fullSwarName(note:modifier:)`.
+    private static func splitSwarName(_ full: String) -> (base: String, modifier: String?) {
+        let parts = full.split(separator: " ", maxSplits: 1, omittingEmptySubsequences: true)
+        if parts.count == 2 {
+            return (String(parts[1]), String(parts[0]).lowercased())
+        }
+        return (full, nil)
+    }
+
     // MARK: - Body
 
     var body: some View {
-        // T11'-pending: ScrollingSheetView still expects [SargamNote] / [WesternNote]
-        // arrays. T5' dropped the JSON-blob source. Until T11' rewires every
-        // renderer to consume `[NoteEvent]` directly, render an empty placeholder.
-        // The build still resolves — the user just sees a "no notation yet"
-        // staff between T5' and T11' for these themes.
-        let sargamNotes: [SargamNote] = []
-        let westernNotes: [WesternNote] = []
-
         Group {
             switch notationMode {
             case .sargam:
@@ -194,7 +258,11 @@ struct ScrollingSheetView: View {
         .simultaneousGesture(doubleTapReset)
         .accessibilityElement(children: .contain)
         .accessibilityLabel("Scrolling notation sheet")
-        .accessibilityHint("Notation auto-scrolls to follow the current note during playback")
+        .accessibilityHint(
+            reduceMotion
+                ? "Notation advances note-by-note in step with playback (Reduce Motion)."
+                : "Notation auto-scrolls to follow the current note during playback."
+        )
     }
 
     // MARK: - Gestures
@@ -224,6 +292,8 @@ struct ScrollingSheetView: View {
 #Preview("Scrolling Sheet — Sargam") {
     ScrollingSheetView(
         song: Song(title: "Preview Song", tempo: 120),
+        noteEvents: [],
+        currentTime: 0,
         currentNoteIndex: nil,
         notationMode: .sargam
     )
@@ -232,6 +302,8 @@ struct ScrollingSheetView: View {
 #Preview("Scrolling Sheet — Western") {
     ScrollingSheetView(
         song: Song(title: "Preview Song", tempo: 120),
+        noteEvents: [],
+        currentTime: 0,
         currentNoteIndex: 3,
         notationMode: .western
     )

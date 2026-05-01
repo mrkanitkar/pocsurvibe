@@ -619,6 +619,8 @@ struct SongPlayAlongView: View {
             case .immersive, .midnight, .sargamGlass:
                 ScrollingSheetView(
                     song: song,
+                    noteEvents: viewModel.noteEvents,
+                    currentTime: viewModel.currentTime,
                     currentNoteIndex: viewModel.currentNoteIndex,
                     notationMode: viewModel.notationMode,
                     currentPitch: viewModel.currentPitch,
@@ -633,7 +635,8 @@ struct SongPlayAlongView: View {
                     currentTime: viewModel.currentTime,
                     rhColor: viewModel.rhColor,
                     lhColor: viewModel.lhColor,
-                    chordColor: viewModel.chordColor
+                    chordColor: viewModel.chordColor,
+                    tempoBPM: Double(song.tempo)
                 )
                 .accessibilityLabel("Vertical split-lane falling notes")
             }
