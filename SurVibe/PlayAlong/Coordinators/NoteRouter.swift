@@ -579,7 +579,9 @@ final class NoteRouter {
             let silThresh = String(format: "%.4f", PracticeConstants.silenceThreshold)
             let confThresh = String(format: "%.3f", PracticeConstants.confidenceThreshold)
             let midiConn = self.isMIDIConnected
-            Self.logger.info(
+            // Per-sample pitch result — demoted to .debug to prevent log spam.
+            // Fires at the pitch-detection rate (~10–30 Hz) while mic is active.
+            Self.logger.debug(
                 // swiftlint:disable:next line_length
                 "MicDiag: pitchStream result #\(pitchResultCount) freq=\(freqStr)Hz note=\(enriched.noteName, privacy: .public)\(enriched.octave) amp=\(ampStr)/\(silThresh) conf=\(confStr)/\(confThresh) midiConnected=\(midiConn)"
             )
@@ -605,13 +607,15 @@ final class NoteRouter {
         lastMelodyDetectionDate = Date()
         let midiNote = Self.midiNoteFromFrequency(enriched.frequency)
         if !isMIDIConnected {
-            Self.logger.info(
+            // Per-pitch-pass log — demoted to .debug; fires on every note detection.
+            Self.logger.debug(
                 "MicDiag: highlight note=\(midiNote) (\(enriched.noteName, privacy: .public)\(enriched.octave))"
             )
             detectedMidiNotes = [midiNote]
             updateDetectedSwarInfo(from: detectedMidiNotes)
         } else {
-            Self.logger.info("MicDiag: MIDI connected — skipping detectedMidiNotes update")
+            // Per-pitch-pass log — demoted to .debug; fires on every detection above threshold.
+            Self.logger.debug("MicDiag: MIDI connected — skipping detectedMidiNotes update")
         }
         routeNoteToScoring(midiNote: midiNote)
     }
