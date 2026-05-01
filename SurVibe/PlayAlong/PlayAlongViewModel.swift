@@ -353,6 +353,12 @@ final class PlayAlongViewModel {
     /// path is unaffected.
     public var practiceModeChipVisible: Bool = false
 
+    // MARK: - Per-song preference hydration (see +Hydration.swift)
+    /// True after first hydration from `SongProgress`. Internal setter for extension access.
+    public internal(set) var didInitialHydrate: Bool = false
+    /// In-flight debounce task for `persistSettings(to:immediate:)`.
+    var persistDebounceTask: Task<Void, Never>?
+
     // MARK: - Chrome Visibility (v2) — delegates to chrome coordinator (SP-3c)
 
     /// Chrome visibility — delegates to `chrome.chromeVisibility`.
@@ -858,12 +864,7 @@ final class PlayAlongViewModel {
         MultiChannelLog.shared.log(.info, "<<< startSession state=\(playback.playbackState) arrangedPlaying=\(arrangementPlayer?.isPlaying ?? false)")
     }
 
-    /// Resets the current session back to start.
-    ///
-    /// Differs from `startSession()` in that it stops in-flight playback,
-    /// seeks transport to 0, and resets scoring state before starting fresh.
-    /// Used by both the toolbar Restart button and the Replay action on
-    /// the Results overlay.
+    /// Reset session to start: stop, seek to 0, reset scoring, then start fresh.
     func restart() async {
         stopAndComplete()
         seek(to: 0)
