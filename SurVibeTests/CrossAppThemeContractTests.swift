@@ -3,7 +3,7 @@ import Testing
 
 /// Static-source cross-app theme-contract guard.
 ///
-/// Phase 3.5 (Songs + Onboarding + PlayAlong Results + Practice + Components):
+/// Phase 3.5 (Songs + Onboarding + PlayAlong Results + Components):
 /// asserts the refactored views contain no disallowed hardcoded color
 /// patterns. Mirrors `LearnTabThemeContractTests` and `LatencyContractTests`
 /// patterns: fast, deterministic, no UI.
@@ -37,12 +37,12 @@ struct CrossAppThemeContractTests {
         "SurVibe/Components/DoorCard.swift",
         // PlayAlong Results (1)
         "SurVibe/PlayAlong/PlayAlongResultsOverlay.swift",
-        // Practice (1 — latency-conservative)
-        "SurVibe/Practice/PitchProximityMeter.swift"
+        // PlayAlong Components (1 — latency-conservative, relocated from Practice/)
+        "SurVibe/PlayAlong/Components/PitchProximityMeter.swift"
     ]
 
     private static let latencyConservativeFiles: [String] = [
-        "SurVibe/Practice/PitchProximityMeter.swift"
+        "SurVibe/PlayAlong/Components/PitchProximityMeter.swift"
     ]
 
     // MARK: - Banned patterns
