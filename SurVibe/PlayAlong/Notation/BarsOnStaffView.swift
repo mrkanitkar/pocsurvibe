@@ -97,6 +97,10 @@ struct BarsOnStaffView: View {
 
     /// Draw one rounded rectangle per `NoteEvent` visible within the current
     /// scroll window. Bars outside the window are skipped for performance.
+    ///
+    /// Learner notes use the full-opacity color assigned by hand (RH / LH / chord).
+    /// Accompaniment notes use a dimmed outlined small circle (0.45 opacity, stroke only)
+    /// so they are visually distinct in both color and shape — color-blind safe.
     private func drawBars(ctx: GraphicsContext, size: CGSize) {
         let playheadX = playheadXFraction * size.width
         let pixelsPerSecond = (size.width - playheadX - 20) / CGFloat(windowSeconds)
@@ -107,35 +111,54 @@ struct BarsOnStaffView: View {
             let barWidth = max(4, CGFloat(event.duration) * pixelsPerSecond)
             if startX + barWidth < 0 || startX > size.width { continue }
 
-            let isChord = chordGroups.contains { group in
-                group.contains(event.id) && chordActiveAtTime(group: group, time: currentTime)
-            }
-            let color: Color = {
-                if isChord { return chordColor }
-                return event.hand == .right ? rhColor : lhColor
-            }()
             let y = yForMidiNote(Int(event.midiNote), size: size)
-            let rect = CGRect(x: startX, y: y, width: barWidth, height: 14)
-            ctx.fill(
-                Path(roundedRect: rect, cornerRadius: 5),
-                with: .color(color)
-            )
-            ctx.stroke(
-                Path(roundedRect: rect, cornerRadius: 5),
-                with: .color(.white.opacity(0.5)),
-                lineWidth: 0.5
-            )
 
-            // Hand-shape coded notehead at the bar's leading edge.
-            // RH=circle, LH=square, chord=filled diamond — see HIG comment above.
-            drawNotehead(
-                ctx: ctx,
-                centerX: startX,
-                centerY: rect.midY,
-                hand: event.hand,
-                isChord: isChord,
-                color: color
-            )
+            if event.isAccompaniment {
+                // T14' accompaniment: outlined small circle, 0.45 opacity.
+                // Distinct from learner RH circle (filled), LH square (filled),
+                // and chord diamond (filled) — shape alone differentiates.
+                let circleSize: CGFloat = 8
+                let cx = startX + circleSize / 2
+                let cy = y + 7
+                let circleRect = CGRect(
+                    x: cx - circleSize / 2, y: cy - circleSize / 2,
+                    width: circleSize, height: circleSize
+                )
+                ctx.stroke(
+                    Path(ellipseIn: circleRect),
+                    with: .color(notationLineColor.opacity(0.45)),
+                    lineWidth: 1.5
+                )
+            } else {
+                // T11' learner branch with hand-shape coded notehead.
+                let isChord = chordGroups.contains { group in
+                    group.contains(event.id) && chordActiveAtTime(group: group, time: currentTime)
+                }
+                let color: Color = {
+                    if isChord { return chordColor }
+                    return event.hand == .right ? rhColor : lhColor
+                }()
+                let rect = CGRect(x: startX, y: y, width: barWidth, height: 14)
+                ctx.fill(
+                    Path(roundedRect: rect, cornerRadius: 5),
+                    with: .color(color)
+                )
+                ctx.stroke(
+                    Path(roundedRect: rect, cornerRadius: 5),
+                    with: .color(.white.opacity(0.5)),
+                    lineWidth: 0.5
+                )
+                // Hand-shape coded notehead at the bar's leading edge.
+                // RH=circle, LH=square, chord=filled diamond.
+                drawNotehead(
+                    ctx: ctx,
+                    centerX: startX,
+                    centerY: rect.midY,
+                    hand: event.hand,
+                    isChord: isChord,
+                    color: color
+                )
+            }
         }
     }
 

@@ -792,6 +792,7 @@ final class PlayAlongViewModel {
     /// `SongPlayAlongView`'s plain `viewModel.loadSong(song)` call into a
     /// fully wired Learn-a-Song session for MXL-imported songs without
     /// any view-side code change.
+    // swiftlint:disable:next function_body_length
     private func loadArrangementIfPossible(for song: Song) async {
         MultiChannelLog.shared.log(.info, ">>> loadArrangementIfPossible song=\(song.title) midiBytes=\(song.midiData?.count ?? 0)")
         guard let midiData = song.midiData, !midiData.isEmpty else {
@@ -910,9 +911,22 @@ final class PlayAlongViewModel {
             // PartSplit. The legacy Day-0 MIDIParser produces zero events
             // for the bundled MXLs; this gives the toolbar/falling-notes
             // a non-empty timeline to render.
-            let viz = NoteEvent.fromExpectedNotes(split.learner.notes, bpm: rendered.originalBPM)
+            let learnerViz = NoteEvent.fromExpectedNotes(split.learner.notes, bpm: rendered.originalBPM)
+
+            // T14': parse accompaniment SMF; cap at 400 notes to avoid crowding.
+            let accompViz: [NoteEvent]
+            if case .success(let ev) = MIDIParser.parse(data: split.accompaniment), !ev.isEmpty {
+                accompViz = NoteEvent.fromAccompanimentMIDI(events: Array(ev.prefix(400)))
+            } else {
+                accompViz = []
+            }
+            let viz = (learnerViz + accompViz).sorted(by: { $0.timestamp < $1.timestamp })
             playback.setNoteEvents(viz)
-            MultiChannelLog.shared.log(.info, "<<< WIRED tracks=\(rendered.trackCount) viz=\(viz.count) notes")
+            let lc = learnerViz.count, ac = accompViz.count, vc = viz.count
+            MultiChannelLog.shared.log(
+                .info,
+                "<<< WIRED tracks=\(rendered.trackCount) learner=\(lc) accomp=\(ac) viz=\(vc)"
+            )
         } catch {
             MultiChannelLog.shared.log(.error, "<<< loadArrangementIfPossible: FAILED \(error.localizedDescription) — viz-only")
         }
