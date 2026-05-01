@@ -1,3 +1,4 @@
+import AVFoundation
 import SVCore
 import SwiftUI
 
@@ -69,11 +70,17 @@ struct MicPermissionPrePrompt: View {
 
     /// Whether the pre-prompt should still be shown for this user.
     ///
-    /// Reads the `hasSeenMicPermissionPrePrompt` flag directly from
-    /// `UserDefaults` so call sites can gate sheet presentation without
-    /// owning an `@AppStorage` binding themselves.
+    /// The pre-prompt is HIG rationale shown BEFORE iOS issues its system
+    /// permission alert. If permission has already been resolved (granted
+    /// or denied), the pre-prompt is redundant — the system has already
+    /// asked, so there's nothing to pre-prompt for. We only show it when
+    /// `AVAudioApplication.shared.recordPermission == .undetermined` AND
+    /// the user hasn't yet seen the rationale.
     static var shouldShow: Bool {
-        !UserDefaults.standard.bool(forKey: "hasSeenMicPermissionPrePrompt")
+        guard !UserDefaults.standard.bool(forKey: "hasSeenMicPermissionPrePrompt") else {
+            return false
+        }
+        return AVAudioApplication.shared.recordPermission == .undetermined
     }
 }
 
