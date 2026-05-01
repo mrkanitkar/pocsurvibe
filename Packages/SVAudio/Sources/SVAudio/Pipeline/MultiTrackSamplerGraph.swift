@@ -135,6 +135,24 @@ public final class MultiTrackSamplerGraph: MultiTrackSamplerGraphProtocol {
     /// because `destinationMIDIEndpoint` does not channel-filter — all events
     /// on a track flow to the assigned destination regardless of channel byte).
     ///
+    /// `RenderedMIDI.trackInfo[i]` is documented to align 1:1 with
+    /// `AVAudioSequencer.tracks[i]` (Verovio excludes the conductor track from
+    /// `trackInfo`, and Apple's `AVAudioSequencer.tracks` excludes the tempo
+    /// track per the framework header). When the alignment holds — which is
+    /// the common case — `samplers[i]` was already pre-banked from
+    /// `trackInfo[i].program` by `loadBank(at:presets:)`, so index-based
+    /// routing puts the right instrument on the right track.
+    ///
+    /// **Off-by-one defense (T3'):** when the source MIDI has fewer parts
+    /// than expected and `seq.tracks.count != trackInfo.count`, the previous
+    /// implementation silently routed the trailing tracks to mis-banked
+    /// samplers. We now emit:
+    ///   * `GRAPH-ROUTE track=<i> program=<p> sampler=<idx>` per routed track
+    ///     (`p=0` fallback when `trackInfo[i]` is missing or its program is
+    ///     `nil`, matching `derivedPresets` in `AuditionPipelineSection`).
+    ///   * `GRAPH-ROUTE-MISMATCH seq=<n> info=<m>` when the count alignment
+    ///     breaks, so audio_log captures the failure mode end-to-end.
+    ///
     /// - Parameter rendered: Output of `VerovioBridge.render(...)`.
     /// - Throws: `PipelineError.engineNotRunning` if the shared engine stopped.
     ///           Underlying `AVAudioSequencer` errors on malformed MIDI bytes.
@@ -145,9 +163,49 @@ public final class MultiTrackSamplerGraph: MultiTrackSamplerGraphProtocol {
         let seq = AVAudioSequencer(audioEngine: engine)
         try seq.load(from: rendered.data, options: [])
 
-        let trackCount = min(seq.tracks.count, samplers.count)
+        let seqTracks = seq.tracks.count
+        let samplerCount = self.samplers.count
+        let infoCount = rendered.trackInfo.count
+
+        // Surface the count-alignment problem before we route. When this
+        // fires, the trailing tracks beyond `min(infoCount, seqTracks)` will
+        // fall back to program 0 (Acoustic Grand) for the GRAPH-ROUTE log
+        // and inherit whatever preset was loaded into that sampler slot.
+        if seqTracks != infoCount {
+            graphLogger.warning(
+                """
+                GRAPH-ROUTE-MISMATCH seq=\(seqTracks, privacy: .public) \
+                info=\(infoCount, privacy: .public)
+                """
+            )
+            PipelineFileLog.shared.log(
+                "GRAPH-ROUTE-MISMATCH seq=\(seqTracks) info=\(infoCount)"
+            )
+        }
+
+        let trackCount = min(seqTracks, samplerCount)
         for i in 0..<trackCount {
             seq.tracks[i].destinationMIDIEndpoint = samplers[i].midiIn
+
+            // Resolve the program that was pre-banked into this sampler slot
+            // via `RenderedMIDI.trackInfo[i].program`. Falls back to GM 0
+            // (Acoustic Grand) when trackInfo is short or the entry has no
+            // Program Change — same fallback as `derivedPresets` so the log
+            // matches what `loadBank(at:presets:)` actually loaded.
+            let program: UInt8 = (i < infoCount)
+                ? (rendered.trackInfo[i].program ?? 0)
+                : 0
+            graphLogger.info(
+                """
+                GRAPH-ROUTE track=\(i, privacy: .public) \
+                program=\(program, privacy: .public) \
+                sampler=\(i, privacy: .public)
+                """
+            )
+            PipelineFileLog.shared.log(
+                "GRAPH-ROUTE track=\(i) program=\(program) sampler=\(i)"
+            )
+
             // Diagnostic: per-track length so we can see whether a track
             // is empty/short and that's why playback stops early.
             let t = seq.tracks[i]
@@ -165,8 +223,6 @@ public final class MultiTrackSamplerGraph: MultiTrackSamplerGraphProtocol {
             )
         }
         self.sequencer = seq
-        let seqTracks = seq.tracks.count
-        let samplerCount = self.samplers.count
         let tempoLen = seq.tempoTrack.lengthInSeconds
         graphLogger.info(
             """
