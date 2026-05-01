@@ -172,11 +172,7 @@ public final class ArrangementPlayer {
                 + "trackInfo=\(payload.trackInfo.count)"
         )
         arrangementPlayerLogger.info(
-            """
-            load: smfBytes=\(smfData.count, privacy: .public) \
-            full=\(usingFull, privacy: .public) \
-            trackInfo=\(payload.trackInfo.count, privacy: .public)
-            """
+            "load: smfBytes=\(smfData.count, privacy: .public) full=\(usingFull, privacy: .public) trackInfo=\(payload.trackInfo.count, privacy: .public)"
         )
     }
 
