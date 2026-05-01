@@ -262,7 +262,14 @@ struct SongPlayAlongView: View {
         .navigationBarTitleDisplayMode(.inline)
         .sensoryFeedback(.selection, trigger: viewModel.scoring.notesHit)
         .sheet(isPresented: $showMicPrePrompt) {
-            MicPermissionPrePrompt(onContinue: {})
+            // Auto-start playback once the user dismisses the pre-prompt.
+            // Without this hook the user lands on the Play Along screen
+            // with no audible feedback ("clicked Continue, nothing happens").
+            // The system mic permission is requested separately by
+            // `viewModel.loadSong` — this closure only kicks the transport.
+            MicPermissionPrePrompt(onContinue: {
+                Task { await viewModel.startSession() }
+            })
         }
         .task {
             MultiChannelLog.shared.log(.info, ">>> SongPlayAlongView.task ENTERED song=\(song.title) cancelled=\(Task.isCancelled)")
