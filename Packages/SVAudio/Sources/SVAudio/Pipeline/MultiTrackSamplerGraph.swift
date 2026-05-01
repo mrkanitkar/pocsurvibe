@@ -333,7 +333,12 @@ public final class MultiTrackSamplerGraph: MultiTrackSamplerGraphProtocol {
                 let p = presets[i]
                 let kind = percussion ? "perc" : "mel"
                 graphLogger.info(
-                    "loadBank: sampler[\(i, privacy: .public)] \(kind, privacy: .public) preset=\(p, privacy: .public) bankMSB=\(bankMSB, privacy: .public) OK"
+                    """
+                    loadBank: sampler[\(i, privacy: .public)] \
+                    \(kind, privacy: .public) \
+                    preset=\(p, privacy: .public) \
+                    bankMSB=\(bankMSB, privacy: .public) OK
+                    """
                 )
                 PipelineFileLog.shared.log("  sampler[\(i)] \(kind) preset=\(p) bankMSB=\(bankMSB) loaded OK")
             } catch {
