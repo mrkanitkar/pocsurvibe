@@ -192,6 +192,13 @@ struct ThemeCarouselPicker: View {
     }
 }
 
+// MARK: - Dual-Presentation Alias
+
+/// Alias for consistent naming across the dual-presentation refactors
+/// (Wave 2). `ThemeCarouselPicker` is already push-safe (no embedded
+/// `NavigationStack`), so no structural extraction is needed.
+typealias ThemeCarouselContent = ThemeCarouselPicker
+
 // MARK: - Preview
 
 #Preview {
