@@ -839,10 +839,20 @@ final class PlayAlongViewModel {
             // and channel — full Bollywood arrangement plays. Hand isolation
             // happens via `applyHandMute()` muting `learnerTrackIndices`
             // when the user picks RH-only / LH-only.
-            let trackCount = max(1, rendered.trackCount)
+            // Adopt the audition POC pattern: size the sampler graph by the
+            // count of channel-voice tracks (`trackInfo`), not the raw MTrk
+            // count. `VerovioBridge.summarize` strips the conductor/tempo
+            // track from `trackInfo`, and `AVAudioSequencer.tracks` does the
+            // same — so `trackInfo.count` is the exact number of routable
+            // tracks. Using the raw `trackCount` (which includes the tempo
+            // track) created an extra unused sampler that never received MIDI.
+            let trackCount = max(1, min(rendered.trackInfo.count, MultiTrackSamplerGraph.maxTracks))
+            let infoTracks = rendered.trackInfo.count
+            let rawTracks = rendered.trackCount
             MultiChannelLog.shared.log(
                 .info,
-                "... loadArrangementIfPossible: building MultiTrackSamplerGraph trackCount=\(trackCount) (fullSMF)"
+                "... loadArrangementIfPossible: building MultiTrackSamplerGraph "
+                    + "trackCount=\(trackCount) (fullSMF, infoTracks=\(infoTracks) rawTracks=\(rawTracks))"
             )
             let graph = try MultiTrackSamplerGraph(trackCount: trackCount)
             if let bankURL = MultiTrackSamplerGraph.activeSoundFontURL() {
@@ -869,7 +879,7 @@ final class PlayAlongViewModel {
             } else {
                 MultiChannelLog.shared.log(
                     .error,
-                    "... loadArrangementIfPossible: no SoundFont resolved (neither GeneralUser-GS nor MuseScore_General found)"
+                    "... loadArrangementIfPossible: no SoundFont resolved (MuseScore_General.sf2 missing from Bundle.module)"
                 )
             }
             MultiChannelLog.shared.log(.info, "... loadArrangementIfPossible: graph constructed; calling loadArrangement")

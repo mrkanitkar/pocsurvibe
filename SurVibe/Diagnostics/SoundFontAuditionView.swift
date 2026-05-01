@@ -18,11 +18,11 @@ import SwiftUI
 ///
 /// ## Usage
 ///
-/// 1. Copy `MuseScore_General.sf2` and `GeneralUser-GS.sf2` to the iPad's
-///    Files app (iCloud Drive or "On My iPad").
-/// 2. In SurVibe (DEBUG build), open Settings → SoundFont A/B Audition.
-/// 3. Tap "Pick Bank A" and "Pick Bank B" to load both files.
-/// 4. Toggle A ↔ B to compare timbres through the multi-channel pipeline.
+/// 1. Slot A auto-loads with the production bank `MuseScore_General.sf2`
+///    (SVAudio package resource).
+/// 2. Slot B is user-pickable — drop any `.sf2` into the Files app
+///    (iCloud Drive or "On My iPad") and tap "Pick Bank B".
+/// 3. Toggle A ↔ B to compare timbres through the multi-channel pipeline.
 struct SoundFontAuditionView: View {
 
     // MARK: - Types
@@ -129,25 +129,16 @@ struct SoundFontAuditionView: View {
 
     // MARK: - File Loading
 
-    /// Auto-load the two bundled audition banks if they're present.
+    /// Auto-load the bundled production bank into slot A.
     ///
-    /// `MuseScore_General.sf2` is shipped as a SwiftPM resource of the
-    /// `SVAudio` package, so it is resolved via `Bundle.module` first
-    /// (the package resource bundle), with `Bundle.main` as a fallback
-    /// for legacy builds. `GeneralUser-GS.sf2` continues to live in
-    /// `Diagnostics/AuditionAssets/` and is therefore always in the
-    /// main app bundle. Skips a slot that already has a file picked
-    /// manually. Only runs in DEBUG; the resources are excluded from
-    /// Release builds via target membership.
+    /// Production ships a single bank — `MuseScore_General.sf2` from the
+    /// SVAudio package resources (`Bundle.module`). Slot B stays empty
+    /// for the user to pick an arbitrary `.sf2` from the Files app for
+    /// ad-hoc comparison. DEBUG-only.
     private func autoLoadBundledBanksIfPresent() {
         if fileNameA == nil,
-           let url = MultiTrackSamplerGraph.bundledMuseScoreGeneralSF2URL
-            ?? Bundle.main.url(forResource: "MuseScore_General", withExtension: "sf2") {
+           let url = MultiTrackSamplerGraph.bundledMuseScoreGeneralSF2URL {
             loadSoundFont(at: url, into: .a)
-        }
-        if fileNameB == nil,
-           let url = Bundle.main.url(forResource: "GeneralUser-GS", withExtension: "sf2") {
-            loadSoundFont(at: url, into: .b)
         }
     }
 

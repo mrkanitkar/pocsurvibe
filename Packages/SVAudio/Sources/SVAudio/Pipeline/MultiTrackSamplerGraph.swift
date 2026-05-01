@@ -246,24 +246,13 @@ public final class MultiTrackSamplerGraph: MultiTrackSamplerGraphProtocol {
         Bundle.module.url(forResource: "MuseScore_General", withExtension: "sf2")
     }
 
-    /// URL of the bundled `GeneralUser-GS.sf2` — better timbre for orchestral
-    /// arrangements (James Bond, etc.). The Profile A/B audition typically
-    /// resolves to this bank, so Play Along defaults to it as well to avoid
-    /// the timbre divergence the user reported between the two surfaces.
-    public static var bundledGeneralUserGSSF2URL: URL? {
-        Bundle.main.url(forResource: "GeneralUser-GS", withExtension: "sf2")
-            ?? Bundle.module.url(forResource: "GeneralUser-GS", withExtension: "sf2")
-    }
-
     /// Resolve the SoundFont URL for the active production bank.
     ///
-    /// Production now ships a single canonical bank — `MuseScore_General.sf2`
-    /// in the SVAudio package resources (`Bundle.module`). The legacy
-    /// `GeneralUser-GS.sf2` (main-bundle, diagnostics-only) is kept solely
-    /// as a fallback so the audition surface continues to function if the
-    /// package resource is somehow missing at runtime.
+    /// Production ships a single canonical bank: `MuseScore_General.sf2`
+    /// in the SVAudio package resources (`Bundle.module`). No fallback,
+    /// no user preference, no alternative bank.
     public static func activeSoundFontURL() -> URL? {
-        bundledMuseScoreGeneralSF2URL ?? bundledGeneralUserGSSF2URL
+        bundledMuseScoreGeneralSF2URL
     }
 
     /// Sequentially load `bankURL` into each sampler with the matching

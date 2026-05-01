@@ -406,8 +406,8 @@ struct ProfileTab: View {
 
     #if DEBUG
         /// Debug-only section providing access to the SoundFont A/B audition tool.
-        /// Used to compare GM banks (MuseScore_General vs GeneralUser-GS) on a real
-        /// device before locking in the production bank choice.
+        /// Slot A auto-loads the production bank (`MuseScore_General.sf2`); slot B
+        /// is for ad-hoc comparison against a user-picked `.sf2` from Files.
         private var audioDiagnosticsSection: some View {
             Section(header: Text("Audio Diagnostics (DEBUG)")) {
                 NavigationLink(value: "sfAudition") {
