@@ -129,19 +129,24 @@ struct SoundFontAuditionView: View {
 
     // MARK: - File Loading
 
-    /// Auto-load the two bundled audition banks if they're present in the
-    /// app bundle (added via the synchronized `Diagnostics/AuditionAssets/`
-    /// folder group). Skips a slot that already has a file picked manually.
-    /// Only runs in DEBUG; the resources are excluded from Release builds
-    /// via target membership.
+    /// Auto-load the two bundled audition banks if they're present.
+    ///
+    /// `MuseScore_General.sf2` is shipped as a SwiftPM resource of the
+    /// `SVAudio` package, so it is resolved via `Bundle.module` first
+    /// (the package resource bundle), with `Bundle.main` as a fallback
+    /// for legacy builds. `GeneralUser-GS.sf2` continues to live in
+    /// `Diagnostics/AuditionAssets/` and is therefore always in the
+    /// main app bundle. Skips a slot that already has a file picked
+    /// manually. Only runs in DEBUG; the resources are excluded from
+    /// Release builds via target membership.
     private func autoLoadBundledBanksIfPresent() {
-        let bundle = Bundle.main
         if fileNameA == nil,
-           let url = bundle.url(forResource: "MuseScore_General", withExtension: "sf2") {
+           let url = MultiTrackSamplerGraph.bundledMuseScoreGeneralSF2URL
+            ?? Bundle.main.url(forResource: "MuseScore_General", withExtension: "sf2") {
             loadSoundFont(at: url, into: .a)
         }
         if fileNameB == nil,
-           let url = bundle.url(forResource: "GeneralUser-GS", withExtension: "sf2") {
+           let url = Bundle.main.url(forResource: "GeneralUser-GS", withExtension: "sf2") {
             loadSoundFont(at: url, into: .b)
         }
     }

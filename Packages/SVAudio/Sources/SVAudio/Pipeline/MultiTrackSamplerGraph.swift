@@ -199,27 +199,15 @@ public final class MultiTrackSamplerGraph: MultiTrackSamplerGraphProtocol {
             ?? Bundle.module.url(forResource: "GeneralUser-GS", withExtension: "sf2")
     }
 
-    /// UserDefaults key for the active SoundFont bank name.
-    /// Values: `"GeneralUser-GS"` (default) or `"MuseScore_General"`.
-    public static let activeSoundFontKey = "com.survibe.activeSoundFontName"
-
-    /// Resolve the SoundFont URL for the active production bank, honouring
-    /// the user preference at `UserDefaults.standard.string(forKey:
-    /// activeSoundFontKey)`. Falls back to GeneralUser-GS, then to
-    /// MuseScore_General if the preferred bank is missing.
+    /// Resolve the SoundFont URL for the active production bank.
+    ///
+    /// Production now ships a single canonical bank — `MuseScore_General.sf2`
+    /// in the SVAudio package resources (`Bundle.module`). The legacy
+    /// `GeneralUser-GS.sf2` (main-bundle, diagnostics-only) is kept solely
+    /// as a fallback so the audition surface continues to function if the
+    /// package resource is somehow missing at runtime.
     public static func activeSoundFontURL() -> URL? {
-        let preferred = UserDefaults.standard.string(forKey: activeSoundFontKey)
-            ?? "GeneralUser-GS"
-        let primary: URL?
-        let fallback: URL?
-        if preferred == "MuseScore_General" {
-            primary = bundledMuseScoreGeneralSF2URL
-            fallback = bundledGeneralUserGSSF2URL
-        } else {
-            primary = bundledGeneralUserGSSF2URL
-            fallback = bundledMuseScoreGeneralSF2URL
-        }
-        return primary ?? fallback
+        bundledMuseScoreGeneralSF2URL ?? bundledGeneralUserGSSF2URL
     }
 
     /// Sequentially load `bankURL` into each sampler with the matching
