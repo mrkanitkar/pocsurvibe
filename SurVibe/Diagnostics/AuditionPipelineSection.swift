@@ -244,11 +244,14 @@ struct AuditionPipelineSection: View {
                 throw PipelineError.resourceMissing(name: "active SF2 bank")
             }
             let presets = derivedPresets(samplerCount: partCount)
+            let isPercussion = derivedPercussion(samplerCount: partCount)
             let presetList = presets.map { String($0) }.joined(separator: ",")
-            try g.loadBank(at: bankURL, presets: presets)
+            let percList = isPercussion.map { $0 ? "1" : "0" }.joined(separator: ",")
+            try g.loadBank(at: bankURL, presets: presets, isPercussion: isPercussion)
             loadedSlot = resolvedSlot
             PipelineFileLog.shared.log(
-                "applyActiveBank(\(resolvedSlot.rawValue)) → \(bankURL.lastPathComponent) presets=[\(presetList)]"
+                "applyActiveBank(\(resolvedSlot.rawValue)) → \(bankURL.lastPathComponent) "
+                    + "presets=[\(presetList)] perc=[\(percList)]"
             )
 
             try g.loadMIDI(renderedMIDI)
@@ -336,12 +339,15 @@ struct AuditionPipelineSection: View {
             return
         }
         let presets = derivedPresets(samplerCount: g.samplers.count)
+        let isPercussion = derivedPercussion(samplerCount: g.samplers.count)
         let presetList = presets.map { String($0) }.joined(separator: ",")
+        let percList = isPercussion.map { $0 ? "1" : "0" }.joined(separator: ",")
         PipelineFileLog.shared.log(
-            "applyActiveBank(\(slot.rawValue)) → \(url.lastPathComponent) presets=[\(presetList)]"
+            "applyActiveBank(\(slot.rawValue)) → \(url.lastPathComponent) "
+                + "presets=[\(presetList)] perc=[\(percList)]"
         )
         do {
-            try g.loadBank(at: url, presets: presets)
+            try g.loadBank(at: url, presets: presets, isPercussion: isPercussion)
             loadedSlot = slot
             PipelineFileLog.shared.log("applyActiveBank(\(slot.rawValue)) DONE")
         } catch {
@@ -362,6 +368,22 @@ struct AuditionPipelineSection: View {
                 result.append(program)
             } else {
                 result.append(0)
+            }
+        }
+        return result
+    }
+
+    /// Derive per-sampler percussion flags from `rendered.trackInfo`.
+    /// Tracks on GM channel 9 are flagged so `loadBank` can pick the SF2
+    /// percussion bank (`bankMSB=120`) instead of the melodic bank.
+    private func derivedPercussion(samplerCount: Int) -> [Bool] {
+        let trackInfo = rendered?.trackInfo ?? []
+        var result: [Bool] = []
+        for index in 0..<samplerCount {
+            if index < trackInfo.count {
+                result.append(trackInfo[index].isPercussion)
+            } else {
+                result.append(false)
             }
         }
         return result

@@ -259,15 +259,32 @@ public final class MultiTrackSamplerGraph: MultiTrackSamplerGraphProtocol {
     /// preset from `presets`. Pauses the engine, loads, restarts. Mode 2
     /// reload — single bank resident at a time, swap latency ~N × 300 ms.
     ///
+    /// Percussion-vs-melodic banking matters for SF2 lookup. GM SoundFonts
+    /// store the drum kit at `bankMSB=120, bankLSB=0` (separate from the
+    /// melodic bank `bankMSB=121`). Loading a percussion track via the
+    /// melodic path causes drum events (note 35 = kick, 38 = snare …) to
+    /// play as melodic piano notes at those pitches. Callers identify
+    /// percussion tracks (channel 9 in GM) via the `isPercussion` flag.
+    ///
     /// - Parameters:
     ///   - bankURL: SF2 file URL.
     ///   - presets: GM program numbers, one per sampler. Length must equal
     ///              `samplers.count`.
+    ///   - isPercussion: One flag per sampler; `true` selects the SF2's
+    ///                   percussion bank (program ignored — drum kit 0).
+    ///                   Pass `[]` (default) to treat every sampler as
+    ///                   melodic, matching the legacy single-bank behaviour.
     /// - Throws: `PipelineError.engineNotRunning` or rethrows the underlying
-    ///           AudioKit `loadMelodicSoundFont` failure.
-    public func loadBank(at bankURL: URL, presets: [UInt8]) throws {
+    ///           `AVAudioUnitSampler.loadSoundBankInstrument` failure.
+    public func loadBank(
+        at bankURL: URL,
+        presets: [UInt8],
+        isPercussion: [Bool] = []
+    ) throws {
         precondition(presets.count == samplers.count,
                      "presets.count (\(presets.count)) must match samplers.count (\(samplers.count))")
+        precondition(isPercussion.isEmpty || isPercussion.count == samplers.count,
+                     "isPercussion (\(isPercussion.count)) must be empty or match samplers.count (\(samplers.count))")
         guard AudioEngineManager.shared.isRunning else {
             throw PipelineError.engineNotRunning
         }
@@ -280,31 +297,51 @@ public final class MultiTrackSamplerGraph: MultiTrackSamplerGraphProtocol {
 
         let bankName = bankURL.lastPathComponent
         let presetList = presets.map { String($0) }.joined(separator: ",")
+        let percList = isPercussion.map { $0 ? "1" : "0" }.joined(separator: ",")
         graphLogger.info(
             """
             loadBank: bank=\(bankName, privacy: .public) \
             samplers=\(self.samplers.count, privacy: .public) \
-            presets=\(presetList, privacy: .public)
+            presets=\(presetList, privacy: .public) \
+            perc=[\(percList, privacy: .public)]
             """
         )
         PipelineFileLog.shared.log(
-            "MultiTrackSamplerGraph.loadBank: bank=\(bankName) presets=[\(presetList)]"
+            "MultiTrackSamplerGraph.loadBank: bank=\(bankName) presets=[\(presetList)] perc=[\(percList)]"
         )
+        // GM bank MSBs (Apple `kAUSampler_DefaultMelodicBankMSB`=121,
+        // `kAUSampler_DefaultPercussionBankMSB`=120). Hard-coded here so we
+        // don't pull in an extra import just to reference the constants.
+        let melodicBankMSB: UInt8 = 0x79  // 121
+        let percussionBankMSB: UInt8 = 0x78  // 120
         var loadError: Error?
         for (i, sampler) in samplers.enumerated() {
+            let percussion = (i < isPercussion.count) ? isPercussion[i] : false
+            // Drum kit number for percussion (Standard Kit = 0). The
+            // source-MIDI program byte on a percussion track typically
+            // selects a different kit (e.g., 8 = Room, 24 = Electronic),
+            // so honour it when present.
+            let program = Int(presets[i])
+            let bankMSB = percussion ? percussionBankMSB : melodicBankMSB
             do {
-                try sampler.loadMelodicSoundFont(url: bankURL, preset: Int(presets[i]))
-                let p = presets[i]
-                graphLogger.info(
-                    "loadBank: sampler[\(i, privacy: .public)] preset=\(p, privacy: .public) OK"
+                try sampler.samplerUnit.loadSoundBankInstrument(
+                    at: bankURL,
+                    program: UInt8(program),
+                    bankMSB: bankMSB,
+                    bankLSB: 0
                 )
-                PipelineFileLog.shared.log("  sampler[\(i)] preset=\(p) loaded OK")
+                let p = presets[i]
+                let kind = percussion ? "perc" : "mel"
+                graphLogger.info(
+                    "loadBank: sampler[\(i, privacy: .public)] \(kind, privacy: .public) preset=\(p, privacy: .public) bankMSB=\(bankMSB, privacy: .public) OK"
+                )
+                PipelineFileLog.shared.log("  sampler[\(i)] \(kind) preset=\(p) bankMSB=\(bankMSB) loaded OK")
             } catch {
                 loadError = error
                 let msg = error.localizedDescription
                 graphLogger.error(
                     """
-                    Sampler \(i, privacy: .public) loadMelodicSoundFont \
+                    Sampler \(i, privacy: .public) loadSoundBankInstrument \
                     failed: \(msg, privacy: .public)
                     """
                 )

@@ -608,10 +608,11 @@ final class PlayAlongViewModel {
     func loadArrangement(
         split: PartSplit,
         graph: any MultiTrackSamplerGraphProtocol,
-        fullSMF: Data? = nil
+        fullSMF: Data? = nil,
+        rendered: RenderedMIDI? = nil
     ) async throws {
         let player = ArrangementPlayer(graph: graph)
-        try await player.load(split, fullSMF: fullSMF)
+        try await player.load(split, fullSMF: fullSMF, rendered: rendered)
         player.practiceMode = practiceMode
         player.hearOtherHand = hearOtherHand
         player.setTempoScale(Float(tempoScale))
@@ -862,13 +863,18 @@ final class PlayAlongViewModel {
                     }
                     return 0
                 }
+                let isPercussion: [Bool] = (0..<graph.samplers.count).map { i in
+                    i < rendered.trackInfo.count && rendered.trackInfo[i].isPercussion
+                }
                 let presetList = presets.map { String($0) }.joined(separator: ",")
+                let percList = isPercussion.map { $0 ? "1" : "0" }.joined(separator: ",")
                 MultiChannelLog.shared.log(
                     .info,
-                    "... loadArrangementIfPossible: loadBank \(bankURL.lastPathComponent) presets=[\(presetList)]"
+                    "... loadArrangementIfPossible: loadBank \(bankURL.lastPathComponent) "
+                        + "presets=[\(presetList)] perc=[\(percList)]"
                 )
                 do {
-                    try graph.loadBank(at: bankURL, presets: presets)
+                    try graph.loadBank(at: bankURL, presets: presets, isPercussion: isPercussion)
                     MultiChannelLog.shared.log(.info, "... loadArrangementIfPossible: loadBank OK")
                 } catch {
                     MultiChannelLog.shared.log(
@@ -883,7 +889,7 @@ final class PlayAlongViewModel {
                 )
             }
             MultiChannelLog.shared.log(.info, "... loadArrangementIfPossible: graph constructed; calling loadArrangement")
-            try await loadArrangement(split: split, graph: graph, fullSMF: rendered.data)
+            try await loadArrangement(split: split, graph: graph, fullSMF: rendered.data, rendered: rendered)
             // E1.5: seed visualization with the learner notes derived from
             // PartSplit. The legacy Day-0 MIDIParser produces zero events
             // for the bundled MXLs; this gives the toolbar/falling-notes

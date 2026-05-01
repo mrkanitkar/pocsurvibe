@@ -116,18 +116,31 @@ public final class ArrangementPlayer {
 
     /// Load a `PartSplit` into the underlying graph.
     ///
-    /// Wraps `split.accompaniment` (raw SMF bytes) into a `RenderedMIDI`
-    /// before handing it to `graph.loadMIDI(_:)`. The synthetic
-    /// `RenderedMIDI` carries empty `trackInfo` and a placeholder
-    /// `originalBPM` of 120 — neither field is consulted by the
-    /// `AVAudioSequencer.load(from:options:)` path; only the SMF byte
-    /// stream is parsed. After load, tempo scale is reset to 1.0.
+    /// Forwards the caller's pre-rendered `RenderedMIDI` (with its real
+    /// `trackInfo`) to `graph.loadMIDI(_:)` whenever the caller has it,
+    /// so the graph's per-track diagnostics (`GRAPH-ROUTE track=N
+    /// program=P sampler=I`) reflect the actual source data. Older callers
+    /// that pass only `fullSMF: Data` (or only `split.accompaniment`)
+    /// still work via the legacy synthetic-`RenderedMIDI` fallback —
+    /// the routing is unchanged because `graph.loadMIDI` only consults
+    /// `RenderedMIDI.data` for the SMF byte stream and `trackInfo` only
+    /// for logging. After load, tempo scale is reset to 1.0.
     ///
-    /// - Parameter split: The learner / accompaniment split produced by
-    ///   `PartSplitter`.
+    /// - Parameters:
+    ///   - split: The learner / accompaniment split produced by
+    ///     `PartSplitter`.
+    ///   - fullSMF: The complete rendered SMF bytes (preferred over
+    ///     `split.accompaniment` when present).
+    ///   - rendered: The full `RenderedMIDI` (with `trackInfo`) when the
+    ///     caller has it. When `nil`, a synthetic `RenderedMIDI` is built
+    ///     from `fullSMF`/`split.accompaniment` with empty `trackInfo`.
     /// - Throws: Underlying `PipelineError` from
     ///   `MultiTrackSamplerGraph.loadMIDI(_:)`.
-    public func load(_ split: PartSplit, fullSMF: Data? = nil) async throws {
+    public func load(
+        _ split: PartSplit,
+        fullSMF: Data? = nil,
+        rendered: RenderedMIDI? = nil
+    ) async throws {
         self.split = split
         // Prefer the full rendered SMF when available so all parts (with
         // their original Program Change events) feed the multi-sampler
@@ -137,22 +150,29 @@ public final class ArrangementPlayer {
         // time via `applyHandMute()` (track-level muting).
         let smfData = fullSMF ?? split.accompaniment
         let usingFull = (fullSMF != nil)
-        let rendered = RenderedMIDI(
-            data: smfData,
-            trackCount: 0,
-            channels: [],
-            trackInfo: [],
-            originalBPM: 120.0
-        )
-        try graph.loadMIDI(rendered)
+        let payload: RenderedMIDI
+        if let rendered {
+            payload = rendered
+        } else {
+            payload = RenderedMIDI(
+                data: smfData,
+                trackCount: 0,
+                channels: [],
+                trackInfo: [],
+                originalBPM: 120.0
+            )
+        }
+        try graph.loadMIDI(payload)
         graph.setTempoScale(1.0)
         applyHandMute()
         MultiChannelLog.shared.log(
             .info,
-            "ARRANGEMENT-LOAD smfBytes=\(smfData.count) usingFullMIDI=\(usingFull)"
+            "ARRANGEMENT-LOAD smfBytes=\(smfData.count) "
+                + "usingFullMIDI=\(usingFull) "
+                + "trackInfo=\(payload.trackInfo.count)"
         )
         arrangementPlayerLogger.info(
-            "load: smfBytes=\(smfData.count, privacy: .public) full=\(usingFull, privacy: .public)"
+            "load: smfBytes=\(smfData.count, privacy: .public) full=\(usingFull, privacy: .public) trackInfo=\(payload.trackInfo.count, privacy: .public)"
         )
     }
 
