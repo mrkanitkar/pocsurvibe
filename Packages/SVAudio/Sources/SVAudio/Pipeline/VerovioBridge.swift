@@ -142,6 +142,38 @@ public final class VerovioBridge {
         )
     }
 
+    /// Render a MusicXML score to MIDI bytes *and* extract its static
+    /// MusicXMLMetadata in one call.
+    ///
+    /// Verovio's MIDI render path drops original-XML structure (key/time
+    /// signature, staff-per-note, lyrics, tonic frequency) on the floor.
+    /// Callers that need that data — `ContentImportManager`,
+    /// `SeedContentLoader` — can invoke this entry point instead of
+    /// `render(musicXML:)` and avoid a second pass over the same XML.
+    ///
+    /// Internally this calls `render(musicXML:)` then
+    /// `MusicXMLExtractor.extract(musicXML:)`. Both passes are
+    /// synchronous; on a 2.3 MB James Bond MXL the extractor adds
+    /// ~30 ms on top of Verovio's render time.
+    ///
+    /// - Parameter musicXML: A complete MusicXML 3.x or 4.x document.
+    /// - Returns: `RenderedMusicXML` carrying the rendered MIDI plus
+    ///   the static metadata from the same source XML.
+    /// - Throws: Anything `render(musicXML:)` throws (Verovio reject,
+    ///   MIDI decode failure) or `MusicXMLExtractorError.malformed`.
+    public func renderScore(musicXML: String) throws -> RenderedMusicXML {
+        let midi = try render(musicXML: musicXML)
+        let metadata = try MusicXMLExtractor.extract(musicXML: musicXML)
+        let lyricCount = metadata.lyricsPerNote.reduce(0) { $0 + $1.count }
+        PipelineFileLog.shared.log(
+            "MusicXMLExtractor: keySig=\(metadata.keySignatureRaw) "
+            + "timeSig=\(metadata.timeSignatureRaw) "
+            + "saHz=\(metadata.defaultSaFrequencyHz) "
+            + "parts=\(metadata.staffPerNote.count) lyrics=\(lyricCount)"
+        )
+        return RenderedMusicXML(midi: midi, metadata: metadata)
+    }
+
     /// Render a MusicXML score to MIDI bytes *and* one SVG page per
     /// Verovio page, with caller-controlled lyric handling.
     ///

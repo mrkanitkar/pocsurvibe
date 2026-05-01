@@ -107,6 +107,31 @@ public struct RenderedScore: Equatable, Sendable {
     }
 }
 
+/// Output of `VerovioBridge.renderScore(musicXML:)` — the rendered MIDI
+/// summary plus the static `MusicXMLMetadata` extracted from the same
+/// source XML. Use when callers need both the rendered MIDI and the
+/// per-score data Verovio drops on the floor (key signature, time
+/// signature, staff-per-note, lyrics, default tonic Sa frequency).
+///
+/// The existing `RenderedScore` type carries SVG pages for the
+/// notation-rendering path; this sidecar is a deliberate parallel for
+/// the import path, where SVG isn't needed but original-XML structure
+/// is. T7 wires this into `ContentImportManager.importMusicXMLAsSong`
+/// and `SeedContentLoader.importBundledMXLs`.
+public struct RenderedMusicXML: Sendable, Equatable {
+    /// MIDI data and track summary, identical in shape to what the
+    /// MIDI-only `render(musicXML:)` method returns.
+    public let midi: RenderedMIDI
+    /// Static metadata re-parsed from the source MusicXML (keySig,
+    /// timeSig, staff-per-note, lyrics, default tonic Sa frequency).
+    public let metadata: MusicXMLMetadata
+
+    public init(midi: RenderedMIDI, metadata: MusicXMLMetadata) {
+        self.midi = midi
+        self.metadata = metadata
+    }
+}
+
 /// Per-track MIDI metadata extracted by walking the SMF byte stream.
 public struct TrackInfo: Equatable, Sendable {
     /// First MIDI channel observed on the track (0-indexed; 9 = percussion).

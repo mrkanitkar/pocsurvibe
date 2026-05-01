@@ -281,4 +281,62 @@ struct VerovioBridgeTests {
         let names = result.trackInfo.compactMap(\.trackName)
         #expect(!names.isEmpty, "At least one track should have a name")
     }
+
+    // MARK: - renderScore (MIDI + MusicXMLMetadata sidecar)
+
+    @Test("renderScore returns both MIDI and metadata for trivial score")
+    func renderScoreTrivial() throws {
+        let bridge = VerovioBridge()
+        let result = try bridge.renderScore(musicXML: Self.trivialScore)
+        // MIDI half is identical to render(musicXML:)
+        #expect(!result.midi.data.isEmpty)
+        #expect(result.midi.trackCount >= 1)
+        // Metadata half — trivial score is C major, 4/4
+        #expect(result.metadata.keySignatureRaw == "C major")
+        #expect(result.metadata.timeSignatureRaw == "4/4")
+        #expect(result.metadata.staffPerNote.count == 1)
+    }
+
+    @Test("renderScore default Sa frequency for C major is C4 (~261.63 Hz)")
+    func renderScoreSaHz() throws {
+        let bridge = VerovioBridge()
+        let result = try bridge.renderScore(musicXML: Self.trivialScore)
+        // 261.6256 Hz to within 0.01 Hz tolerance
+        #expect(abs(result.metadata.defaultSaFrequencyHz - 261.6256) < 0.01)
+    }
+
+    @Test("renderScore on Sukhkarta MXL populates lyrics + staff")
+    func renderScoreSukhkarta() throws {
+        guard let mxlURL = Bundle.main.url(
+            forResource: "sukhkarta-dukhharta", withExtension: "mxl"
+        ) else {
+            // Asset not available in test bundle — skip.
+            return
+        }
+        let mxl = try Data(contentsOf: mxlURL)
+        let xml = try MXLLoader.loadMusicXML(from: mxl)
+        let bridge = VerovioBridge()
+        let result = try bridge.renderScore(musicXML: xml)
+        #expect(!result.midi.data.isEmpty)
+        #expect(!result.metadata.staffPerNote.isEmpty)
+        let totalLyrics = result.metadata.lyricsPerNote.reduce(0) { $0 + $1.count }
+        #expect(totalLyrics >= 1, "Sukhkarta has lyric syllables")
+    }
+
+    @Test("renderScore on James Bond MXL exposes multi-part metadata")
+    func renderScoreBond() throws {
+        guard let mxlURL = Bundle.main.url(
+            forResource: "james-bond-theme", withExtension: "mxl"
+        ) else {
+            return
+        }
+        let mxl = try Data(contentsOf: mxlURL)
+        let xml = try MXLLoader.loadMusicXML(from: mxl)
+        let bridge = VerovioBridge()
+        let result = try bridge.renderScore(musicXML: xml)
+        #expect(result.midi.trackCount >= 4)
+        #expect(result.metadata.staffPerNote.count >= 1)
+        #expect(!result.metadata.timeSignatureRaw.isEmpty)
+        #expect(!result.metadata.keySignatureRaw.isEmpty)
+    }
 }
