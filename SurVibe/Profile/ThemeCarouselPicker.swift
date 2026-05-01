@@ -1,3 +1,5 @@
+import OSLog
+import SVCore
 import SwiftUI
 
 /// Horizontal swipe carousel for selecting the app's visual theme.
@@ -26,6 +28,9 @@ struct ThemeCarouselPicker: View {
     // All available theme presets in display order.
     private let presets = AppThemePreset.userVisibleCases
 
+    /// Logger for theme-apply timing; used to verify <16 ms on iPad.
+    private let logger = Logger.survibe(category: "Profile")
+
     // MARK: - Body
 
     var body: some View {
@@ -46,24 +51,30 @@ struct ThemeCarouselPicker: View {
     // MARK: - Subviews
 
     /// Paged carousel of theme preview cards.
+    ///
+    /// Cards are wrapped in a single `GlassEffectContainer` so all per-card
+    /// `.glassEffect(.regular)` calls are batched into one render pass instead
+    /// of issuing a separate Liquid Glass compositor pass per card.
     private var themeCarousel: some View {
-        TabView(selection: $selectedIndex) {
-            ForEach(Array(presets.enumerated()), id: \.offset) { index, preset in
-                ThemePreviewCard(
-                    preset: preset,
-                    isActive: preset == themeManager.currentPreset,
-                    onSelect: {
-                        applyTheme(preset)
-                    }
-                )
-                .padding(.horizontal, 40)
-                .padding(.vertical, 20)
-                .tag(index)
+        GlassEffectContainer {
+            TabView(selection: $selectedIndex) {
+                ForEach(Array(presets.enumerated()), id: \.offset) { index, preset in
+                    ThemePreviewCard(
+                        preset: preset,
+                        isActive: preset == themeManager.currentPreset,
+                        onSelect: {
+                            applyTheme(preset)
+                        }
+                    )
+                    .padding(.horizontal, 40)
+                    .padding(.vertical, 20)
+                    .tag(index)
+                }
             }
+            .tabViewStyle(.page(indexDisplayMode: .always))
+            .indexViewStyle(.page(backgroundDisplayMode: .always))
+            .frame(height: 480)
         }
-        .tabViewStyle(.page(indexDisplayMode: .always))
-        .indexViewStyle(.page(backgroundDisplayMode: .always))
-        .frame(height: 480)
         .accessibilityLabel("Theme carousel")
         .accessibilityHint("Swipe left or right to browse themes. Tap to select.")
     }
@@ -158,27 +169,45 @@ struct ThemeCarouselPicker: View {
 
     /// Apply the selected theme preset via the theme manager.
     ///
-    /// Triggers haptic feedback and updates the selected page index.
+    /// Uses `withTransaction(.init(animation: .smooth))` instead of
+    /// `withAnimation(.spring)` so we control the transaction explicitly.
+    /// A bare `.spring` on the outer context would animate every observable
+    /// mutation inside `themeManager.apply` — currentPreset + 8+ resolved
+    /// colors — through all 9 `ThemePreviewCard` observers, each of which
+    /// runs a `LinearGradient`, `.glassEffect(.regular)`, and shadow in the
+    /// same compositor pass. The result is a ~1–2 s hang on iPad.
+    ///
+    /// Per-card subview animations (active ring, scale, checkmark) are driven
+    /// by individual `.animation(value:)` modifiers and are unaffected here.
     ///
     /// - Parameter preset: The theme to apply.
     private func applyTheme(_ preset: AppThemePreset) {
-        withAnimation(reduceMotion ? .none : .spring()) {
+        let start = ContinuousClock.now
+        withTransaction(.init(animation: .smooth)) {
             themeManager.apply(preset)
-            feedbackTrigger.toggle()
         }
+        let elapsed = ContinuousClock.now - start
+        logger.debug(
+            "PROFILE-THEME-APPLY preset=\(preset.rawValue, privacy: .public) elapsed=\(elapsed, privacy: .public)"
+        )
+        feedbackTrigger.toggle()
     }
 
-    /// Apply the selected Pop Era sub-theme with animation and haptic feedback.
+    /// Apply the selected Pop Era sub-theme.
     ///
-    /// Wraps `themeManager.setEra(_:)` in a spring animation and toggles
-    /// the sensory feedback trigger.
+    /// Uses `withTransaction(.init(animation: .smooth))` for the same reason
+    /// as `applyTheme(_:)` — controls the animation transaction explicitly
+    /// rather than letting `.spring` cascade through all theme observers.
     ///
     /// - Parameter era: The era to apply.
     private func applyEra(_ era: PopEra) {
-        withAnimation(reduceMotion ? .none : .spring()) {
+        let start = ContinuousClock.now
+        withTransaction(.init(animation: .smooth)) {
             themeManager.setEra(era)
-            feedbackTrigger.toggle()
         }
+        let elapsed = ContinuousClock.now - start
+        logger.debug("PROFILE-THEME-APPLY era=\(era.rawValue, privacy: .public) elapsed=\(elapsed, privacy: .public)")
+        feedbackTrigger.toggle()
     }
 
     /// Sync the carousel page index to the currently active theme on appear.
