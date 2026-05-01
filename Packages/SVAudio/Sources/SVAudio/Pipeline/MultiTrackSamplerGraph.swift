@@ -185,7 +185,21 @@ public final class MultiTrackSamplerGraph: MultiTrackSamplerGraphProtocol {
 
         let trackCount = min(seqTracks, samplerCount)
         for i in 0..<trackCount {
-            seq.tracks[i].destinationMIDIEndpoint = samplers[i].midiIn
+            // Route via `destinationAudioUnit` — Apple's recommended path
+            // when the sequencer and the destination AVAudioUnits live in
+            // the same `AVAudioEngine`. The previous `destinationMIDIEndpoint`
+            // route went out through CoreMIDI virtual endpoints, which need
+            // each `MIDISampler.midiIn` to be registered as a fresh
+            // CoreMIDI client before sequencer load. Stale or missing
+            // CoreMIDI registrations cause silent samplers (the "not
+            // playing all instruments" symptom). Direct AU routing skips
+            // CoreMIDI entirely; events flow straight from the sequencer
+            // into the sampler's render block.
+            //
+            // Source: AVAudioSequencer / AVMusicTrack header — `destinationAudioUnit`
+            // and `destinationMIDIEndpoint` are mutually exclusive; setting one
+            // resets the other.
+            seq.tracks[i].destinationAudioUnit = samplers[i].samplerUnit
 
             // Resolve the program that was pre-banked into this sampler slot
             // via `RenderedMIDI.trackInfo[i].program`. Falls back to GM 0
