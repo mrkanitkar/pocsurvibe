@@ -14,7 +14,7 @@ import os.log
 struct SurVibeApp: App {
     // MARK: - Properties
 
-    /// ModelContainer with all 9 SwiftData models and CloudKit automatic sync.
+    /// ModelContainer with all 16 SwiftData models and CloudKit automatic sync.
     /// Falls back to in-memory store if persistent container fails.
     let modelContainer: ModelContainer
 
@@ -88,6 +88,7 @@ struct SurVibeApp: App {
             PitchLogEntry.self,
             RecordedTake.self,
             PlayAlongSession.self,
+            NotationCache.self,
         ])
     }
 
