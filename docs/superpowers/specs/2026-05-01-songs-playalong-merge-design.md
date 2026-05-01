@@ -30,12 +30,12 @@ Design driven by Apple's Simpi Piano UX as reference for minimalism: a small ico
 | D1 | Direct navigation Songs → Play Along (no detail screen) | User goal: focus on learning, fewer taps |
 | D2 | Settings live behind a gear icon | "Configure-then-play" workflow; chrome stays minimal |
 | D3 | Play comes before Settings in the icon row | Match Simpi convention; Play is the primary action |
-| D4 | Settings is a `.sheet` with `.presentationDetents([.large])` and `.presentationBackgroundInteraction(.enabled)` | HIG-blessed non-modal pattern for iPadOS; gets grabber, swipe-down, VoiceOver escape, Reduce Motion handling for free |
+| D4 | Settings is a `.sheet` with `.presentationDetents([.medium, .large])` (default `.medium`) and `.presentationBackgroundInteraction(.enabled(upThrough: .medium))` | HIG-blessed non-modal pattern; `.medium` keeps notation visible behind the sheet so the "non-modal play behind" promise actually holds; `.large` is opt-in for focused settings work |
 | D5 | Practice flow deleted entirely | "No release yet, no back-compat" — orphaned code is liability |
 | D6 | Tempo via `Menu` (50/60/75/100/125/150% presets + Custom… → fine slider) | HIG: long-press has no pointer/keyboard equivalent; menus do |
 | D7 | Tonic Sa surfaced as a tappable chip in the title strip | Most consequential control — don't bury it under gear |
 | D8 | On-screen keyboard hidden when MIDI device connected | Notation gets the freed real estate |
-| D9 | Toolbar icons use `.help()` + VoiceOver labels, no under-icon text | HIG: under-icon text labels in tight rows visually fuse |
+| D9 | Toolbar icons use `accessibilityLabel` + `accessibilityHint`, no under-icon text | HIG: under-icon text labels in tight rows visually fuse. (Note: `.help()` only sets accessibility hint on iOS/iPadOS — does NOT render a visible pointer-hover tooltip, contrary to its macOS behavior. Use `accessibilityHint` directly.) |
 | D10 | Standard system back button (chevron.backward), not a custom "Exit" verb | HIG: don't invent verbs for standard navigation |
 
 ## Navigation change
@@ -69,6 +69,10 @@ Specifically:
 └────────────────────────────────────────────────────────────────────┘
 ```
 
+### Toolbar surface (Liquid Glass)
+
+Per CLAUDE.md: the floating toolbar row, title strip, time pill, and tempo Menu pill are presented inside a single horizontally-floating container with `.glassEffect(.regular)` on iOS 26 (Liquid Glass). Notation behind remains legible; the chrome reads as a translucent floating bar. The on-screen keyboard is **content**, not chrome — does NOT get glass effect.
+
 ### Top-left toolbar (4 icon buttons, in order)
 
 1. **`chevron.backward`** — system back; pops the navigation stack
@@ -83,10 +87,10 @@ Icons separated by fixed `Spacer().frame(width: 12)` per HIG. No under-icon text
 Two lines, centered:
 
 - **Line 1:** Song title (semibold, `.headline`)
-- **Line 2 (subtitle):** Input source · Tonic Sa chip · base BPM
-  - Input source string: `🎹 {midiDeviceName}` if `viewModel.isMIDIConnected` else `🎤 Mic` if mic enabled else empty
-  - **Tonic Sa chip** — visible tappable element rendered as `Sa = C4 ▾`. Tap opens an inline `Menu` with C3–C5 options (existing pitch range). Persists to `SongProgress.preferredSaHz`.
-  - Base BPM (read-only, from `Song.metadata.bpm`)
+- **Line 2 (subtitle):** Horizontal stack of distinctly styled tokens (HIG: avoid mixing tappable controls with display-only text in a single inline run). Three tokens, separated by middle-dot dividers:
+  - **Input badge** (read-only): SF Symbol `pianokeys` + device name (`Yamaha P-125`) when `viewModel.isMIDIConnected`; `mic.fill` + `Mic` when mic enabled and no MIDI; hidden when neither
+  - **Sa chip** (tappable Menu): pill-shaped, tinted, rendered as `Sa = C4 ▾`. Tap opens an inline `Menu` with C3–C5 options. Persists to `SongProgress.preferredSaHz`. **Hidden until VM hydration completes** (avoids flicker from the default C4 to a stored value); show a 60 ms placeholder shimmer until `didInitialHydrate == true`.
+  - **BPM badge** (read-only): `50 BPM`, plain text style, distinct from the Sa chip's tinted pill style
 
 ### Top-right cluster (vertical stack)
 
@@ -94,7 +98,7 @@ Two lines, centered:
 - **Tempo `Menu`:** label `Tempo {percent}% ▾`. Menu items:
   - 50%, 60%, 75%, 100%, 125%, 150%
   - Divider
-  - "Custom…" — opens a small dedicated sheet (independent of the Settings sheet, presented over the main view with `.presentationDetents([.height(220)])`) containing a fine slider (0.5×–1.5×) plus a numeric stepper (HIG: *Sliders* — supplement with stepper)
+  - "Custom…" — **only enabled when the Settings sheet is closed**. SwiftUI permits only one `.sheet` per presentation context; presenting a Custom sheet over the open Settings sheet would silently fail. When Settings sheet is open, the "Custom…" item is disabled with a hint to use the Tempo row inside Settings (which has the same slider+stepper). When Settings sheet is closed, "Custom…" opens a small dedicated sheet (`.presentationDetents([.medium])` — using `.medium` rather than fixed-height `.height(220)` so Dynamic Type AX5 doesn't clip) containing a fine slider (0.5×–1.5×) plus a numeric stepper (HIG: *Sliders* — supplement with stepper)
   - Persists to `SongProgress.preferredTempoScale`
 
 ### Notation area (center)
@@ -122,11 +126,14 @@ Two lines, centered:
 ### Container
 
 - SwiftUI `.sheet(isPresented: $showSettings)` triggered by the gear icon
-- `.presentationDetents([.large])` — full height, with grabber for visual affordance
-- `.presentationBackgroundInteraction(.enabled(upThrough: .large))` — non-modal: user can keep playing, scrub the timeline, hit Pause, etc., while the sheet is open
+- `.presentationDetents([.medium, .large])` — default `.medium` so the user can still see notation/keyboard behind the sheet (HIG-aligned non-modal); user can drag up to `.large` for full-height browsing
+- `.presentationDragIndicator(.visible)` — explicit grabber affordance (default is hidden when sheet has interactive dismissal)
+- `.presentationBackgroundInteraction(.enabled(upThrough: .medium))` — non-modal **only at `.medium`**: user can scrub timeline, hit Pause, tap on-screen keys while sheet is open. At `.large` the sheet covers the screen and background touches are blocked (user dragged up explicitly to focus on settings).
 - `.presentationCompactAdaptation(.none)` — on iPad, present as a sheet, not full-cover
-- Internal `NavigationStack` for deeper screens (Tonic Sa picker, Tanpura settings, Loop builder, Theme picker)
+- Liquid Glass: apply `.glassEffect(.regular)` to the sheet's background per project rule (notation behind remains legible, sheet feels like floating chrome)
+- Internal `NavigationStack` for deeper screens (Tonic Sa picker, Tanpura settings, Loop builder, Theme picker). **Note:** swipe-down dismissal of the sheet does NOT preserve internal nav-stack depth across re-opens — re-opening Settings always starts at root. The "panel returns at prior depth" guarantee in §Edge cases applies only to the Results-overlay-on-top transient, not to dismiss/reopen.
 - All toggle/picker changes apply live (no Save button); persisted to `SongProgress` immediately
+- VoiceOver focus moves to the sheet title on `.onAppear` via an explicit `@AccessibilityFocusState` binding (not automatic — SwiftUI's default lands on the first traversal-order element)
 
 ### Contents (top-to-bottom)
 
@@ -200,13 +207,29 @@ These fields move out of `Song` (which represents song *content*) and into `Song
 
 ### Conflict resolution (CloudKit)
 
-The project's standing rule is "additive-only" CloudKit merging. Per-song preferences need a different rule. **Decision: last-write-wins on the new pref fields.** Rationale: a user editing tempo on iPad while iPhone is offline shouldn't have the older iPhone value clobber the iPad change when iPhone reconnects. This is a deliberate departure from the additive rule, scoped to pref fields only. Document in code header.
+**Decision: keep one `SongProgress` model; rely on CloudKit's default whole-record last-write-wins.**
+
+CloudKit (and SwiftData over CloudKit) cannot apply per-field merge strategies on a single record — the entire record is one CKRecord and conflicts resolve at the record level. The previously-floated "last-write-wins on pref fields only" was unimplementable.
+
+Workable approach (no schema split):
+- CloudKit-level merge: last-write-wins for the whole `SongProgress` record (CloudKit default)
+- Application-level merge for additive fields (`bestScore`, `timesPlayed`, `xpEarnedTotal`, etc.): the existing `recordPlay(...)` helper already uses `max(existing, new)` and additive increments before persisting. These app-level merges run in `recordPlay` regardless of CloudKit conflict resolution.
+- For the new pref fields (`preferredTempoScale`, `waitModeEnabled`, etc.): no app-level merge is needed — last-write-wins is the desired semantics.
+- Practical consequence: if Device A writes `bestScore = 95` and Device B writes `preferredTempoScale = 0.8` in the same sync window, CloudKit will pick one record and discard the other. The `bestScore` could regress momentarily on the losing device until the next `recordPlay` call recomputes the max. This is acceptable because (a) `recordPlay` is the only writer to `bestScore` and it always re-applies max, and (b) prefs being last-write-wins is the desired UX.
+
+Document this choice in the `SongProgress.swift` file header so future contributors don't re-introduce field-level merge expectations.
 
 ### VM hydration
 
 - `PlayAlongViewModel.loadPersistedSettings(from: SongProgress)` — invoked in `.task` after fetching the row; hydrates VM state from prefs
 - `PlayAlongViewModel.persistSettings(to: SongProgress)` — debounced writer (reuse existing 250 ms debounce pattern from `tanpura.effectiveSaHz`)
 - Initial-seed guard: `didInitialHydrate: Bool` flag prevents the first hydration from triggering a re-write
+- **First-launch policy (no SongProgress row exists yet for this song):**
+  1. Do NOT overwrite VM state with field defaults from a freshly-created row — that would silently disable Wait/Click/Tanpura even if a returning user expects them on
+  2. Instead: keep VM at its current state (which is itself default-on-first-launch, default-from-stored-state-on-resume), persist VM state INTO the new row
+  3. Set `didInitialHydrate = true` after this seed write completes
+  4. Subsequent VM mutations write through normally
+- All UI elements that depend on per-song prefs (Sa chip, Tempo pill, etc.) hide or show placeholder until `didInitialHydrate == true` to avoid flicker from default → stored values
 
 ### Tempo property collapse
 
@@ -218,17 +241,49 @@ Today there are two VM properties (`tempoScale` and `arrangementTempoScale`) and
 
 ## Practice flow deletion (B2-a)
 
-The Practice flow is currently **only** reachable from `SongDetailView.fullScreenCover(isPresented: $showPractice)`. With detail removed, it becomes orphaned. Per "no release yet, no back-compat" rule:
+The Practice flow is currently **only** reachable from `SongDetailView.fullScreenCover(isPresented: $showPractice)`. With detail removed, it becomes orphaned. Per "no release yet, no back-compat" rule, delete the orphaned flow.
 
-**Files deleted:**
+**CRITICAL:** `SurVibe/Practice/` contains 21 files, but several are **shared infrastructure used by the live PlayAlong flow** and MUST NOT be deleted. Plan must enumerate kept files explicitly.
+
+### Files DELETED (orphaned by SongDetailView removal — verified single-entry-point):
+
 - `SurVibe/Practice/PracticeSessionView.swift`
 - `SurVibe/Practice/PracticeAlongView.swift`
 - `SurVibe/Practice/ListenFirstView.swift`
 - `SurVibe/Practice/PracticeSessionSummaryView.swift`
 - `SurVibe/Practice/PracticeSessionViewModel.swift`
-- Companion test files
+- `SurVibe/Practice/PracticeSessionViewModel+Monitoring.swift` (extension on the deleted VM)
+- `SurVibe/Practice/PracticeSessionViewModel+Raga.swift` (extension on the deleted VM)
+- `SurVibe/Practice/PracticeControlsToolbar.swift` (only used by `PracticeSessionView`)
+- `SurVibe/Practice/PracticeHistoryView.swift` (only used by `PracticeSessionSummaryView`)
+- `SurVibe/Practice/PracticeHUD.swift` (only used by `PracticeSessionView`)
+- `SurVibe/Practice/SectionBreakdownView.swift` (only used by `PracticeSessionSummaryView`)
+- `SurVibe/Practice/StatCard.swift` (only used by `PracticeHistoryView` / `PracticeSessionSummaryView`)
+- `SurVibe/Practice/SourceChip.swift` (only used by Practice views)
+- `SurVibe/Practice/StarRatingView.swift` (only used by `PracticeSessionSummaryView` — verify; if also used by `PlayAlongResultsOverlay`, KEEP)
+- `SurVibe/Practice/NoteDetailListView.swift` (only used by `PracticeSessionSummaryView`)
+- `SurVibe/Practice/WaitModeSettingsView.swift` (Practice-specific)
+- Companion test files for each
 
-**Verification before deletion:** grep the codebase for any incidental imports of these symbols. If found in unrelated tests or analytics, address as part of this work.
+### Files KEPT (shared with PlayAlong — DO NOT DELETE):
+
+- `SurVibe/Practice/PracticeSessionRecorder.swift` — instantiated at `SurVibe/PlayAlong/Coordinators/PlaybackCoordinator.swift:413`; persists scores at session completion. **Not Practice-specific despite the name.**
+- `SurVibe/Practice/PitchProximityMeter.swift` — rendered at `SurVibe/PlayAlong/SongPlayAlongView+Subviews.swift:19` (live pitch HUD)
+- `SurVibe/Practice/WaitingIndicatorOverlay.swift` — verify usage; if used by PlayAlong, KEEP
+- `SurVibe/Practice/WaitModeSettingsStore.swift` — verify; if backing the new settings sheet's Wait toggle, KEEP and migrate
+- `SurVibe/Practice/SwiftDataEventLogger.swift` — verify; if used by PlayAlong scoring/persistence, KEEP
+
+### Plan-time discipline
+
+Before deleting any file in `SurVibe/Practice/`, the plan must:
+1. Grep for the file's primary type name across the whole repo
+2. Confirm only Practice-flow files reference it
+3. If any non-Practice file references it, either KEEP and document, or move the file to a more appropriate directory (e.g., `SurVibe/PlayAlong/` for `PracticeSessionRecorder.swift`, `SurVibe/Components/` for `PitchProximityMeter.swift`) before deletion sweep
+
+**Recommended plan ordering:**
+1. Move shared files OUT of `Practice/` to their consumer directory (rename if needed for clarity, e.g., `PracticeSessionRecorder.swift` → `SurVibe/PlayAlong/SessionRecorder.swift`)
+2. Delete remaining `Practice/` files in one pass
+3. Compile; let the compiler catch any missed references
 
 If Practice features are wanted later, they get re-added under the Learn tab as a separate brainstorm/spec.
 
@@ -239,9 +294,9 @@ If Practice features are wanted later, they get re-added under the Learn tab as 
 | Has notation | Has MIDI/scoring | Behavior |
 |---|---|---|
 | Yes | Yes | Normal play-along (full features) |
-| Yes | No | Play button disabled; banner: "Notation only — audio scoring not available for this song" |
-| No | Yes | Notation area shows hint: "No notation — listen and play by ear"; Play and scoring work normally |
-| No | No | Play button disabled; full empty state: "No notation or audio data available" |
+| Yes | No | Play button disabled; thin banner above notation: "Notation only — audio scoring not available for this song" |
+| No | Yes | Notation area replaced by a `ContentUnavailableView` with title "No notation", description "Listen to the song and play by ear"; Play and scoring work normally |
+| No | No | Play button disabled; full-screen `ContentUnavailableView` (`music.note.list` symbol, "No notation or audio data available", "Try a different song" action that calls back) — uses iOS 17+ `ContentUnavailableView` API, available on iOS 26+ target |
 
 ### MIDI device events
 
@@ -267,11 +322,14 @@ If Practice features are wanted later, they get re-added under the Learn tab as 
 
 ### Restart action
 
-- Stops playback (`viewModel.stopAndComplete(emit: false)`)
-- Seeks to 0 (`viewModel.seek(to: 0)`)
-- Resets scoring HUD (`viewModel.scoring.reset()`)
-- Calls `viewModel.startSession()`
-- This matches the existing `onReplay` path from the Results overlay — extract a shared `restart()` method on the VM
+A NEW method on `PlayAlongViewModel` (not an extraction — the existing `onReplay` from Results overlay only calls `startSession()` because Results is shown after natural session completion). Steps:
+
+1. `viewModel.stopAndComplete(emit: false)` — terminates current playback without firing scoring/analytics events
+2. `viewModel.seek(to: 0)` — moves transport to start
+3. `viewModel.scoring.reset()` — clears notes hit, accuracy, streak, longest streak, star rating, XP-this-session
+4. `viewModel.startSession()` — begins playback fresh
+
+The existing `onReplay` callback (`SurVibe/PlayAlong/SongPlayAlongView.swift:312–321`) which currently does only `startSession()` is replaced with a call to the new `restart()` method, so Replay-from-Results and toolbar-Restart share the same path.
 
 ## Accessibility
 
@@ -294,8 +352,12 @@ If Practice features are wanted later, they get re-added under the Learn tab as 
 - `SurVibe/Practice/ListenFirstView.swift`
 - `SurVibe/Practice/PracticeSessionSummaryView.swift`
 - `SurVibe/Practice/PracticeSessionViewModel.swift`
-- `SurVibe/SurVibeTests/SongDetailViewPartsTests.swift` (port `noteName` and `trackLabels` helpers + tests to a new util location)
+- `SurVibe/SurVibeTests/SongDetailViewPartsTests.swift` — port helpers and tests:
+  - `noteName(_:)` (MIDI pitch → "C4" / "F#3" formatter) → port to `SurVibe/Notation/WesternNoteHelper.swift` if not already present (verify; existing helper has similar concerns)
+  - `trackLabels(for:)` (derives track display labels from song metadata) → port to a new extension `SurVibe/Songs/Song+TrackLabels.swift` (`extension Song { static func trackLabels(for: Song) -> [String] }`)
+  - Migrate the corresponding `@Test` cases to `WesternNoteHelperTests.swift` and a new `SongTrackLabelsTests.swift`
 - Tests for any deleted Practice files
+- `SurVibeTests/SongPlayAlongFieldsTests.swift` — entirely tests `Song.defaultPracticeMode` and `Song.lastUsedTempoScale`; both fields are removed, so the test file becomes meaningless. Delete; replacement coverage lives in new `SongProgress` tests.
 - `SongDetailViewResolver` (private struct in `SongsTab.swift`) — dead code
 
 ### Modified
@@ -308,10 +370,15 @@ If Practice features are wanted later, they get re-added under the Learn tab as 
 - `SurVibe/PlayAlong/PlayAlongViewModel.swift` — add `loadPersistedSettings`, `persistSettings`, `restart()`; collapse `arrangementTempoScale` into `tempoScale`; remove `clampTempoScale` legacy helper
 - `SurVibe/PlayAlong/TanpuraSettingsSheet.swift` — refactor to support push navigation (extract content body)
 - `SurVibe/PlayAlong/LoopBuilderView.swift` — same
-- `SurVibe/PlayAlong/ThemeCarouselPicker.swift` — same
+- `SurVibe/Profile/ThemeCarouselPicker.swift` — same (note: lives under `Profile/`, not `PlayAlong/`)
 - `SurVibe/Models/SongProgress.swift` — add new pref fields with defaults
 - `SurVibe/Models/Song.swift` — remove `lastUsedTempoScale`, `defaultPracticeMode`
-- `SurVibe/SurVibeTests/CrossAppThemeContractTests.swift` — update line 24 file-path string
+- `SurVibe/SurVibeTests/CrossAppThemeContractTests.swift` — update lines 24 (`SongDetailView.swift` reference) AND 28 (`PlaybackControlsView.swift` reference); both are deleted files
+- `SurVibeTests/PlayAlong/PlayAlongToolbarStateTests.swift` — references `defaultPracticeMode`; rewrite tests against `SongProgress.preferredHands` instead
+- `SurVibeTests/PlayAlong/ArrangementPlayerTests.swift` — references `defaultPracticeMode` (line ~184); rewrite
+- `SurVibeTests/PlayAlong/PlayAlongToolbarTests.swift` — tests `PlayAlongToolbar.clampTempoScale` (lines 49–74). With `clampTempoScale` removed and tempo collapsed to a single canonical range, rewrite or delete this test file
+- `SurVibeTests/PlayAlong/PlayAlongViewModelE1Tests.swift` — references `arrangementTempoScale`; rewrite to use `tempoScale`
+- `SurVibeTests/LearnASongIntegrationTests.swift` — references `arrangementTempoScale`; rewrite to use `tempoScale`
 
 ### Created
 - `SurVibe/PlayAlong/PlayAlongSettingsSheet.swift` — sheet container + section subviews
