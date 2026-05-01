@@ -858,6 +858,19 @@ final class PlayAlongViewModel {
         MultiChannelLog.shared.log(.info, "<<< startSession state=\(playback.playbackState) arrangedPlaying=\(arrangementPlayer?.isPlaying ?? false)")
     }
 
+    /// Resets the current session back to start.
+    ///
+    /// Differs from `startSession()` in that it stops in-flight playback,
+    /// seeks transport to 0, and resets scoring state before starting fresh.
+    /// Used by both the toolbar Restart button and the Replay action on
+    /// the Results overlay.
+    func restart() async {
+        stopAndComplete()
+        seek(to: 0)
+        playback.reset()
+        await startSession()
+    }
+
     /// Pause the current play-along session.
     ///
     /// Delegates transport pause to `PlaybackCoordinator`. Keeps `NoteRouter`
