@@ -479,18 +479,25 @@ final class ContentImportManager {
         song.isFree = dto.isFree ?? false
         song.sortOrder = dto.sortOrder
 
-        // Encode notation arrays to JSON Data blobs
-        song.sargamNotation = try? JSONEncoder().encode(dto.sargamNotation)
-        song.westernNotation = try? JSONEncoder().encode(dto.westernNotation)
+        // T5': dropped JSON-blob notation encoding. Seed JSON path is being
+        // wound down — Wave 2's v13 wipe deletes every legacy seeded Song,
+        // and the bundled MXL imports are the only canonical content.
+        // `seed-songs.json` may still ship for legacy compatibility but its
+        // notation arrays are no longer persisted onto the @Model.
 
         // Encode MIDI data from base64 if present
         if let midiString = dto.midiData, !midiString.isEmpty {
             song.midiData = Data(base64Encoded: midiString)
         }
 
-        // Map key/time signature for staff notation
-        song.keySignatureRaw = dto.keySignature ?? ""
-        song.timeSignatureRaw = dto.timeSignature ?? ""
+        // Map key/time signature for staff notation. Empty/nil values keep
+        // the @Model defaults ("C major", "4/4").
+        if let keySig = dto.keySignature, !keySig.isEmpty {
+            song.keySignatureRaw = keySig
+        }
+        if let timeSig = dto.timeSignature, !timeSig.isEmpty {
+            song.timeSignatureRaw = timeSig
+        }
 
         // TODO(D5): seed-songs.json carries optional base64 SMF bytes but no
         // pre-parsed RenderedMIDI track metadata, and PartSplitter requires

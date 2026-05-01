@@ -52,39 +52,11 @@ struct ContentImportManagerTests {
         #expect(slugIds.contains("jana-gana-mana-v1"))
     }
 
-    @Test("Imported songs have sargam notation data")
-    @MainActor
-    func importedSongsHaveSargam() throws {
-        _ = try SwiftDataTestContainer.freshContext()  // reset shared container
-        let container = try makeTestContainer()
-        _ = try ContentImportManager.importAllSeedContent(into: container, from: .main)
-
-        let context = ModelContext(container)
-        let songs = try context.fetch(FetchDescriptor<Song>())
-        for song in songs {
-            #expect(song.sargamNotation != nil, "Song \(song.slugId) missing sargam notation")
-            let decoded = song.decodedSargamNotes
-            #expect(decoded != nil, "Song \(song.slugId) sargam failed to decode")
-            #expect(decoded?.isEmpty == false, "Song \(song.slugId) has empty sargam notes")
-        }
-    }
-
-    @Test("Imported songs have western notation data")
-    @MainActor
-    func importedSongsHaveWestern() throws {
-        _ = try SwiftDataTestContainer.freshContext()  // reset shared container
-        let container = try makeTestContainer()
-        _ = try ContentImportManager.importAllSeedContent(into: container, from: .main)
-
-        let context = ModelContext(container)
-        let songs = try context.fetch(FetchDescriptor<Song>())
-        for song in songs {
-            #expect(song.westernNotation != nil, "Song \(song.slugId) missing western notation")
-            let decoded = song.decodedWesternNotes
-            #expect(decoded != nil, "Song \(song.slugId) western failed to decode")
-            #expect(decoded?.isEmpty == false, "Song \(song.slugId) has empty western notes")
-        }
-    }
+    // TODO(T11'): rewire these to verify `[NoteEvent]` derived from
+    // `Song.midiData` instead of the deleted JSON-blob fields. Disabled
+    // for T5' — the legacy `sargamNotation` / `westernNotation` fields no
+    // longer exist on the @Model and the seed JSON path no longer
+    // persists them.
 
     @Test("Imported lessons have steps data")
     @MainActor
@@ -140,67 +112,9 @@ struct SeedContentValidationTests {
         #expect(song?.tempo == 72)
     }
 
-    @Test("Sargam and western note arrays are non-empty per song")
-    @MainActor
-    func notationArraysNonEmpty() throws {
-        _ = try SwiftDataTestContainer.freshContext()  // reset shared container
-        let container = try makeTestContainer()
-        _ = try ContentImportManager.importAllSeedContent(into: container, from: .main)
-
-        let context = ModelContext(container)
-        let songs = try context.fetch(FetchDescriptor<Song>())
-        for song in songs {
-            let sargamCount = song.decodedSargamNotes?.count ?? 0
-            let westernCount = song.decodedWesternNotes?.count ?? 0
-            #expect(sargamCount > 0, "Song \(song.slugId) has empty sargam notes")
-            #expect(westernCount > 0, "Song \(song.slugId) has empty western notes")
-        }
-    }
-
-    @Test("All sargam notes have valid swara names")
-    @MainActor
-    func validSwaraNames() throws {
-        let validSwaras: Set<String> = ["Sa", "Re", "Ga", "Ma", "Pa", "Dha", "Ni"]
-        _ = try SwiftDataTestContainer.freshContext()  // reset shared container
-        let container = try makeTestContainer()
-        _ = try ContentImportManager.importAllSeedContent(into: container, from: .main)
-
-        let context = ModelContext(container)
-        let songs = try context.fetch(FetchDescriptor<Song>())
-        for song in songs {
-            guard let notes = song.decodedSargamNotes else {
-                continue
-            }
-            for note in notes {
-                #expect(
-                    validSwaras.contains(note.note),
-                    "Song \(song.slugId) has invalid swara: \(note.note)"
-                )
-            }
-        }
-    }
-
-    @Test("All western notes have valid MIDI numbers")
-    @MainActor
-    func validMIDINumbers() throws {
-        _ = try SwiftDataTestContainer.freshContext()  // reset shared container
-        let container = try makeTestContainer()
-        _ = try ContentImportManager.importAllSeedContent(into: container, from: .main)
-
-        let context = ModelContext(container)
-        let songs = try context.fetch(FetchDescriptor<Song>())
-        for song in songs {
-            guard let notes = song.decodedWesternNotes else {
-                continue
-            }
-            for note in notes {
-                #expect(
-                    (0...127).contains(note.midiNumber),
-                    "Song \(song.slugId) has invalid MIDI: \(note.midiNumber)"
-                )
-            }
-        }
-    }
+    // TODO(T11'): re-implement these against `[NoteEvent]` derived from
+    // `Song.midiData`. The JSON-blob source they queried (`decodedSargamNotes`
+    // / `decodedWesternNotes`) was dropped in T5'.
 
     @Test("Lesson ordering is sequential")
     @MainActor

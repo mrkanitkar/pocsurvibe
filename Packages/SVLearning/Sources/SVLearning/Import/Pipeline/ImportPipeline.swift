@@ -272,7 +272,7 @@ public struct ImportPipeline: ImportPipelineProtocol {
 
     // MARK: - JSON Encoding
 
-    /// Encodes parsed sargam notes into the `[SargamNote]` JSON format expected by `Song.decodedSargamNotes`.
+    /// Encodes parsed sargam notes into the `[SargamNote]` JSON format. T11'-pending: consumer (`Song.sargamNotation` JSON blob) was dropped in T5'; output of this method is no longer persisted onto the @Model. Kept for DTO compatibility.
     ///
     /// Uses exact field names matching `SargamNote.CodingKeys`: `"note"`, `"octave"`, `"duration"`, `"modifier"`.
     private func encodeSargamNotes(_ notes: [ParsedNotation.Note]) -> Data? {
@@ -293,7 +293,7 @@ public struct ImportPipeline: ImportPipelineProtocol {
         }
     }
 
-    /// Encodes parsed western notes into the `[WesternNote]` JSON format expected by `Song.decodedWesternNotes`.
+    /// Encodes parsed western notes into the `[WesternNote]` JSON format. T11'-pending: see `encodeSargamNotes` note — Song @Model no longer persists this blob.
     ///
     /// Uses exact field names matching `WesternNote.CodingKeys`: `"note"`, `"duration"`, `"midiNumber"`.
     /// The MIDI number is derived from the note name (e.g. "C4" -> 60).

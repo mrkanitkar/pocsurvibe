@@ -309,11 +309,15 @@ final class SongLibraryViewModel {
         song.category = dto.category
         song.tempo = dto.tempo
         song.durationSeconds = dto.durationSeconds
-        song.sargamNotation = dto.sargamNotationData
-        song.westernNotation = dto.westernNotationData
+        // T5': dropped `song.sargamNotation` / `song.westernNotation` writes
+        // — fields removed from @Model.
         song.midiData = dto.midiData
-        song.keySignatureRaw = dto.keySignature
-        song.timeSignatureRaw = dto.timeSignature
+        if !dto.keySignature.isEmpty {
+            song.keySignatureRaw = dto.keySignature
+        }
+        if !dto.timeSignature.isEmpty {
+            song.timeSignatureRaw = dto.timeSignature
+        }
         song.updatedAt = Date()
         applyFilters()
         AnalyticsManager.shared.track(.songEdited, properties: [

@@ -113,8 +113,13 @@ struct ExerciseStepView: View {
     // MARK: - Computed Properties
 
     /// Decoded sargam notes from the song's notation data.
+    ///
+    /// T11'-pending: was `song?.decodedSargamNotes`. T5' dropped the JSON
+    /// blob. T11' rewires this to derive notes from `Song.midiData` /
+    /// `[NoteEvent]`. Until then, exercise drills fall back to the manual
+    /// "Mark as Complete" button.
     private var sargamNotes: [SargamNote]? {
-        song?.decodedSargamNotes
+        nil
     }
 
     // MARK: - Drill Content

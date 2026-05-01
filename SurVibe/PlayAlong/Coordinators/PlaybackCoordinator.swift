@@ -145,25 +145,20 @@ final class PlaybackCoordinator {
         playbackState = .loading
         self.song = song
 
+        // T5': JSON-blob notation fallback (`song.decodedSargamNotes` /
+        // `decodedWesternNotes`) removed. The canonical pipeline is now
+        // `midiData` only. Songs without `midiData` fall through to the
+        // error branch.
         let result: Bool
         if let midiData = song.midiData, !midiData.isEmpty,
             case .success(let midiEvents) = MIDIParser.parse(data: midiData)
         {
             noteEvents = NoteEvent.fromMIDI(events: midiEvents)
             result = true
-        } else if let sargam = song.decodedSargamNotes,
-            let western = song.decodedWesternNotes
-        {
-            noteEvents = NoteEvent.fromNotation(
-                sargamNotes: sargam,
-                westernNotes: western,
-                tempo: song.tempo
-            )
-            result = true
         } else {
             errorMessage = "No playable notation found"
             playbackState = .error("No playable notation")
-            Self.logger.error("loadSong failed: no MIDI or notation data")
+            Self.logger.error("loadSong failed: no MIDI data")
             return false
         }
 

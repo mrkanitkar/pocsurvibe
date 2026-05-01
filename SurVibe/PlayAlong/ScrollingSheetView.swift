@@ -100,8 +100,13 @@ struct ScrollingSheetView: View {
     // MARK: - Body
 
     var body: some View {
-        let sargamNotes = song.decodedSargamNotes ?? []
-        let westernNotes = song.decodedWesternNotes ?? []
+        // T11'-pending: ScrollingSheetView still expects [SargamNote] / [WesternNote]
+        // arrays. T5' dropped the JSON-blob source. Until T11' rewires every
+        // renderer to consume `[NoteEvent]` directly, render an empty placeholder.
+        // The build still resolves — the user just sees a "no notation yet"
+        // staff between T5' and T11' for these themes.
+        let sargamNotes: [SargamNote] = []
+        let westernNotes: [WesternNote] = []
 
         Group {
             switch notationMode {

@@ -80,8 +80,11 @@ struct NotationContainerView: View {
     /// The notation renderers switched by the current display mode.
     @ViewBuilder
     private var notationContent: some View {
-        let sargamNotes = song.decodedSargamNotes ?? []
-        let westernNotes = song.decodedWesternNotes ?? []
+        // T11'-pending: see note in ScrollingSheetView.body — JSON-blob
+        // notation source dropped in T5'; renderers will be rewired to
+        // consume `[NoteEvent]` in T11'.
+        let sargamNotes: [SargamNote] = []
+        let westernNotes: [WesternNote] = []
 
         switch displayMode {
         case .sargam:

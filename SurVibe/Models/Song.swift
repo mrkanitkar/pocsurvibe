@@ -35,8 +35,9 @@ public enum SongCategory: String, Codable, Sendable, CaseIterable {
 
 /// A single note in Sargam (Indian classical) notation.
 ///
-/// Used inside the Song model's `sargamNotation` JSON blob.
-/// Encodes note name, octave, and rhythmic duration.
+/// **T11'-pending:** retained as a transient struct used by legacy renderers
+/// during the migration window. Once renderers consume `[NoteEvent]` directly
+/// (T11'), this type can be deleted along with `WesternNote`.
 public struct SargamNote: Codable, Equatable, Sendable {
     /// Swara note name: Sa, Re, Ga, Ma, Pa, Dha, Ni.
     public let note: String
@@ -60,8 +61,7 @@ public struct SargamNote: Codable, Equatable, Sendable {
 
 /// A single note in Western notation.
 ///
-/// Used inside the Song model's `westernNotation` JSON blob.
-/// Includes MIDI note number for direct playback mapping.
+/// **T11'-pending:** retained for the migration window — see `SargamNote` note.
 public struct WesternNote: Codable, Equatable, Sendable {
     /// Note name with octave: C4, D4, E4, ..., B4, C5.
     public let note: String
@@ -83,20 +83,22 @@ public struct WesternNote: Codable, Equatable, Sendable {
 
 /// Represents a single playable song in the SurVibe library.
 ///
-/// A Song combines musical notation (both Sargam and Western),
-/// MIDI data for playback, and metadata for discovery and analytics.
-/// Stored in SwiftData with CloudKit automatic sync.
+/// T5' (2026-05-01): the canonical source of musical content is now the
+/// SMF in `midiData` plus the original MusicXML in `musicXMLData`. The
+/// legacy `sargamNotation` / `westernNotation` JSON blobs were dropped —
+/// renderers now derive `[NoteEvent]` directly from `midiData` (or, for
+/// MXL imports, from `RenderedMIDI` + the MusicXML extractor in T6a).
 ///
 /// ## CloudKit Compatibility
 /// - All fields have explicit default values or are optional.
 /// - No `@Attribute(.unique)` — CloudKit does not support unique constraints.
 /// - Enums are stored as String rawValue.
 /// - Binary data uses `@Attribute(.externalStorage)` and optional `Data?`.
-/// - Relationships are stored as JSON-encoded ID arrays, not @Relationship.
 ///
-/// ## Conflict Resolution
-/// - `sortOrder` and metadata: last-write-wins (server merge).
-/// - `updatedAt`: max-wins for consistency.
+/// ## Migration: v12 → v13
+/// v13 wipes every `Song` row and re-imports only the bundled MXL audition
+/// assets through the new pipeline. Sanctioned by the plan-v2 locked
+/// decision "CloudKit dev container wipe" (no users yet).
 @Model
 final class Song {
     // MARK: - Identifiers
@@ -139,21 +141,28 @@ final class Song {
     /// Raw MIDI data (binary-encoded Standard MIDI File).
     @Attribute(.externalStorage) var midiData: Data?
 
-    // MARK: - Notation
+    /// Original MusicXML payload (compressed `.mxl` bytes when imported as
+    /// MXL, or UTF-8 plaintext for `.musicxml`). Kept around so we can
+    /// re-render through Verovio without losing key sig / time sig / lyrics
+    /// / hand assignment metadata. Populated by Wave 3 import path.
+    @Attribute(.externalStorage) var musicXMLData: Data?
 
-    /// Sargam notation as JSON-encoded `[SargamNote]`.
-    @Attribute(.externalStorage) var sargamNotation: Data?
+    // MARK: - Notation Metadata
 
-    /// Western notation as JSON-encoded `[WesternNote]`.
-    @Attribute(.externalStorage) var westernNotation: Data?
-
-    /// Key signature raw value for staff notation (e.g., "C", "G", "Bb").
-    /// Empty string defaults to C Major.
-    var keySignatureRaw: String = ""
+    /// Key signature raw value for staff notation (e.g., "C major", "G major", "Bb major").
+    /// Defaults to "C major"; populated from MusicXML at import time (Wave 3).
+    var keySignatureRaw: String = "C major"
 
     /// Time signature raw value for staff notation (e.g., "4/4", "3/4").
-    /// Empty string defaults to 4/4.
-    var timeSignatureRaw: String = ""
+    /// Defaults to "4/4"; populated from MusicXML at import time (Wave 3).
+    var timeSignatureRaw: String = "4/4"
+
+    /// Default Sa frequency in Hz.
+    ///
+    /// Defaults to C4 = 261.6256 Hz. Populated from the MusicXML key
+    /// signature at import time (Wave 3). The user can still override per
+    /// song via `SongProgress.preferredSaHz`.
+    var defaultSaFrequencyHz: Double = 261.6255653005986
 
     // MARK: - Play-Along Preferences
 
@@ -172,10 +181,6 @@ final class Song {
     /// `nil` means the app auto-picks the learner track(s) at load time.
     /// Persisted per song so the user's choice survives across sessions.
     /// Stored as a SwiftData Transformable blob (CloudKit-compatible).
-    ///
-    /// Wave 3 review (D5): introduced because `PartSplit.learnerTrackIndices`
-    /// is `[Int]` and a single `Int?` lost data for multi-staff piano scores.
-    /// `learnerTrackIndex` is kept for back-compat and mirrors `.first`.
     var learnerTrackIndices: [Int]?
 
     /// Human-readable summary of the accompaniment instruments.
@@ -192,7 +197,8 @@ final class Song {
     /// Whether the user has marked this song as a favorite.
     var isFavorite: Bool = false
 
-    /// Source of the song — "admin" for built-in content, "user" for user-imported songs.
+    /// Source of the song — "admin"/"bundled" for built-in content,
+    /// "user" for user-imported songs.
     var source: String = "admin"
 
     /// Display order in the song library (ascending).
@@ -216,28 +222,6 @@ final class Song {
     /// Returns the song's category as a typed enum.
     var songCategory: SongCategory? {
         SongCategory(rawValue: category)
-    }
-
-    /// Decodes Sargam notes from the JSON blob.
-    var decodedSargamNotes: [SargamNote]? {
-        guard let data = sargamNotation else { return nil }
-        do {
-            return try JSONDecoder().decode([SargamNote].self, from: data)
-        } catch {
-            songLogger.debug("Failed to decode sargam notes for song \(self.slugId): \(error.localizedDescription)")
-            return nil
-        }
-    }
-
-    /// Decodes Western notes from the JSON blob.
-    var decodedWesternNotes: [WesternNote]? {
-        guard let data = westernNotation else { return nil }
-        do {
-            return try JSONDecoder().decode([WesternNote].self, from: data)
-        } catch {
-            songLogger.debug("Failed to decode western notes for song \(self.slugId): \(error.localizedDescription)")
-            return nil
-        }
     }
 
     // MARK: - Initialization

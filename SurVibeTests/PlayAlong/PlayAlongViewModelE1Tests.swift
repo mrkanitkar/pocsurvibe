@@ -325,13 +325,19 @@ struct PlayAlongViewModelE1Tests {
         vm.cleanup()
     }
 
+    // TODO(T11'): rewire test to use [NoteEvent] path — T5' dropped the
+    // Song.sargamNotation / westernNotation JSON blobs that this test
+    // planted. With the new schema a Song without midiData falls into the
+    // PlaybackCoordinator error path, which still satisfies the
+    // arrangementPlayer/scoringAdapter == nil assertion but no longer
+    // exercises the "notation-only fallback" branch this test was meant
+    // to cover (because that branch is gone — there is no notation-only
+    // fallback any more).
+    #if false
     @Test("loadSong without MXL data falls back to visualization-only")
     func loadSongWithoutMXLDataFallsBackToVisualizationOnly() async {
         let vm = makeViewModel()
         let song = Song(slugId: "notation-only", title: "Notation Only")
-        // Plant minimal sargam + western notation arrays so
-        // PlaybackCoordinator.loadSong returns true rather than .error
-        // — that path is the realistic notation-only fallback.
         let sargam: [String] = ["Sa", "Re", "Ga"]
         let western: [String] = ["C", "D", "E"]
         song.sargamNotation = try? JSONEncoder().encode(sargam)
@@ -341,6 +347,7 @@ struct PlayAlongViewModelE1Tests {
         #expect(vm.scoringAdapter == nil)
         vm.cleanup()
     }
+    #endif
 
     /// Simulating a beat tick after `loadArrangement` advances
     /// `PlaybackCoordinator.currentTime`. Closes Wave 5's last wiring

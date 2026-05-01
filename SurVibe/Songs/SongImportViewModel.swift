@@ -146,23 +146,13 @@ final class SongImportViewModel {
         difficulty = song.difficulty
         category = song.category
 
-        // Pre-fill the notation tab that has data, defaulting to Sargam
-        if song.sargamNotation != nil {
-            selectedTab = .sargam
-            // Reconstruct text from stored notes so user can see and edit them
-            if let notes = song.decodedSargamNotes {
-                sargamText = notes.map { note in
-                    var parts = [note.note]
-                    if let mod = note.modifier { parts.insert(mod.capitalized, at: 0) }
-                    return parts.joined(separator: " ")
-                }.joined(separator: " ")
-            }
-        } else if song.westernNotation != nil {
-            selectedTab = .western
-            if let notes = song.decodedWesternNotes {
-                westernText = notes.map { $0.note }.joined(separator: " ")
-            }
-        }
+        // T11'-pending: the notation-tab pre-fill used `song.decodedSargamNotes`
+        // / `decodedWesternNotes` (JSON blob source dropped in T5'). T11' /
+        // T8' will rebuild edit-mode pre-fill from `Song.musicXMLData` or
+        // `Song.midiData` directly. Until then, edit mode opens with empty
+        // notation tabs — the user can paste fresh notation if they want to
+        // overwrite the song's content.
+        selectedTab = .musicXML
     }
 
     /// Starts the pipeline in edit mode — re-runs import and updates the existing song in place.
@@ -290,8 +280,9 @@ final class SongImportViewModel {
             importSucceeded = true
             AnalyticsManager.shared.track(.songImportCompleted, properties: [
                 "format": format.rawValue,
-                "note_count": dto.sargamNotationData?.count
-                    ?? dto.westernNotationData?.count ?? 0,
+                // T5': legacy JSON-blob byte counts dropped from analytics.
+                "note_count": (dto.sargamNotationData?.count
+                    ?? dto.westernNotationData?.count ?? 0),
                 "has_midi": dto.midiData != nil,
             ])
 
@@ -342,11 +333,16 @@ final class SongImportViewModel {
         song.category = dto.category
         song.tempo = dto.tempo
         song.durationSeconds = dto.durationSeconds
-        song.sargamNotation = dto.sargamNotationData
-        song.westernNotation = dto.westernNotationData
+        // T5': dropped `song.sargamNotation = dto.sargamNotationData` /
+        // `westernNotation = dto.westernNotationData` — JSON blobs no longer
+        // persisted on @Model.
         song.midiData = dto.midiData
-        song.keySignatureRaw = dto.keySignature
-        song.timeSignatureRaw = dto.timeSignature
+        if !dto.keySignature.isEmpty {
+            song.keySignatureRaw = dto.keySignature
+        }
+        if !dto.timeSignature.isEmpty {
+            song.timeSignatureRaw = dto.timeSignature
+        }
         song.source = dto.source
         song.isFree = true
         song.sortOrder = 9999 // User songs sort after admin content

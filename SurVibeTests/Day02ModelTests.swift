@@ -21,8 +21,11 @@ struct SongModelTests {
         #expect(song.isFree == false)
         #expect(song.sortOrder == 0)
         #expect(song.midiData == nil)
-        #expect(song.sargamNotation == nil)
-        #expect(song.westernNotation == nil)
+        // T5': new schema fields
+        #expect(song.musicXMLData == nil)
+        #expect(song.keySignatureRaw == "C major")
+        #expect(song.timeSignatureRaw == "4/4")
+        #expect(abs(song.defaultSaFrequencyHz - 261.6255653005986) < 0.0001)
     }
 
     @Test("Song created with all properties")
@@ -47,42 +50,10 @@ struct SongModelTests {
         #expect(song.durationSeconds == 180)
     }
 
-    @Test("Song decodes Sargam notes from JSON blob")
-    func decodeSargamNotes() throws {
-        let notes = [
-            SargamNote(note: "Sa", octave: 4, duration: 0.5),
-            SargamNote(note: "Re", octave: 4, duration: 0.5),
-            SargamNote(note: "Ga", octave: 4, duration: 1.0),
-        ]
-        let data = try JSONEncoder().encode(notes)
-        let song = Song()
-        song.sargamNotation = data
-        let decoded = song.decodedSargamNotes
-        #expect(decoded?.count == 3)
-        #expect(decoded?.first?.note == "Sa")
-        #expect(decoded?.last?.duration == 1.0)
-    }
-
-    @Test("Song decodes Western notes from JSON blob")
-    func decodeWesternNotes() throws {
-        let notes = [
-            WesternNote(note: "C4", duration: 1.0, midiNumber: 60),
-            WesternNote(note: "E4", duration: 0.5, midiNumber: 64),
-        ]
-        let data = try JSONEncoder().encode(notes)
-        let song = Song()
-        song.westernNotation = data
-        let decoded = song.decodedWesternNotes
-        #expect(decoded?.count == 2)
-        #expect(decoded?.first?.midiNumber == 60)
-    }
-
-    @Test("Song returns nil for empty notation data")
-    func emptyNotationReturnsNil() {
-        let song = Song()
-        #expect(song.decodedSargamNotes == nil)
-        #expect(song.decodedWesternNotes == nil)
-    }
+    // T5': removed `decodeSargamNotes`, `decodeWesternNotes`,
+    // `emptyNotationReturnsNil` — JSON-blob notation fields dropped from
+    // the Song @Model. SargamNote/WesternNote Codable round-trips remain
+    // covered in `NotationTypeTests` (further down this file).
 
     @Test("SongLanguage enum raw values match ISO 639-1")
     func songLanguageRawValues() {

@@ -393,10 +393,14 @@ struct SingStepView: View {
     private func setupAndListen() async {
         guard let song else { return }
 
-        if let notes = song.decodedSargamNotes {
-            expectedNotes = notes
-            totalNotes = notes.count
-        }
+        // T11'-pending: was `song.decodedSargamNotes`. JSON blob dropped in
+        // T5'; T11' will source `expectedNotes` from `Song.midiData` /
+        // `[NoteEvent]`. Until then, sing-step accuracy tracking is a no-op
+        // and the user falls back to the manual "Done Singing" button
+        // (which sends accuracy=1.0 — see `actionButtons`).
+        _ = song
+        expectedNotes = []
+        totalNotes = 0
 
         await pitchVM.startListening()
     }
