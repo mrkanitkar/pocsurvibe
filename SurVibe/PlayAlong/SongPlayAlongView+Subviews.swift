@@ -151,13 +151,7 @@ extension SongPlayAlongView {
 
     /// Convert a MIDI note number to a full swar name for the hint overlay.
     func swarNameFromMIDI(_ midiNote: Int) -> String {
-        let semitone = midiNote % 12
-        let swarNames = [
-            "Sa", "Komal Re", "Re", "Komal Ga", "Ga", "Ma",
-            "Tivra Ma", "Pa", "Komal Dha", "Dha", "Komal Ni", "Ni",
-        ]
-        let index = ((semitone % 12) + 12) % 12
-        return swarNames[index]
+        Swar.sargamName(forMIDI: UInt8(clamping: midiNote))
     }
 
     // MARK: - Guided Play Actions

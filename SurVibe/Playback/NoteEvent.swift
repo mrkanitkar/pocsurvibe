@@ -175,13 +175,13 @@ struct NoteEvent: Identifiable, Equatable, Sendable {
     /// - Returns: Array of NoteEvents preserving MIDI timing.
     static func fromMIDI(events: [MIDIEvent]) -> [NoteEvent] {
         events.map { midi in
-            let info = Self.noteNames(fromMIDI: midi.noteNumber)
+            let octave = (Int(midi.noteNumber) / 12) - 1
             return NoteEvent(
                 id: UUID(),
                 midiNote: midi.noteNumber,
-                swarName: info.swarName,
-                westernName: info.westernName,
-                octave: info.octave,
+                swarName: Swar.sargamName(forMIDI: midi.noteNumber),
+                westernName: Swar.westernName(forMIDI: midi.noteNumber),
+                octave: octave,
                 timestamp: midi.timestamp,
                 duration: midi.duration,
                 velocity: midi.velocity
@@ -201,17 +201,17 @@ struct NoteEvent: Identifiable, Equatable, Sendable {
     ///   - bpm: Original song tempo in BPM (from `RenderedMIDI.originalBPM`).
     /// - Returns: NoteEvents with `timestamp` and `duration` in seconds.
     static func fromExpectedNotes(_ notes: [ExpectedNote], bpm: Double) -> [NoteEvent] {
-        let secPerBeat = 60.0 / max(1.0, bpm)
-        return notes.map { note in
-            let info = Self.noteNames(fromMIDI: note.midiNote)
+        notes.map { note in
+            let noteNumber = Int(note.midiNote)
+            let octave = (noteNumber / 12) - 1
             return NoteEvent(
                 id: note.id,
                 midiNote: note.midiNote,
-                swarName: info.swarName,
-                westernName: info.westernName,
-                octave: info.octave,
-                timestamp: note.beat * secPerBeat,
-                duration: note.durationBeats * secPerBeat,
+                swarName: Swar.sargamName(forMIDI: note.midiNote),
+                westernName: Swar.westernName(forMIDI: note.midiNote),
+                octave: octave,
+                timestamp: MusicTime.beatsToSeconds(beats: note.beat, bpm: bpm),
+                duration: MusicTime.beatsToSeconds(beats: note.durationBeats, bpm: bpm),
                 velocity: 90
             )
         }
@@ -236,36 +236,5 @@ struct NoteEvent: Identifiable, Equatable, Sendable {
             return note
         }
         return "\(modifier.capitalized) \(note)"
-    }
-
-    /// Result of mapping a MIDI note number to Swar/Western names and octave.
-    private struct NoteNameInfo {
-        let swarName: String
-        let westernName: String
-        let octave: Int
-    }
-
-    /// Derive Swar name, Western name, and octave from a MIDI note number.
-    ///
-    /// MIDI 60 = C4 = Sa (octave 4). The semitone offset within the octave
-    /// maps to a `Swar` case via `midiOffset`.
-    ///
-    /// - Parameter midiNote: MIDI note number (0–127).
-    /// - Returns: A `NoteNameInfo` with swarName, westernName, and octave.
-    private static func noteNames(fromMIDI midiNote: UInt8) -> NoteNameInfo {
-        let noteNumber = Int(midiNote)
-        let octave = (noteNumber / 12) - 1
-        let semitone = noteNumber % 12
-
-        // Map semitone offset to Swar
-        let swar = Swar.allCases.first { $0.midiOffset == semitone } ?? .sa
-        let swarName = swar.rawValue
-
-        // Map semitone to Western note name
-        let westernNames = ["C", "Db", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B"]
-        let westernBase = westernNames[semitone]
-        let westernName = "\(westernBase)\(octave)"
-
-        return NoteNameInfo(swarName: swarName, westernName: westernName, octave: octave)
     }
 }

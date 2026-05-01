@@ -144,7 +144,7 @@ public final class MetronomePlayer: MetronomePlaying {
         sampleRate: Double,
         bpm: Double
     ) -> AVAudioFramePosition {
-        let samplesPerBeat = Int64(60.0 / bpm * sampleRate)
+        let samplesPerBeat = Int64(MusicTime.beatsToSeconds(beats: 1.0, bpm: bpm) * sampleRate)
         return startSampleTime + Int64(beatIndex) * samplesPerBeat
     }
 

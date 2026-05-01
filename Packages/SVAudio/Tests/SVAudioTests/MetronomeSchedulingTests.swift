@@ -77,7 +77,7 @@ struct MetronomeSchedulingTests {
         let sampleRate = 44100.0
         let bpm = 90.0
         let startSample: AVAudioFramePosition = 5000
-        let expectedInterval = Int64(60.0 / bpm * sampleRate)
+        let expectedInterval = Int64(MusicTime.beatsToSeconds(beats: 1.0, bpm: bpm) * sampleRate)
 
         var previousSample = MetronomePlayer.sampleTimeForBeat(
             0,

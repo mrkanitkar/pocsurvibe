@@ -206,8 +206,6 @@ actor NoteMatchingActor {
     /// - Parameter midiNote: MIDI note number (0–127).
     /// - Returns: Full swar name, e.g. "Komal Re", "Tivra Ma", "Sa".
     private static func swarNameFromMIDI(_ midiNote: UInt8) -> String {
-        let semitone = Int(midiNote) % 12
-        let swar = Swar.allCases.first { $0.midiOffset == semitone } ?? .sa
-        return swar.rawValue
+        Swar.sargamName(forMIDI: midiNote)
     }
 }

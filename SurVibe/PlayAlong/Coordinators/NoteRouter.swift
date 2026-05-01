@@ -421,8 +421,7 @@ final class NoteRouter {
     /// - Parameter midiNote: MIDI note number (0–127).
     /// - Returns: Full swar name string (e.g., "Komal Re"). Falls back to "Sa".
     nonisolated private static func swarNameFromMIDI(_ midiNote: UInt8) -> String {
-        let semitone = Int(midiNote) % 12
-        return Swar.nameForSemitone[semitone] ?? Swar.sa.rawValue
+        Swar.sargamName(forMIDI: midiNote)
     }
 
     nonisolated private static func midiNoteFromFrequency(_ frequency: Double) -> Int {

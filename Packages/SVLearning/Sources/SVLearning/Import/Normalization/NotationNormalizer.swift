@@ -1,5 +1,6 @@
 import Foundation
 import os
+import SVAudio
 
 private let normalizerLogger = Logger.survibe(category: "NotationNormalizer")
 
@@ -87,9 +88,8 @@ public struct NotationNormalizer: Sendable {
     /// - Returns: Estimated duration in whole seconds (minimum 1).
     public func estimateDurationSeconds(_ notation: ParsedNotation, tempo: Int) -> Int {
         let effectiveTempo = tempo > 0 ? tempo : Self.defaultTempo
-        let secondsPerBeat = 60.0 / Double(effectiveTempo)
         let totalBeats = notation.notes.reduce(0.0) { $0 + ($1.durationBeats ?? Self.defaultDurationBeats) }
-        return max(1, Int(totalBeats * secondsPerBeat))
+        return max(1, Int(MusicTime.beatsToSeconds(beats: totalBeats, bpm: Double(effectiveTempo))))
     }
 
     // MARK: - Private Helpers

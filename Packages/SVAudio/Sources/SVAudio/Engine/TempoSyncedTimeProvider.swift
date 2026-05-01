@@ -30,7 +30,7 @@ public struct TempoSyncedTimeProvider: MusicTimeProvider, Sendable {
     /// - Returns: Beat position.
     public func wallToBeats(seconds: Double, tempo: Double) -> Double {
         let bpm = tempo > 0 ? tempo : defaultBPM
-        return seconds * bpm / 60.0
+        return MusicTime.secondsToBeats(seconds: seconds, bpm: bpm)
     }
 
     /// Convert beats to wall-clock seconds.
@@ -41,6 +41,6 @@ public struct TempoSyncedTimeProvider: MusicTimeProvider, Sendable {
     /// - Returns: Elapsed seconds.
     public func beatsToWall(beats: Double, tempo: Double) -> Double {
         let bpm = tempo > 0 ? tempo : defaultBPM
-        return beats * 60.0 / bpm
+        return MusicTime.beatsToSeconds(beats: beats, bpm: bpm)
     }
 }
