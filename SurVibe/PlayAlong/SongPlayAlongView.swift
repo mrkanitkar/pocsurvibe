@@ -94,16 +94,6 @@ struct SongPlayAlongView: View {
     @State
     private var showAppearanceSheet = false
 
-    /// Whether the first-run microphone pre-prompt sheet should be shown.
-    ///
-    /// Initialised from `MicPermissionPrePrompt.shouldShow`, which reads the
-    /// `hasSeenMicPermissionPrePrompt` flag from `UserDefaults`. The sheet
-    /// displays in parallel with the existing `.task` that calls
-    /// `viewModel.loadSong(song)`; `loadSong` itself issues the system
-    /// permission request — this pre-prompt merely explains why first.
-    @State
-    private var showMicPrePrompt: Bool = MicPermissionPrePrompt.shouldShow
-
     /// Whether the correctness flash overlay is visible (brief green/red flash).
     @State
     var showCorrectnessBanner = false
@@ -261,16 +251,14 @@ struct SongPlayAlongView: View {
         .navigationTitle(song.title)
         .navigationBarTitleDisplayMode(.inline)
         .sensoryFeedback(.selection, trigger: viewModel.scoring.notesHit)
-        .sheet(isPresented: $showMicPrePrompt) {
-            // Pre-prompt is purely informational. Auto-start lives on the VM
-            // (`PlayAlongViewModel.loadSong` calls `startSession()` directly
-            // when `autoStartOnLoad == true`), so the modal doesn't need to
-            // kick the transport. Pass the binding directly so Continue can
-            // close the sheet without relying on `@Environment(\.dismiss)`.
-            MicPermissionPrePrompt(isPresented: $showMicPrePrompt, onContinue: {
-                MultiChannelLog.shared.log(.info, "==> MicPrePrompt CONTINUE tapped (info-only)")
-            })
-        }
+        // Pre-prompt sheet removed: with permission requested lazily by
+        // `noteRouter.startInputDetection()` (28c396e), the system iOS
+        // permission alert is the only ask. The in-app rationale was firing
+        // either redundantly (after the system alert had already resolved)
+        // or pointlessly (when no system alert would ever fire on song
+        // open) — both producing a "Continue does nothing" perception.
+        // Reintroduce later in a more contextual surface (e.g., near the
+        // mic indicator on the toolbar) if HIG rationale is desired.
         .task {
             MultiChannelLog.shared.log(.info, ">>> SongPlayAlongView.task ENTERED song=\(song.title) cancelled=\(Task.isCancelled)")
             defer {
