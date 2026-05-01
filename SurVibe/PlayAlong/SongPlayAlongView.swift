@@ -262,26 +262,13 @@ struct SongPlayAlongView: View {
         .navigationBarTitleDisplayMode(.inline)
         .sensoryFeedback(.selection, trigger: viewModel.scoring.notesHit)
         .sheet(isPresented: $showMicPrePrompt) {
-            // Auto-start playback once the user dismisses the pre-prompt.
-            // Without this hook the user lands on the Play Along screen
-            // with no audible feedback ("clicked Continue, nothing happens").
-            // The system mic permission is requested separately by
-            // `viewModel.loadSong` — this closure only kicks the transport.
-            // Continue may fire before `loadSong` finishes wiring the
-            // arrangement; we poll briefly for `arrangementPlayer != nil`
-            // (up to 3 s) before calling `startSession()` so the auto-play
-            // doesn't no-op on a fast-tap.
+            // Pre-prompt is purely informational. Auto-start lives on the VM
+            // (`PlayAlongViewModel.loadSong` calls `startSession()` directly
+            // when `autoStartOnLoad == true`), so the modal doesn't need to
+            // kick the transport. Logging the dismissal so audio_log can
+            // confirm the user-tapped path when first-run users hit it.
             MicPermissionPrePrompt(onContinue: {
-                Task {
-                    MultiChannelLog.shared.log(.info, "==> MicPrePrompt CONTINUE tapped")
-                    let deadline = Date().addingTimeInterval(3.0)
-                    while viewModel.arrangementPlayer == nil, Date() < deadline {
-                        try? await Task.sleep(nanoseconds: 100_000_000)  // 100 ms
-                    }
-                    let wired = viewModel.arrangementPlayer != nil
-                    MultiChannelLog.shared.log(.info, "... MicPrePrompt CONTINUE: arrangementWired=\(wired); calling startSession")
-                    await viewModel.startSession()
-                }
+                MultiChannelLog.shared.log(.info, "==> MicPrePrompt CONTINUE tapped (info-only)")
             })
         }
         .task {
@@ -320,23 +307,10 @@ struct SongPlayAlongView: View {
                 self.progress = newProgress
                 await viewModel.loadPersistedSettings(from: newProgress, seedFromVM: true)
             }
-            // Auto-start playback once everything is loaded. Without this the
-            // user lands on a quiet Play Along screen after `loadSong` finishes
-            // and has to find the toolbar play button. Skip auto-play if the
-            // first-run mic pre-prompt is still showing — the prompt's
-            // `onContinue` handles the kick-off in that case so we don't
-            // double-start.
-            if !showMicPrePrompt, viewModel.arrangementPlayer != nil {
-                MultiChannelLog.shared.log(.info, "==> SongPlayAlongView.task: auto-starting playback (no pre-prompt)")
-                await viewModel.startSession()
-            } else {
-                let wired = viewModel.arrangementPlayer != nil
-                MultiChannelLog.shared.log(
-                    .info,
-                    "... SongPlayAlongView.task: skip auto-start "
-                        + "(prePrompt=\(showMicPrePrompt) wired=\(wired))"
-                )
-            }
+            // Auto-start moved into `PlayAlongViewModel.loadSong` so it lives
+            // on the model (engine owner), not the view lifecycle. Avoids
+            // SwiftUI `.task` cancellation risks and the split-brain between
+            // pre-prompt path and post-prompt path.
         }
         .onChange(of: progress?.preferredHands) { _, newValue in
             // Settings sheet binds to progress.preferredHands directly. Mirror

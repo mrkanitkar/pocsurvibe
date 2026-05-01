@@ -787,8 +787,29 @@ final class PlayAlongViewModel {
 
         await loadArrangementIfPossible(for: song)
 
-        MultiChannelLog.shared.log(.info, "<<< PlayAlongViewModel.loadSong DONE")
+        let arrangedWired = arrangementPlayer != nil
+        MultiChannelLog.shared.log(
+            .info,
+            "<<< PlayAlongViewModel.loadSong DONE arrangedWired=\(arrangedWired) autoStart=\(autoStartOnLoad)"
+        )
+        // Auto-start playback as soon as the arrangement is wired. Lives on
+        // the VM (not in `SongPlayAlongView.task`) so transport survives
+        // sheet presentation, view-identity flips, and rotation. Apple's
+        // `.task(priority:_:)` is documented as cancelled on view-identity
+        // change, so audio start belongs on the model that owns the engine
+        // — not on a child view's lifecycle hook.
+        if autoStartOnLoad, arrangedWired {
+            MultiChannelLog.shared.log(.info, "==> loadSong: auto-starting via startSession()")
+            await startSession()
+        }
     }
+
+    /// When `true`, `loadSong` automatically calls `startSession()` once an
+    /// `arrangementPlayer` is wired. Defaults to `true` so users land on a
+    /// song with playback already in progress. Tests and callers that need
+    /// a silent load (e.g., scrubbing in a settings preview) can set this
+    /// to `false` before invoking `loadSong`.
+    var autoStartOnLoad: Bool = true
 
     /// Best-effort wiring of an `ArrangementPlayer` + `ScoringAdapter`
     /// when the loaded `Song` carries Standard MIDI File bytes
