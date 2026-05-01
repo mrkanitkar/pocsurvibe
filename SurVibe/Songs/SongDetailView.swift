@@ -35,9 +35,6 @@ struct SongDetailView: View {
     @Environment(AppThemeManager.self)
     private var themeManager: AppThemeManager
 
-    /// Whether the practice session full-screen cover is shown.
-    @State private var showPractice = false
-
     /// Whether the play-along full-screen cover is shown.
     @State private var showPlayAlong = false
 
@@ -95,27 +92,10 @@ struct SongDetailView: View {
                     "Open an interactive play-along session with falling notes and scoring"
                 )
 
-                // Practice button
-                Button {
-                    MultiChannelLog.shared.log(.info, "==> SongDetailView: Practice button tapped, presenting cover")
-                    showPractice = true
-                } label: {
-                    Label("Practice This Song", systemImage: "music.note.list")
-                        .font(.headline)
-                        .frame(maxWidth: .infinity)
-                }
-                .buttonStyle(.borderedProminent)
-                .accessibilityLabel("Practice this song")
-                .accessibilityHint("Open a practice session for this song")
+                // Practice button — removed in Wave 1b (PracticeSessionView deleted).
+                // SongDetailView itself is deleted in Wave 4.
             }
             .padding()
-        }
-        .fullScreenCover(isPresented: $showPractice) {
-            PracticeSessionView(
-                song: song,
-                modelContext: modelContext,
-                gamificationService: gamificationService
-            )
         }
         .fullScreenCover(isPresented: $showPlayAlong) {
             let _ = MultiChannelLog.shared.log(.info, "==> SongDetailView: fullScreenCover content closure invoked")
