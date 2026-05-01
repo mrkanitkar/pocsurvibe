@@ -42,12 +42,8 @@ struct SongsTab: View {
             }
             .navigationDestination(for: AppDestination.self) { destination in
                 switch destination {
-                case .songDetail(let song):
-                    SongDetailView(song: song)
                 case .playAlong(let song):
                     PlayAlongSceneHost(song: song)
-                case .practiceMode:
-                    EmptyView()  // PracticeSession is presented as fullScreenCover, not pushed.
                 default:
                     EmptyView()
                 }
@@ -66,46 +62,6 @@ struct SongsTab: View {
             if viewModel == nil {
                 viewModel = SongLibraryViewModel(modelContext: modelContext)
             }
-        }
-    }
-}
-
-// MARK: - Song Detail Resolver
-
-/// Fetches a `Song` by ID from SwiftData and hands off to `SongDetailView`.
-///
-/// Avoids requiring every NavigationSplitView call-site to hold a full
-/// `Song` object. Falls back to `ContentUnavailableView` if the song
-/// has been deleted between selection and render.
-private struct SongDetailViewResolver: View {
-    // MARK: - Properties
-
-    let songID: Song.ID
-
-    @Query
-    private var songs: [Song]
-
-    // MARK: - Initialization
-
-    /// Creates a resolver filtered to the given song ID.
-    ///
-    /// - Parameter songID: The `UUID` of the song to display.
-    init(songID: Song.ID) {
-        self.songID = songID
-        _songs = Query(filter: #Predicate<Song> { $0.id == songID })
-    }
-
-    // MARK: - Body
-
-    var body: some View {
-        if let song = songs.first {
-            SongDetailView(song: song)
-        } else {
-            ContentUnavailableView(
-                "Song Not Found",
-                systemImage: "music.note.list",
-                description: Text("The selected song is no longer available.")
-            )
         }
     }
 }

@@ -12,7 +12,7 @@ import os.log
 /// ```swift
 /// @Environment(AppRouter.self) private var router
 /// router.switchTab(to: .songs)
-/// router.navigate(to: .songDetail(song))
+/// router.navigate(to: .playAlong(song))
 /// ```
 @Observable
 @MainActor

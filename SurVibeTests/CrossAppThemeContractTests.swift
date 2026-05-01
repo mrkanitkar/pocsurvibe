@@ -15,16 +15,14 @@ struct CrossAppThemeContractTests {
     // MARK: - File lists
 
     private static let crossAppFiles: [String] = [
-        // Songs (10)
+        // Songs (8)
         "SurVibe/Songs/SongCardView.swift",
         "SurVibe/Songs/SongListRow.swift",
         "SurVibe/Songs/DifficultyBadge.swift",
         "SurVibe/Songs/MiniNotationPreview.swift",
         "SurVibe/Songs/FilterChip.swift",
-        "SurVibe/Songs/SongDetailView.swift",
         "SurVibe/Songs/SongImportSheet.swift",
         "SurVibe/Songs/SongLibraryView.swift",
-        "SurVibe/Songs/PlaybackControlsView.swift",
         "SurVibe/Songs/LanguageBadge.swift",
         // Onboarding (6)
         "SurVibe/Onboarding/SkillLevelView.swift",

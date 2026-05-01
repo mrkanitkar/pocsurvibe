@@ -31,6 +31,7 @@ struct SongLibraryView: View {
     private var signInTrigger: SignInTrigger?
 
     /// Song for which to show the detail sheet (via long-press context menu).
+    /// TODO: Replace with inline Play Along preview (T4.3).
     @State
     private var detailSong: Song?
 
@@ -95,12 +96,8 @@ struct SongLibraryView: View {
         }
         .sheet(item: $detailSong) { song in
             NavigationStack {
-                SongDetailView(song: song)
+                PlayAlongSceneHost(song: song)
             }
-            // Note: presentationDetents removed — resizable detents on iPad
-            // caused fullScreenCover (Play Along) presented from inside this
-            // sheet to remount every ~720ms before its `.task` could run.
-            // Stable full-height sheet keeps Play Along's view tree stable.
         }
         .sheet(isPresented: $showImportSheet) {
             SongImportSheet()
@@ -241,7 +238,7 @@ struct SongLibraryView: View {
                     return .handled
                 }
         } else {
-            NavigationLink(value: AppDestination.songDetail(song)) {
+            NavigationLink(value: AppDestination.playAlong(song)) {
                 SongCardView(song: song)
             }
             .buttonStyle(.plain)

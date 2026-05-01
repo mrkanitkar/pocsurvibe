@@ -7,10 +7,8 @@ import Foundation
 /// `id` for hashing and equality to avoid comparing full objects.
 enum AppDestination: Hashable {
     case songLibrary
-    case songDetail(Song)
     case lessonList
     case lessonDetail(Lesson)
-    case practiceMode(Song)
     case playAlong(Song)
     case profile
     case settings
@@ -23,17 +21,11 @@ enum AppDestination: Hashable {
         switch self {
         case .songLibrary:
             hasher.combine("songLibrary")
-        case .songDetail(let song):
-            hasher.combine("songDetail")
-            hasher.combine(song.id)
         case .lessonList:
             hasher.combine("lessonList")
         case .lessonDetail(let lesson):
             hasher.combine("lessonDetail")
             hasher.combine(lesson.id)
-        case .practiceMode(let song):
-            hasher.combine("practiceMode")
-            hasher.combine(song.id)
         case .playAlong(let song):
             hasher.combine("playAlong")
             hasher.combine(song.id)
@@ -52,14 +44,10 @@ enum AppDestination: Hashable {
         switch (lhs, rhs) {
         case (.songLibrary, .songLibrary):
             true
-        case (.songDetail(let lhsSong), .songDetail(let rhsSong)):
-            lhsSong.id == rhsSong.id
         case (.lessonList, .lessonList):
             true
         case (.lessonDetail(let lhsLesson), .lessonDetail(let rhsLesson)):
             lhsLesson.id == rhsLesson.id
-        case (.practiceMode(let lhsSong), .practiceMode(let rhsSong)):
-            lhsSong.id == rhsSong.id
         case (.playAlong(let lhsSong), .playAlong(let rhsSong)):
             lhsSong.id == rhsSong.id
         case (.profile, .profile):

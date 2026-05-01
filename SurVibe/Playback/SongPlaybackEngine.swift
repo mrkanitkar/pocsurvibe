@@ -96,7 +96,7 @@ final class SongPlaybackEngine {
         observeAppLifecycle()
     }
 
-    // Note: Cleanup is handled by stop() called from SongDetailView.onDisappear.
+    // Note: Cleanup is handled by stop() called from PlayAlongSceneHost.onDisappear.
     // deinit cannot access @MainActor-isolated properties under strict concurrency.
 
     // MARK: - Public Methods
