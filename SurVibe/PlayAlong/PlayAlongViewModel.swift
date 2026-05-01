@@ -186,6 +186,18 @@ final class PlayAlongViewModel {
         set { chrome.karaokeBackgroundColor = newValue }
     }
 
+    /// Whether playback is currently active.
+    var isPlaying: Bool { playbackState == .playing }
+
+    /// Whether microphone pitch detection is enabled. Wired in Wave 5.
+    var isMicEnabled: Bool = false
+
+    /// Preview the learner's part in isolation. Wired in Wave 5.
+    func previewLearnerPart() async { /* TODO: Wave 5 */ }
+
+    /// Preview the backing/accompaniment part. Wired in Wave 5.
+    func previewBackingPart() async { /* TODO: Wave 5 */ }
+
     // MARK: - NoteRouter-owned state (SP-3d) — delegating computed properties
 
     /// Latency preset — delegates to `noteRouter.latencyPreset` (read+write).
