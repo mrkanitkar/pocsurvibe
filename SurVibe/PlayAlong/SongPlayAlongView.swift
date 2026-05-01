@@ -298,6 +298,27 @@ struct SongPlayAlongView: View {
                 await viewModel.loadPersistedSettings(from: newProgress, seedFromVM: true)
             }
         }
+        .onChange(of: progress?.preferredHands) { _, newValue in
+            // Settings sheet binds to progress.preferredHands directly. Mirror
+            // changes into the VM so the runtime arrangement honours the new
+            // hands selection without waiting for a relaunch.
+            if let value = newValue {
+                viewModel.practiceMode = PlayAlongViewModel.practiceMode(from: value)
+            }
+        }
+        .onChange(of: progress?.waitModeEnabled) { _, newValue in
+            if let value = newValue { viewModel.isWaitModeEnabled = value }
+        }
+        .onChange(of: progress?.clickTrackEnabled) { _, newValue in
+            if let value = newValue {
+                viewModel.backingMode = value ? .click : .on
+            }
+        }
+        .onChange(of: progress?.clickTrackLevel) { _, newValue in
+            if let raw = newValue, let level = PlayAlongViewModel.ClickLevel(rawValue: raw) {
+                viewModel.clickLevel = level
+            }
+        }
         .onChange(of: themeManager.currentPreset) { _, newPreset in
             // Live-switch when user changes theme via quick-switch sheet
             viewModel.viewMode = newPreset.viewMode

@@ -28,7 +28,15 @@ extension PlayAlongViewModel {
             tonicSaPitch = Self.midiPitch(forSaHz: saHz)
         }
         tempoScale = max(0.5, min(1.5, progress.preferredTempoScale))
-        // Remaining field hydration wired in Wave 5 T5.4
+        practiceMode = Self.practiceMode(from: progress.preferredHands)
+        isWaitModeEnabled = progress.waitModeEnabled
+        backingMode = progress.clickTrackEnabled ? .click : .on
+        clickLevel = ClickLevel(rawValue: progress.clickTrackLevel) ?? .normal
+        if let start = progress.loopRegionStart, let end = progress.loopRegionEnd {
+            loopRegion = LoopRegion(startMeasure: start, endMeasure: end)
+        } else {
+            loopRegion = nil
+        }
         didInitialHydrate = true
     }
 
@@ -57,8 +65,35 @@ extension PlayAlongViewModel {
     func applySettingsToRow(_ progress: SongProgress) {
         progress.preferredSaHz = Self.saHz(forMIDIPitch: tonicSaPitch)
         progress.preferredTempoScale = tempoScale
-        // Remaining field assignments — full wiring in Wave 5 T5.4
+        progress.preferredHands = Self.handsString(from: practiceMode)
+        progress.waitModeEnabled = isWaitModeEnabled
+        progress.clickTrackEnabled = backingMode == .click
+        progress.clickTrackLevel = clickLevel.rawValue
+        progress.loopRegionStart = loopRegion?.startMeasure
+        progress.loopRegionEnd = loopRegion?.endMeasure
         try? progress.modelContext?.save()
+    }
+
+    // MARK: - Enum ↔ String mapping
+
+    /// Translate the `SongProgress.preferredHands` string ("both"/"rh"/"lh")
+    /// into a `PracticeMode` enum value. Defaults to `.both` for unknown input.
+    nonisolated static func practiceMode(from hands: String) -> PracticeMode {
+        switch hands {
+        case "rh": return .rightHand
+        case "lh": return .leftHand
+        default: return .both
+        }
+    }
+
+    /// Translate a `PracticeMode` enum value back into the
+    /// `SongProgress.preferredHands` string form.
+    nonisolated static func handsString(from mode: PracticeMode) -> String {
+        switch mode {
+        case .rightHand: return "rh"
+        case .leftHand: return "lh"
+        case .both: return "both"
+        }
     }
 
     // MARK: - MIDI ↔ Hz conversion
