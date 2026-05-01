@@ -299,6 +299,7 @@ public final class MultiTrackSamplerGraph: MultiTrackSamplerGraphProtocol {
     /// - Throws: `PipelineError.engineNotRunning` if no sequencer is loaded.
     public func play() throws {
         guard let sequencer else {
+            MultiChannelLog.shared.log(.error, "GRAPH-PLAY no sequencer loaded — throwing engineNotRunning")
             throw PipelineError.engineNotRunning
         }
         sequencer.prepareToPlay()
@@ -306,11 +307,20 @@ public final class MultiTrackSamplerGraph: MultiTrackSamplerGraphProtocol {
         let pos = sequencer.currentPositionInSeconds
         let playing = sequencer.isPlaying
         let engineRunning = engine.isRunning
+        let trackCount = sequencer.tracks.count
+        let mainOutputVol = engine.mainMixerNode.outputVolume
+        let samplerCount = samplers.count
         graphLogger.info(
             "play: pos=\(pos, privacy: .public)s isPlaying=\(playing, privacy: .public)"
         )
         PipelineFileLog.shared.log(
             "MultiTrackSamplerGraph.play: pos=\(pos)s isPlaying=\(playing) engineRunning=\(engineRunning)"
+        )
+        let mixVolStr = String(format: "%.2f", mainOutputVol)
+        MultiChannelLog.shared.log(
+            .info,
+            "GRAPH-PLAY pos=\(pos)s isPlaying=\(playing) engRun=\(engineRunning) "
+                + "seqTracks=\(trackCount) samplers=\(samplerCount) mainMixerVol=\(mixVolStr)"
         )
     }
 

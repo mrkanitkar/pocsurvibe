@@ -426,10 +426,31 @@ struct SongPlayAlongView: View {
                 .presentationDetents([.medium, .large])
                 .presentationDragIndicator(.visible)
                 .presentationBackgroundInteraction(.enabled(upThrough: .medium))
+                .onAppear {
+                    MultiChannelLog.shared.log(.info, "SETTINGS-SHEET appeared progressNonNil=true")
+                }
+                .onDisappear {
+                    MultiChannelLog.shared.log(.info, "SETTINGS-SHEET dismissed")
+                }
+            } else {
+                let _ = MultiChannelLog.shared.log(
+                    .warning,
+                    "SETTINGS-SHEET attempted present but progress is nil — sheet body empty"
+                )
+                EmptyView()
             }
         }
         .sheet(isPresented: $showTempoCustomSheet) {
             TempoCustomSheet(viewModel: viewModel)
+                .onAppear {
+                    MultiChannelLog.shared.log(.info, "TEMPO-CUSTOM-SHEET appeared")
+                }
+        }
+        .onChange(of: showSettingsSheet) { _, newValue in
+            MultiChannelLog.shared.log(
+                .info,
+                "STATE showSettingsSheet=\(newValue) progressNonNil=\(progress != nil)"
+            )
         }
         .onChange(of: tanpura.effectiveSaHz) { _, newHz in
             guard didInitialSeed else { return }

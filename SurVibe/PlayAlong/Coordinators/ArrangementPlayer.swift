@@ -163,7 +163,17 @@ public final class ArrangementPlayer {
     ///   - countInBars: Number of count-in bars before `atBeat`.
     ///     Defaults to 1. Pass `0` to skip the lead-in.
     public func start(atBeat: Double = 0, countInBars: Int = 1) {
-        guard let split else { return }
+        guard let split else {
+            MultiChannelLog.shared.log(.warning, "ARRANGEMENT-START aborted: no split loaded")
+            return
+        }
+        let learnerCount = split.learner.notes.count
+        let bpb = split.learner.beatsPerMeasure
+        MultiChannelLog.shared.log(
+            .info,
+            ">>> ARRANGEMENT-START atBeat=\(atBeat) countIn=\(countInBars) "
+                + "learnerNotes=\(learnerCount) bpb=\(bpb)"
+        )
         let beats = max(0, countInBars) * split.learner.beatsPerMeasure
         if beats > 0 {
             for i in 0..<beats {
@@ -177,9 +187,14 @@ public final class ArrangementPlayer {
             try graph.play()
             isPlaying = true
             startDisplayLink()
+            MultiChannelLog.shared.log(.info, "<<< ARRANGEMENT-START graph.play() success isPlaying=true")
         } catch {
             arrangementPlayerLogger.error(
                 "start: graph.play() failed: \(error.localizedDescription, privacy: .public)"
+            )
+            MultiChannelLog.shared.log(
+                .error,
+                "<<< ARRANGEMENT-START graph.play() FAILED: \(error.localizedDescription)"
             )
             isPlaying = false
         }

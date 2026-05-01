@@ -1,6 +1,8 @@
 import SVAudio
 import SwiftUI
 
+private let toolbarLog = MultiChannelLog.shared
+
 // MARK: - PlayAlongMinimalToolbar
 
 /// Single-strip minimal toolbar for the play-along experience.
@@ -48,29 +50,30 @@ struct PlayAlongMinimalToolbar: View {
     // MARK: - Body
 
     var body: some View {
-        HStack(spacing: 8) {
-            // Left cluster
+        HStack(spacing: 12) {
             leftCluster
-
-            Spacer(minLength: 4)
-
-            // Center — title strip
+            Spacer(minLength: 8)
             SongPlayAlongTitleStrip(
                 viewModel: viewModel,
                 songTitle: songTitle,
                 songArtist: songArtist,
                 baseBPM: baseBPM
             )
-            .frame(maxWidth: .infinity)
-
-            Spacer(minLength: 4)
-
-            // Right cluster
+            .layoutPriority(0)
+            Spacer(minLength: 8)
             rightCluster
         }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 8)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 10)
+        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 20))
+        .overlay(
+            RoundedRectangle(cornerRadius: 20)
+                .stroke(Color.primary.opacity(0.08), lineWidth: 0.5)
+        )
         .glassEffect(.regular, in: RoundedRectangle(cornerRadius: 20))
+        .onAppear {
+            toolbarLog.log(.info, "TOOLBAR-RENDER PlayAlongMinimalToolbar appeared songTitle=\(songTitle)")
+        }
     }
 
     // MARK: - Left Cluster
@@ -78,36 +81,48 @@ struct PlayAlongMinimalToolbar: View {
     /// Back, play/pause, restart, settings buttons.
     private var leftCluster: some View {
         HStack(spacing: 4) {
-            Button { dismiss() } label: {
+            Button {
+                toolbarLog.log(.info, "TOOLBAR-TAP back")
+                dismiss()
+            } label: {
                 Image(systemName: "chevron.backward")
-                    .font(.body)
-                    .frame(width: 36, height: 36)
+                    .font(.title3)
+                    .frame(width: 40, height: 40)
             }
             .accessibilityLabel("Back")
             .accessibilityHint("Return to the song list")
 
-            Button(action: onPlayPause) {
+            Button {
+                toolbarLog.log(.info, "TOOLBAR-TAP play/pause state=\(viewModel.playbackState)")
+                onPlayPause()
+            } label: {
                 Image(systemName: PlayAlongToolbar.playPauseIcon(for: viewModel.playbackState))
-                    .font(.body)
-                    .frame(width: 36, height: 36)
+                    .font(.title3)
+                    .frame(width: 40, height: 40)
             }
             .accessibilityLabel(viewModel.isPlaying ? "Pause" : "Play")
             .accessibilityHint(viewModel.isPlaying ? "Pause playback" : "Start or resume playback")
 
             Button {
+                toolbarLog.log(.info, "TOOLBAR-TAP restart")
                 Task { await onRestart() }
             } label: {
                 Image(systemName: "arrow.counterclockwise")
-                    .font(.body)
-                    .frame(width: 36, height: 36)
+                    .font(.title3)
+                    .frame(width: 40, height: 40)
             }
             .accessibilityLabel("Restart")
             .accessibilityHint("Restart the song from the beginning")
 
-            Button(action: onSettingsTap) {
-                Image(systemName: "gearshape")
-                    .font(.body)
-                    .frame(width: 36, height: 36)
+            Button {
+                toolbarLog.log(.info, "TOOLBAR-TAP settings (gear) showSettingsSheetFlag=\(showSettingsSheet)")
+                onSettingsTap()
+            } label: {
+                Image(systemName: "gearshape.fill")
+                    .font(.title3)
+                    .foregroundStyle(Color.accentColor)
+                    .frame(width: 40, height: 40)
+                    .background(Color.accentColor.opacity(0.12), in: Circle())
             }
             .accessibilityLabel("Settings")
             .accessibilityHint("Open play-along settings")

@@ -337,7 +337,26 @@ public final class AudioEngineManager: AudioEngineProviding {
         // for sub-6 ms audible echo. Phase 3 retired the legacy .sampler.
         MultiChannelLog.shared.log(.info, "... start: capturing samplerMIDIBlock")
         samplerMIDIBlock = multiChannel?.samplers[0].auAudioUnit.scheduleMIDIEventBlock
-        MultiChannelLog.shared.log(.info, "... start: samplerMIDIBlock captured non-nil=\(samplerMIDIBlock != nil)")
+        let blockNonNil = samplerMIDIBlock != nil
+        let mcNil = multiChannel == nil
+        MultiChannelLog.shared.log(
+            .info,
+            "... start: samplerMIDIBlock captured non-nil=\(blockNonNil) multiChannelNil=\(mcNil)"
+        )
+
+        #if canImport(AVFAudio)
+        let session = AVAudioSession.sharedInstance()
+        let route = session.currentRoute
+        let outputs = route.outputs
+            .map { "\($0.portType.rawValue):\($0.portName)" }
+            .joined(separator: ",")
+        let outVolStr = String(format: "%.2f", session.outputVolume)
+        MultiChannelLog.shared.log(
+            .info,
+            "... start: AUDIO-ROUTE cat=\(session.category.rawValue) "
+                + "mode=\(session.mode.rawValue) outVol=\(outVolStr) outs=[\(outputs)]"
+        )
+        #endif
 
         Self.logger.info("Engine started in playAndRecord mode, isRunning=\(self.engine.isRunning)")
     }
