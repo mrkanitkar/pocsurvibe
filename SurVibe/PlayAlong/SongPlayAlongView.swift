@@ -265,9 +265,9 @@ struct SongPlayAlongView: View {
             // Pre-prompt is purely informational. Auto-start lives on the VM
             // (`PlayAlongViewModel.loadSong` calls `startSession()` directly
             // when `autoStartOnLoad == true`), so the modal doesn't need to
-            // kick the transport. Logging the dismissal so audio_log can
-            // confirm the user-tapped path when first-run users hit it.
-            MicPermissionPrePrompt(onContinue: {
+            // kick the transport. Pass the binding directly so Continue can
+            // close the sheet without relying on `@Environment(\.dismiss)`.
+            MicPermissionPrePrompt(isPresented: $showMicPrePrompt, onContinue: {
                 MultiChannelLog.shared.log(.info, "==> MicPrePrompt CONTINUE tapped (info-only)")
             })
         }

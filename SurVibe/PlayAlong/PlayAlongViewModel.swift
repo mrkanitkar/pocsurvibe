@@ -764,12 +764,16 @@ final class PlayAlongViewModel {
         noteRouter.configureRagaContext(ragaName: song.ragaName)
         noteRouter.updateExpectedMidiNote()
 
-        let micGranted = await PermissionManager.shared.requestMicrophoneAccess()
-        if !micGranted {
-            Self.logger.warning("Microphone permission denied — pitch detection unavailable")
-        }
-
-        MultiChannelLog.shared.log(.info, "... PlayAlongViewModel.loadSong: starting input detection")
+        // DO NOT block loadSong on the system microphone permission dialog.
+        // Songs Play Along plays sequenced audio fine without the mic; the
+        // mic is only needed for pitch-detection scoring, which can run
+        // when permission is granted later (or never, if the user declines).
+        // Suspending loadSong on this await caused the entire pipeline —
+        // including auto-start of playback — to hang behind the OS dialog
+        // and any in-app pre-prompt sheet. Permission is now requested
+        // lazily by `noteRouter.startInputDetection()` only when input
+        // routing genuinely needs the mic.
+        MultiChannelLog.shared.log(.info, "... PlayAlongViewModel.loadSong: starting input detection (mic permission requested lazily)")
         noteRouter.startInputDetection()
         noteRouter.resetGuidedPlay()
 

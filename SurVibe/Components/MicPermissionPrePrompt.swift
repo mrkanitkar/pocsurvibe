@@ -16,12 +16,17 @@ struct MicPermissionPrePrompt: View {
 
     @AppStorage("hasSeenMicPermissionPrePrompt")
     private var hasSeen: Bool = false
-    @Environment(\.dismiss)
-    private var dismiss
 
-    /// Invoked after the user confirms — callers may use this to kick off the
-    /// system permission request. Safe to pass an empty closure when the
-    /// permission request is issued independently (e.g., by a `.task`).
+    /// Two-way binding to the parent's presentation flag. Tapping Continue
+    /// flips this to `false`, which is the reliable way to dismiss a
+    /// `.sheet(isPresented:)` — `@Environment(\.dismiss)` was previously
+    /// observed to silently no-op on iPad in iOS 26 with this presentation
+    /// detent. Driving the binding directly removes that ambiguity.
+    @Binding var isPresented: Bool
+
+    /// Invoked after the user confirms — callers may use this to kick off
+    /// the system permission request, log telemetry, etc. Safe to pass an
+    /// empty closure when the permission flow is issued independently.
     let onContinue: () -> Void
 
     // MARK: - Body
@@ -46,7 +51,7 @@ struct MicPermissionPrePrompt: View {
 
             Button {
                 hasSeen = true
-                dismiss()
+                isPresented = false
                 onContinue()
             } label: {
                 Text("Continue").frame(maxWidth: .infinity)
@@ -54,7 +59,7 @@ struct MicPermissionPrePrompt: View {
             .buttonStyle(.borderedProminent)
             .controlSize(.large)
             .padding(.horizontal)
-            .accessibilityHint("Triggers the system microphone permission prompt.")
+            .accessibilityHint("Dismisses the rationale and proceeds to play-along.")
         }
         .padding(.vertical, 32)
         .presentationDetents([.medium])
@@ -75,5 +80,5 @@ struct MicPermissionPrePrompt: View {
 // MARK: - Preview
 
 #Preview {
-    MicPermissionPrePrompt(onContinue: {})
+    MicPermissionPrePrompt(isPresented: .constant(true), onContinue: {})
 }
