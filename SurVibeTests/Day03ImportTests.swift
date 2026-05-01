@@ -180,6 +180,55 @@ struct SeedContentValidationTests {
     }
 }
 
+// MARK: - MusicXML Import Metadata Tests (T7)
+
+@Suite("MusicXML Import Metadata Tests", .serialized)
+@MainActor
+struct MusicXMLImportMetadataTests {
+    /// Bundled MXL fixture URL or `nil` when missing (test then skips).
+    private static func bundledMXL(_ resource: String) -> URL? {
+        Bundle.main.url(forResource: resource, withExtension: "mxl")
+    }
+
+    @Test("Sukhkarta MXL import populates keySig/timeSig/SaHz/musicXMLData")
+    @MainActor
+    func sukhkartaImportPopulatesMetadata() throws {
+        guard let url = Self.bundledMXL("Sukhkarta_Dukhharta") else {
+            return  // bundle missing in test target — skip silently
+        }
+        _ = try SwiftDataTestContainer.freshContext()
+        let container = try makeTestContainer()
+        let context = ModelContext(container)
+        let song = try ContentImportManager.importMusicXMLAsSong(from: url, into: context)
+
+        #expect(song.keySignatureRaw == "A major")
+        #expect(song.timeSignatureRaw == "4/4")
+        // A4 = 440 Hz exactly per equal-tempered formula.
+        #expect(abs(song.defaultSaFrequencyHz - 440.0) < 0.01)
+        #expect(song.musicXMLData != nil)
+        #expect((song.musicXMLData?.count ?? 0) > 0)
+    }
+
+    @Test("James Bond MXL import populates keySig/timeSig/SaHz/musicXMLData")
+    @MainActor
+    func jamesBondImportPopulatesMetadata() throws {
+        guard let url = Self.bundledMXL("james-bond-theme") else {
+            return  // bundle missing in test target — skip silently
+        }
+        _ = try SwiftDataTestContainer.freshContext()
+        let container = try makeTestContainer()
+        let context = ModelContext(container)
+        let song = try ContentImportManager.importMusicXMLAsSong(from: url, into: context)
+
+        #expect(song.keySignatureRaw == "G major")
+        #expect(song.timeSignatureRaw == "4/4")
+        // G4 = 391.9954 Hz per equal-tempered formula.
+        #expect(abs(song.defaultSaFrequencyHz - 391.9954) < 0.01)
+        #expect(song.musicXMLData != nil)
+        #expect((song.musicXMLData?.count ?? 0) > 0)
+    }
+}
+
 // MARK: - SeedContentLoader Tests
 
 @Suite("SeedContentLoader Tests")

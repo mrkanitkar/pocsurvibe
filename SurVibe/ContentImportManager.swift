@@ -176,8 +176,16 @@ final class ContentImportManager {
         into context: ModelContext
     ) throws -> Song {
         let xml = try loadMusicXMLString(from: url)
-        let rendered = try VerovioBridge().render(musicXML: xml)
+        let score = try VerovioBridge().renderScore(musicXML: xml)
+        let rendered = score.midi
+        let metadata = score.metadata
         let song = makeSongStub(for: url, rendered: rendered)
+        // T7: persist MusicXMLMetadata + raw XML so renderers / play-along
+        // pipeline don't need to re-parse the document.
+        song.musicXMLData = Data(xml.utf8)
+        song.keySignatureRaw = metadata.keySignatureRaw
+        song.timeSignatureRaw = metadata.timeSignatureRaw
+        song.defaultSaFrequencyHz = metadata.defaultSaFrequencyHz
         applyPartSplit(to: song, rendered: rendered, sourceName: url.lastPathComponent)
         context.insert(song)
         try saveContext(context, slug: song.slugId)
@@ -187,6 +195,14 @@ final class ContentImportManager {
         logger.info(
             // swiftlint:disable:next line_length
             "Imported MusicXML song slug=\(slug, privacy: .public) learner=\(learnerStr, privacy: .public) indices=\(indicesStr, privacy: .public)"
+        )
+        // T7: also surface the new metadata fields in the iPad audio_log so
+        // device verification can inspect them post-import without pulling
+        // the SwiftData store off the device.
+        MultiChannelLog.shared.log(
+            .info,
+            // swiftlint:disable:next line_length
+            "Imported MusicXML song slug=\(slug) keySig=\(metadata.keySignatureRaw) timeSig=\(metadata.timeSignatureRaw) SaHz=\(String(format: "%.4f", metadata.defaultSaFrequencyHz))"
         )
         return song
     }
