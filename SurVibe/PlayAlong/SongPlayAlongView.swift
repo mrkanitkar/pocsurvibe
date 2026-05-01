@@ -74,6 +74,18 @@ struct SongPlayAlongView: View {
     @State
     var hasStoredOverride: Bool = false
 
+    /// Whether the settings sheet is presented.
+    @State
+    private var showSettingsSheet = false
+
+    /// Whether the custom tempo sheet is presented.
+    @State
+    private var showTempoCustomSheet = false
+
+    /// Cached SongProgress for the current song. Hydrated in `.task`.
+    @State
+    private var progress: SongProgress?
+
     /// Whether the results overlay is presented.
     @State
     private var showResults = false
@@ -116,20 +128,6 @@ struct SongPlayAlongView: View {
     private var dismiss
     @Environment(\.accessibilityReduceMotion)
     var reduceMotion
-    @Environment(\.verticalSizeClass)
-    private var verticalSizeClass
-    @Environment(\.horizontalSizeClass)
-    private var horizontalSizeClass
-
-    // MARK: - Layout helpers
-
-    /// Returns `true` when the window should use a side-by-side (landscape)
-    /// layout: iPhone landscape (vertical-compact) or iPad / Mac regular width.
-    /// Stacks vertically for iPhone portrait and iPad Slide Over.
-    private var shouldUseLandscapeLayout: Bool {
-        verticalSizeClass == .compact || horizontalSizeClass == .regular
-    }
-
     // MARK: - Transport actions
 
     /// Actions published to `TransportCommands` via `.focusedSceneValue`.
@@ -172,16 +170,58 @@ struct SongPlayAlongView: View {
             // 2. Content area (notation / falling notes / staff) — flexible.
             contentArea
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    viewModel.summonChrome()
+                }
+                .gesture(
+                    DragGesture(minimumDistance: 30)
+                        .onEnded { value in
+                            if value.translation.height > 30
+                                && abs(value.translation.width) < 50
+                            {
+                                viewModel.summonChrome()
+                            }
+                        }
+                )
 
-            // 3. Bottom transport bar with big play button.
-            bottomTransportBar
+            // Lyric strip
+            if shouldShowLyricStrip && !viewModel.noteEvents.isEmpty {
+                LyricsStrip(
+                    words: sargamLyricWords,
+                    devanagariLine: nil,
+                    currentTime: viewModel.currentTime,
+                    backgroundColor: viewModel.karaokeBackgroundColor
+                )
                 .padding(.horizontal, 16)
-                .padding(.vertical, 12)
+                .padding(.bottom, 4)
+            }
 
-            // 4. Piano keyboard — fixed height like Play tab.
-            keyboardContent
-                .frame(height: 280)
+            // Scoring HUD — visible during playback or when notes have been scored
+            CompactScoringHUD(
+                accuracy: viewModel.accuracy,
+                streak: viewModel.streak,
+                notesHit: viewModel.notesHit,
+                totalNotes: viewModel.noteEvents.count,
+                isVisible: viewModel.playbackState == .playing
+                    || viewModel.playbackState == .paused
+                    || (viewModel.playbackState == .idle && viewModel.notesHit > 0)
+            )
+
+            // Pitch proximity feedback
+            if let pitch = viewModel.currentPitch {
+                pitchFeedbackBar(pitch: pitch)
+                    .padding(.horizontal)
+                    .padding(.bottom, 4)
+            }
+
+            // 3. Piano keyboard — hidden when external MIDI is connected.
+            if !viewModel.isMIDIConnected {
+                keyboardContent
+                    .frame(height: 280)
+            }
         }
+        .animation(reduceMotion ? .none : .easeInOut(duration: 0.25), value: viewModel.isMIDIConnected)
         .background(
             LinearGradient(
                 colors: themeManager.resolved.backgroundGradient,
@@ -233,20 +273,30 @@ struct SongPlayAlongView: View {
             viewModel.chrome.updateTheme(themeManager)
             viewModel.isWaitModeEnabled = storedWaitMode
             let slug = song.slugId
-            let progress = try? modelContext.fetch(
+            let existingProgress = try? modelContext.fetch(
                 FetchDescriptor<SongProgress>(
                     predicate: #Predicate { $0.songId == slug }
                 )
             ).first
             tanpura.seed(
-                preferredSaHz: progress?.preferredSaHz,
+                preferredSaHz: existingProgress?.preferredSaHz,
                 songDefaultHz: song.defaultSaFrequencyHz
             )
             tanpura.setSoundEnabled(viewModel.isSoundEnabled)
-            hasStoredOverride = (progress?.preferredSaHz != nil)
+            hasStoredOverride = (existingProgress?.preferredSaHz != nil)
             didInitialSeed = true
             MultiChannelLog.shared.log(.info, "... SongPlayAlongView.task: about to await viewModel.loadSong")
             await viewModel.loadSong(song)
+            // Hydrate per-song preferences from SongProgress
+            if let ep = existingProgress {
+                self.progress = ep
+                await viewModel.loadPersistedSettings(from: ep)
+            } else {
+                let newProgress = SongProgress(songId: song.slugId, songTitle: song.title)
+                modelContext.insert(newProgress)
+                self.progress = newProgress
+                await viewModel.loadPersistedSettings(from: newProgress, seedFromVM: true)
+            }
         }
         .onChange(of: themeManager.currentPreset) { _, newPreset in
             // Live-switch when user changes theme via quick-switch sheet
@@ -344,6 +394,22 @@ struct SongPlayAlongView: View {
             .presentationDetents([.large])
             .presentationDragIndicator(.visible)
         }
+        .sheet(isPresented: $showSettingsSheet) {
+            if let p = progress {
+                PlayAlongSettingsSheet(
+                    viewModel: viewModel,
+                    tanpura: tanpura,
+                    song: song,
+                    progress: p
+                )
+                .presentationDetents([.medium, .large])
+                .presentationDragIndicator(.visible)
+                .presentationBackgroundInteraction(.enabled(upThrough: .medium))
+            }
+        }
+        .sheet(isPresented: $showTempoCustomSheet) {
+            TempoCustomSheet(viewModel: viewModel)
+        }
         .onChange(of: tanpura.effectiveSaHz) { _, newHz in
             guard didInitialSeed else { return }
             if suppressNextPersistenceTick {
@@ -373,201 +439,29 @@ struct SongPlayAlongView: View {
 
     // MARK: - Layout
 
-    /// Top toolbar wrapper for the new linear layout. Reads viewModel
-    /// internally so parent body doesn't tick on toolbar state.
+    /// Top toolbar wrapper — minimal single-strip toolbar with transport,
+    /// title, time, and tempo controls.
     @ViewBuilder
     private var playAlongToolbarSection: some View {
-        PlayAlongToolbar(
+        PlayAlongMinimalToolbar(
             viewModel: viewModel,
-            playbackState: viewModel.playbackState,
-            tempoScale: viewModel.tempoScale,
-            isWaitModeEnabled: viewModel.isWaitModeEnabled,
-            isSoundEnabled: viewModel.isSoundEnabled,
-            isMIDIConnected: viewModel.isMIDIConnected,
-            midiDeviceName: viewModel.midiDeviceName,
-            baseBPM: song.tempo,
-            songTitle: song.title,
-            songSubtitle: song.artist.isEmpty ? "Aaroha" : song.artist,
-            playbackProgress: viewModel.playbackProgress,
-            playbackDuration: viewModel.playbackDuration,
             onPlayPause: handlePlayPause,
-            onStop: handleStop,
-            onTempoChange: { viewModel.tempoScale = $0 },
-            onWaitModeToggle: {
-                viewModel.toggleWaitMode()
-                storedWaitMode = viewModel.isWaitModeEnabled
-            },
-            onSoundToggle: {
-                viewModel.isSoundEnabled.toggle()
-                tanpura.setSoundEnabled(viewModel.isSoundEnabled)
-            },
-            onTanpuraToggle: { tanpura.toggleEnabled() },
-            onModeTapped: { showAppearanceSheet = true },
-            onSeek: { viewModel.seek(to: $0) }
+            onRestart: { Task { await viewModel.restart() } },
+            onSettingsTap: { showSettingsSheet = true },
+            onTempoCustomTap: { showTempoCustomSheet = true },
+            showSettingsSheet: showSettingsSheet,
+            songTitle: song.title,
+            songArtist: song.artist.isEmpty ? "Aaroha" : song.artist,
+            baseBPM: song.tempo
         )
         .frame(maxWidth: .infinity)
         .padding(.horizontal, 16)
         .padding(.top, 60)  // leave room for tanpura/mic pills overlay
     }
 
-    /// Bottom transport bar with a big, obvious play button.
-    /// The play button always responds to taps — independent of body re-eval rate.
-    @ViewBuilder
-    private var bottomTransportBar: some View {
-        let isPlaying = viewModel.playbackState == .playing
-        HStack(spacing: 24) {
-            Button { handleStop() } label: {
-                Image(systemName: "stop.fill")
-                    .font(.system(size: 24))
-                    .frame(width: 56, height: 56)
-                    .background(.thinMaterial, in: Circle())
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel("Stop")
-
-            Button { handlePlayPause() } label: {
-                Image(systemName: isPlaying ? "pause.fill" : "play.fill")
-                    .font(.system(size: 32))
-                    .frame(width: 72, height: 72)
-                    .background(themeManager.resolved.accentColor, in: Circle())
-                    .foregroundStyle(.white)
-            }
-            .buttonStyle(.plain)
-            .accessibilityLabel(isPlaying ? "Pause" : "Play")
-        }
-        .frame(maxWidth: .infinity)
-    }
-
-    /// Notation, toolbar, scoring HUD, and pitch feedback — everything above (or
-    /// beside) the keyboard. Extracted so `layoutContent` can place it in either
-    /// a `VStack` or an `HStack` depending on `shouldUseLandscapeLayout`.
-    @ViewBuilder
-    private var notationAndChrome: some View {
-        VStack(spacing: 0) {
-            if viewModel.chromeVisibility == .summoned {
-                // Transport toolbar — theme-driven, only visible when chrome is summoned.
-                PlayAlongToolbar(
-                    viewModel: viewModel,
-                    playbackState: viewModel.playbackState,
-                    tempoScale: viewModel.tempoScale,
-                    isWaitModeEnabled: viewModel.isWaitModeEnabled,
-                    isSoundEnabled: viewModel.isSoundEnabled,
-                    isMIDIConnected: viewModel.isMIDIConnected,
-                    midiDeviceName: viewModel.midiDeviceName,
-                    baseBPM: song.tempo,
-                    songTitle: song.title,
-                    songSubtitle: song.artist.isEmpty ? "Aaroha" : song.artist,
-                    playbackProgress: viewModel.playbackProgress,
-                    playbackDuration: viewModel.playbackDuration,
-                    onPlayPause: handlePlayPause,
-                    onStop: handleStop,
-                    onTempoChange: {
-                        viewModel.tempoScale = $0
-                        AnalyticsManager.shared.track(
-                            .playAlongTempoChanged,
-                            properties: ["tempo_scale": $0, "song_title": song.title]
-                        )
-                    },
-                    onWaitModeToggle: {
-                        viewModel.toggleWaitMode()
-                        storedWaitMode = viewModel.isWaitModeEnabled
-                    },
-                    onSoundToggle: {
-                        viewModel.isSoundEnabled.toggle()
-                        tanpura.setSoundEnabled(viewModel.isSoundEnabled)
-                        AnalyticsManager.shared.track(
-                            .playAlongSoundToggled,
-                            properties: ["enabled": viewModel.isSoundEnabled, "song_title": song.title]
-                        )
-                    },
-                    onTanpuraToggle: {
-                        tanpura.toggleEnabled()
-                        AnalyticsManager.shared.track(
-                            .tanpuraToggled,
-                            properties: [
-                                "enabled": tanpura.isTanpuraEnabled,
-                                "song_title": song.title,
-                                "source": "toolbar",
-                            ]
-                        )
-                    },
-                    onModeTapped: { showAppearanceSheet = true },
-                    onSeek: { viewModel.seek(to: $0) }
-                )
-                .transition(
-                    reduceMotion
-                        ? .opacity
-                        : .move(edge: .top).combined(with: .opacity)
-                )
-            }
-
-            // Main content area — theme-aware renderer dispatch.
-            //
-            // Gesture overlay summons/manages chrome. Gestures are attached
-            // HERE (not on the piano keyboard) so piano-key taps still route
-            // to `InteractivePianoView.onNoteOn`/`onNoteOff` without being
-            // swallowed. `.contentShape(Rectangle())` ensures the full area
-            // is hittable even when the underlying view renders `Color.clear`
-            // (e.g., `.hide` notation mode).
-            contentArea
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .contentShape(Rectangle())
-                .onTapGesture {
-                    // Tap = "I want controls" → summon chrome.
-                    viewModel.summonChrome()
-                }
-                .gesture(
-                    // Swipe down (from top edge or anywhere on the content):
-                    // downward translation dominates → summon chrome.
-                    DragGesture(minimumDistance: 30)
-                        .onEnded { value in
-                            if value.translation.height > 30
-                                && abs(value.translation.width) < 50
-                            {
-                                viewModel.summonChrome()
-                            }
-                        }
-                )
-                .onLongPressGesture(minimumDuration: 0.5) {
-                    // TODO(Task 2.11+): open a seek scrubber on long-press
-                    // instead of summoning chrome. For now, treat long-press
-                    // on notation as an intent to see controls.
-                    viewModel.summonChrome()
-                }
-            // TODO(Task 2.11+): implement native two-finger tap for
-            // wait-mode toggle via UIKit bridging (SwiftUI's TapGesture
-            // doesn't distinguish finger count on iOS).
-
-            if shouldShowLyricStrip && !viewModel.noteEvents.isEmpty {
-                LyricsStrip(
-                    words: sargamLyricWords,
-                    devanagariLine: nil,
-                    currentTime: viewModel.currentTime,
-                    backgroundColor: viewModel.karaokeBackgroundColor
-                )
-                .padding(.horizontal, 16)
-                .padding(.bottom, 4)
-            }
-
-            // Scoring HUD overlay — visible during playback OR when notes have been scored in guided mode
-            CompactScoringHUD(
-                accuracy: viewModel.accuracy,
-                streak: viewModel.streak,
-                notesHit: viewModel.notesHit,
-                totalNotes: viewModel.noteEvents.count,
-                isVisible: viewModel.playbackState == .playing
-                    || viewModel.playbackState == .paused
-                    || (viewModel.playbackState == .idle && viewModel.notesHit > 0)
-            )
-
-            // Pitch proximity feedback (shown when a note is detected from mic)
-            if let pitch = viewModel.currentPitch {
-                pitchFeedbackBar(pitch: pitch)
-                    .padding(.horizontal)
-                    .padding(.bottom, 4)
-            }
-        }
-    }
+    // bottomTransportBar and notationAndChrome removed in Wave 5 T5.4.
+    // Transport controls live in PlayAlongMinimalToolbar; notation chrome,
+    // lyrics, scoring HUD, and pitch feedback are inlined into body.
 
     /// The piano keyboard, with key-position preference reporting.
     ///
@@ -601,26 +495,6 @@ struct SongPlayAlongView: View {
             lhColor: viewModel.lhColor,
             chordColor: viewModel.chordColor
         )
-    }
-
-    /// Composes `notationAndChrome` + `keyboardContent` into the active
-    /// layout variant: side-by-side in landscape / regular-width windows,
-    /// stacked vertically otherwise.
-    @ViewBuilder
-    private var layoutContent: some View {
-        if shouldUseLandscapeLayout {
-            HStack(alignment: .top, spacing: 0) {
-                notationAndChrome
-                    .frame(maxWidth: .infinity)
-                keyboardContent
-                    .frame(maxWidth: 400)
-            }
-        } else {
-            VStack(spacing: 0) {
-                notationAndChrome
-                keyboardContent
-            }
-        }
     }
 
     // MARK: - Lyric Strip Helpers
