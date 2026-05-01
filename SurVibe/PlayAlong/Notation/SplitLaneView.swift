@@ -78,6 +78,11 @@ struct SplitLaneView: View {
         }
     }
 
+    /// Draw note bars falling toward the hit line.
+    ///
+    /// Learner notes: filled rounded rectangle colored by hand (RH / LH / chord).
+    /// Accompaniment notes: outlined small circle at 0.45 opacity — shape-distinct
+    /// from all learner shapes so color-blind users can tell them apart by shape alone.
     private func drawBars(ctx: GraphicsContext, size: CGSize) {
         let hitLineY = size.height * hitLineFraction
         let pixelsPerSecond = hitLineY / CGFloat(windowSeconds)
@@ -93,27 +98,46 @@ struct SplitLaneView: View {
             }
 
             let centerY = hitLineY - CGFloat(timeUntilHit) * pixelsPerSecond
-            let barHeight = max(8, CGFloat(event.duration) * pixelsPerSecond)
-            let topY = centerY - barHeight / 2
             let x = midiToLaneX(Int(event.midiNote), size: size)
 
-            let isChordNote = chordTimestamps.contains { abs($0 - event.timestamp) < 0.01 }
-            let color: Color = {
-                if isChordNote { return chordColor }
-                return event.hand == .right ? rhColor : lhColor
-            }()
+            if event.isAccompaniment {
+                // Accompaniment: outlined small circle, 0.45 opacity.
+                // Distinct from learner RH circle (filled), LH square (filled),
+                // and chord diamond (filled) — shape alone differentiates.
+                let circleSize: CGFloat = min(lw - 2, 8)
+                let circleRect = CGRect(
+                    x: x + (lw - circleSize) / 2,
+                    y: centerY - circleSize / 2,
+                    width: circleSize,
+                    height: circleSize
+                )
+                ctx.stroke(
+                    Path(ellipseIn: circleRect),
+                    with: .color(.white.opacity(0.45)),
+                    lineWidth: 1.5
+                )
+            } else {
+                let barHeight = max(8, CGFloat(event.duration) * pixelsPerSecond)
+                let topY = centerY - barHeight / 2
 
-            let rect = CGRect(x: x + 2, y: topY, width: lw - 4, height: barHeight)
-            ctx.fill(
-                Path(roundedRect: rect, cornerRadius: 4),
-                with: .color(color)
-            )
-            // Glow outline
-            ctx.stroke(
-                Path(roundedRect: rect, cornerRadius: 4),
-                with: .color(color.opacity(0.4)),
-                lineWidth: 2
-            )
+                let isChordNote = chordTimestamps.contains { abs($0 - event.timestamp) < 0.01 }
+                let color: Color = {
+                    if isChordNote { return chordColor }
+                    return event.hand == .right ? rhColor : lhColor
+                }()
+
+                let rect = CGRect(x: x + 2, y: topY, width: lw - 4, height: barHeight)
+                ctx.fill(
+                    Path(roundedRect: rect, cornerRadius: 4),
+                    with: .color(color)
+                )
+                // Glow outline
+                ctx.stroke(
+                    Path(roundedRect: rect, cornerRadius: 4),
+                    with: .color(color.opacity(0.4)),
+                    lineWidth: 2
+                )
+            }
         }
     }
 

@@ -70,11 +70,24 @@ struct NoteEvent: Identifiable, Equatable, Sendable {
     /// without requiring migration.
     let hand: Hand
 
+    /// Whether this note belongs to the accompaniment (non-learner) part.
+    ///
+    /// Accompaniment notes are rendered with distinct visual treatment:
+    /// dimmed opacity (0.45) and an outlined small circle shape so they
+    /// are clearly distinguishable from learner notes even in color-blind
+    /// simulations (shape alone differentiates them).
+    ///
+    /// Defaults to `false` so all existing construction sites — which
+    /// build learner notes — compile without changes.
+    let isAccompaniment: Bool
+
     /// Memberwise initializer.
     ///
     /// `hand` defaults to `.right` so existing call sites that construct
     /// `NoteEvent` without specifying a hand continue to compile and
     /// produce right-hand melody notes.
+    /// `isAccompaniment` defaults to `false` so all learner-note construction
+    /// sites remain unchanged.
     init(
         id: UUID,
         midiNote: UInt8,
@@ -84,7 +97,8 @@ struct NoteEvent: Identifiable, Equatable, Sendable {
         timestamp: TimeInterval,
         duration: TimeInterval,
         velocity: UInt8,
-        hand: Hand = .right
+        hand: Hand = .right,
+        isAccompaniment: Bool = false
     ) {
         self.id = id
         self.midiNote = midiNote
@@ -95,6 +109,7 @@ struct NoteEvent: Identifiable, Equatable, Sendable {
         self.duration = duration
         self.velocity = velocity
         self.hand = hand
+        self.isAccompaniment = isAccompaniment
     }
 
     // MARK: - Notation Path Factory
@@ -185,6 +200,33 @@ struct NoteEvent: Identifiable, Equatable, Sendable {
                 timestamp: midi.timestamp,
                 duration: midi.duration,
                 velocity: midi.velocity
+            )
+        }
+    }
+
+    /// Convert parsed MIDI events into accompaniment `NoteEvent`s.
+    ///
+    /// Identical to `fromMIDI(events:)` but marks every resulting event
+    /// `isAccompaniment = true`. Used by the play-along pipeline to seed
+    /// the visual timeline with the non-learner (backing band) part so
+    /// users can see what they are hearing.
+    ///
+    /// - Parameter events: Parsed MIDI events from `MIDIParser.parse(data:)` on
+    ///   `PartSplit.accompaniment` bytes, sorted by timestamp.
+    /// - Returns: Accompaniment NoteEvents with `isAccompaniment == true`.
+    static func fromAccompanimentMIDI(events: [MIDIEvent]) -> [NoteEvent] {
+        events.map { midi in
+            let info = Self.noteNames(fromMIDI: midi.noteNumber)
+            return NoteEvent(
+                id: UUID(),
+                midiNote: midi.noteNumber,
+                swarName: info.swarName,
+                westernName: info.westernName,
+                octave: info.octave,
+                timestamp: midi.timestamp,
+                duration: midi.duration,
+                velocity: midi.velocity,
+                isAccompaniment: true
             )
         }
     }
