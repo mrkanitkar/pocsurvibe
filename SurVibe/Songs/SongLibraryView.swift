@@ -2,6 +2,8 @@ import SVAudio
 import SVCore
 import SVLearning
 import SwiftUI
+import UniformTypeIdentifiers
+import os.log
 
 /// The main song library grid view with search, filters, and sort.
 ///
@@ -21,6 +23,8 @@ struct SongLibraryView: View {
     private var router
     @Environment(\.accessibilityReduceMotion)
     private var reduceMotion
+    @Environment(\.modelContext)
+    private var modelContext
 
     /// Tracks keyboard focus for hardware-keyboard navigation.
     @FocusState
@@ -35,9 +39,23 @@ struct SongLibraryView: View {
     @State
     private var detailSong: Song?
 
-    /// Controls the song import sheet.
+    /// Controls the song import sheet (paste / text-based flow).
     @State
     private var showImportSheet: Bool = false
+
+    /// Controls the system file picker for `.mxl` / `.musicxml` / `.xml` upload (T8').
+    @State
+    private var showFilePicker: Bool = false
+
+    /// Inline error surfaced to the user when a file picked via `fileImporter`
+    /// fails to import (security-scope denial, unsupported format, parser error).
+    @State
+    private var fileImportError: String?
+
+    /// True while `ContentImportManager.importMusicXMLAsSong` is running.
+    /// Gates the import menu so the user can't kick off two imports at once.
+    @State
+    private var isImportingFile: Bool = false
 
     /// Song to open in the edit sheet (user songs only).
     @State
@@ -102,6 +120,30 @@ struct SongLibraryView: View {
         .sheet(isPresented: $showImportSheet) {
             SongImportSheet()
                 .environment(viewModel)
+        }
+        // T8' — system file picker for user-supplied MusicXML uploads.
+        // Filters to the UTIs registered in Info.plist (`org.musicxml.compressed`
+        // for `.mxl`, `org.musicxml.score` for `.musicxml`) plus generic XML
+        // for `.xml` exports. The picked URL is security-scoped — see
+        // `handleFileImporterResult` for the bracketed access.
+        // Apple docs:
+        //   https://developer.apple.com/documentation/swiftui/view/fileimporter(ispresented:allowedcontenttypes:oncompletion:)
+        .fileImporter(
+            isPresented: $showFilePicker,
+            allowedContentTypes: ContentImportManager.acceptedMusicXMLTypes,
+            allowsMultipleSelection: false,
+            onCompletion: handleFileImporterResult
+        )
+        .alert(
+            "Import Failed",
+            isPresented: Binding(
+                get: { fileImportError != nil },
+                set: { if !$0 { fileImportError = nil } }
+            )
+        ) {
+            Button("OK", role: .cancel) { fileImportError = nil }
+        } message: {
+            Text(fileImportError ?? "")
         }
         .sheet(item: $songToEdit) { song in
             NavigationStack {
@@ -346,14 +388,110 @@ struct SongLibraryView: View {
             .accessibilityLabel(Text("\(viewModel.filteredSongs.count) songs"))
     }
 
-    /// Upload Song toolbar button.
+    /// Upload Song toolbar menu (T8').
+    ///
+    /// Exposes two paths:
+    /// - **Choose from Files**: presents the system `.fileImporter` filtered
+    ///   to MusicXML UTIs (`.mxl` / `.musicxml` / `.xml`).
+    /// - **Paste notation**: opens the existing `SongImportSheet` for text
+    ///   paste of Sargam / Western / inline MusicXML.
+    ///
+    /// While an import is running (`isImportingFile == true`) the menu shows
+    /// a `ProgressView` instead, matching the in-flight pattern used by
+    /// `SongImportSheet.importButton`.
     private var uploadButton: some View {
-        Button {
-            showImportSheet = true
-        } label: {
-            Image(systemName: "square.and.arrow.down")
-                .accessibilityLabel(Text("Import song"))
-                .accessibilityHint(Text("Double tap to import a new song"))
+        Group {
+            if isImportingFile {
+                ProgressView()
+                    .accessibilityLabel(Text("Importing song"))
+            } else {
+                Menu {
+                    Button {
+                        showFilePicker = true
+                    } label: {
+                        Label("Choose from Files…", systemImage: "doc.badge.plus")
+                    }
+                    .accessibilityLabel(Text("Choose a MusicXML file from Files"))
+                    .accessibilityHint(Text("Opens a file picker filtered to .mxl, .musicxml, and .xml"))
+
+                    Button {
+                        showImportSheet = true
+                    } label: {
+                        Label("Paste notation…", systemImage: "doc.text")
+                    }
+                    .accessibilityLabel(Text("Paste song notation as text"))
+                    .accessibilityHint(Text("Opens the manual paste-and-import sheet"))
+                } label: {
+                    Image(systemName: "square.and.arrow.down")
+                        .accessibilityLabel(Text("Import song"))
+                        .accessibilityHint(Text("Double tap to choose how to import a new song"))
+                }
+            }
+        }
+    }
+
+    // MARK: - File Importer Handling (T8')
+
+    /// Handles the `.fileImporter` completion: opens security-scoped resource
+    /// access, runs the MusicXML pipeline, refreshes the library, and
+    /// surfaces any errors inline.
+    ///
+    /// Per Apple's file-importer contract, URLs returned outside the app
+    /// sandbox are security-scoped. Callers MUST bracket reads with
+    /// `startAccessingSecurityScopedResource()` and the matching
+    /// `stopAccessingSecurityScopedResource()`. Failure to start access
+    /// returns `false` and means we are not entitled to read the file.
+    ///
+    /// Apple docs:
+    ///   https://developer.apple.com/documentation/foundation/url/startaccessingsecurityscopedresource()
+    ///
+    /// - Parameter result: The result delivered by SwiftUI's `fileImporter`.
+    private func handleFileImporterResult(_ result: Result<[URL], Error>) {
+        switch result {
+        case .failure(let error):
+            fileImportError = error.localizedDescription
+        case .success(let urls):
+            guard let url = urls.first else { return }
+            importPickedURL(url)
+        }
+    }
+
+    /// Opens security-scoped access for `url`, runs the import pipeline,
+    /// closes access, then reloads the library.
+    ///
+    /// - Parameter url: The URL returned by the system file picker. Must be
+    ///   wrapped in `startAccessingSecurityScopedResource()` since iOS file
+    ///   pickers grant only sandbox-scoped access to user-picked files.
+    private func importPickedURL(_ url: URL) {
+        let logger = Logger.survibe(category: "SongLibraryView.fileImporter")
+        let name = url.lastPathComponent
+        let didStartScope = url.startAccessingSecurityScopedResource()
+        guard didStartScope else {
+            fileImportError = "SurVibe couldn't open '\(name)' from Files. "
+                + "The system did not grant read access."
+            logger.error(
+                "startAccessingSecurityScopedResource returned false for \(name, privacy: .public)"
+            )
+            return
+        }
+        defer { url.stopAccessingSecurityScopedResource() }
+
+        isImportingFile = true
+        defer { isImportingFile = false }
+
+        do {
+            _ = try ContentImportManager.importMusicXMLAsSong(
+                from: url,
+                into: modelContext
+            )
+            Task { await viewModel.loadSongs() }
+            logger.info("Imported user MXL \(name, privacy: .public)")
+        } catch {
+            fileImportError = error.localizedDescription
+            let desc = error.localizedDescription
+            logger.error(
+                "Import failed for \(name, privacy: .public): \(desc, privacy: .public)"
+            )
         }
     }
 }

@@ -8,5 +8,69 @@
 	</array>
 	<key>NSMicrophoneUsageDescription</key>
 	<string>SurVibe needs microphone access to detect the notes you play on your piano.</string>
+	<!--
+	  T8' — Custom UTI declarations for MusicXML formats.
+
+	  No system-defined UTI exists for `.mxl` (compressed MusicXML, ZIP-based)
+	  or `.musicxml`. The `.fileImporter` SwiftUI API requires a `UTType` for
+	  every accepted extension; without a registered UTI the picker would
+	  reject the file even though `acceptedMusicXMLTypes` (in
+	  `ContentImportManager`) lists it.
+
+	  Apple's UTI registration spec:
+	    https://developer.apple.com/library/archive/documentation/FileManagement/Conceptual/understanding_utis/understand_utis_declare/understand_utis_declare.html
+
+	  - `org.musicxml.compressed` conforms to `public.zip-archive` (the MXL
+	    container is literally a ZIP with a `META-INF/container.xml` index).
+	  - `org.musicxml.score` conforms to `public.xml` (uncompressed MusicXML
+	    is a plain XML document with `<score-partwise>` / `<score-timewise>`
+	    root).
+	-->
+	<key>UTImportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>org.musicxml.compressed</string>
+			<key>UTTypeDescription</key>
+			<string>Compressed MusicXML</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.zip-archive</string>
+				<string>public.data</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>mxl</string>
+				</array>
+				<key>public.mime-type</key>
+				<array>
+					<string>application/vnd.recordare.musicxml</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>org.musicxml.score</string>
+			<key>UTTypeDescription</key>
+			<string>MusicXML score</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.xml</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>musicxml</string>
+				</array>
+				<key>public.mime-type</key>
+				<array>
+					<string>application/vnd.recordare.musicxml+xml</string>
+				</array>
+			</dict>
+		</dict>
+	</array>
 </dict>
 </plist>
