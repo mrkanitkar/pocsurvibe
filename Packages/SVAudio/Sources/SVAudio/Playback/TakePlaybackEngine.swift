@@ -21,6 +21,22 @@ import SVCore
 ///
 /// Hand-filter, playback speed, and (future) Sa transposition are baked into
 /// the snapshot at `schedule(...)` time — the sequencer does not re-tempo.
+/// Active scheduling mode for `TakePlaybackEngine`.
+///
+/// The engine plays back two distinct content types through one transport:
+/// recorded takes from the Play tab (`takeSnapshot` mode, scheduled via
+/// `MIDISerializer` from `[RecordedNote]`) and Standard MIDI Files from the
+/// Songs library (`smf` mode, loaded via `loadSMFData(_:graph:...)`). Both
+/// modes share the same `AVAudioSequencer` instance; the mode flag controls
+/// only the visual highlight tick path (SMF mode currently has no per-note
+/// highlight cache because the renderers project from `[NoteEvent]`).
+public enum TakePlaybackMode: String, Sendable, Equatable {
+    /// Recorded-take playback driven by `schedule(snapshot:...)`.
+    case takeSnapshot
+    /// SMF playback driven by `loadSMFData(_:graph:...)`.
+    case smf
+}
+
 @MainActor
 public final class TakePlaybackEngine: TakePlaybackProviding {
 
@@ -54,10 +70,38 @@ public final class TakePlaybackEngine: TakePlaybackProviding {
     /// Whether the sequencer is currently playing.
     public private(set) var isPlaying: Bool = false
 
-    /// Current playback position in seconds (in the snapshot's post-speed
-    /// timeline).
+    /// Current scheduling mode. Defaults to `.takeSnapshot` for back-compat
+    /// with the Play tab path; flips to `.smf` after `loadSMFData(...)`.
+    public private(set) var mode: TakePlaybackMode = .takeSnapshot
+
+    /// Current playback position in seconds (in the loaded content's
+    /// timeline). Reads from the engine's authoritative `AVAudioSequencer`,
+    /// so both `.takeSnapshot` and `.smf` modes return the same notion of
+    /// "now" — this is the **single canonical clock** for Songs Play Along
+    /// per locked decision #3 (T10').
     public var currentPositionSec: TimeInterval {
         sequencer.seconds(forBeats: sequencer.currentPositionInBeats)
+    }
+
+    /// Per-frame display position in seconds, queried at a future host time.
+    ///
+    /// Pass `CADisplayLink.targetTimestamp` (the next-frame presentation time)
+    /// so the returned position leads the audio clock by one frame, matching
+    /// what the user will see when the frame actually appears. This is the
+    /// recommended `AVAudioSequencer` clock pattern — see
+    /// `AVAudioSequencer.beats(forHostTime:)` and
+    /// `AVAudioSequencer.seconds(forBeats:)` on developer.apple.com.
+    ///
+    /// - Parameter hostTime: Mach host time at which to sample the clock,
+    ///   typically `CADisplayLink.targetTimestamp` converted via
+    ///   `mach_absolute_time` semantics.
+    /// - Returns: Position in seconds from song start at `hostTime`. Returns
+    ///   `currentPositionSec` if the host-time conversion fails.
+    public func displayPositionSec(forHostTime hostTime: UInt64) -> TimeInterval {
+        var error: NSError?
+        let beats = sequencer.beats(forHostTime: hostTime, error: &error)
+        guard error == nil else { return currentPositionSec }
+        return sequencer.seconds(forBeats: beats)
     }
 
     /// Number of notes currently scheduled for visual highlight (post-filter).
@@ -189,7 +233,12 @@ public final class TakePlaybackEngine: TakePlaybackProviding {
             return
         }
         isPlaying = true
-        startVisualLink()
+        // SMF mode renderers consume `[NoteEvent]` directly and read
+        // `currentPositionSec` per-frame; no per-tick highlight diff is
+        // needed (and the `scheduledNotes` cache is empty in SMF mode).
+        if mode == .takeSnapshot {
+            startVisualLink()
+        }
     }
 
     public func pause() {
@@ -200,6 +249,13 @@ public final class TakePlaybackEngine: TakePlaybackProviding {
 
     public func seek(to sec: TimeInterval) {
         sequencer.currentPositionInSeconds = max(0, sec)
+    }
+
+    /// Seek to a position in seconds. Convenience wrapper used by the Songs
+    /// Play Along clock-adoption path (T10') so callers can use a clearer
+    /// name than the legacy `seek(to:)`.
+    public func seek(toSec sec: TimeInterval) {
+        seek(to: sec)
     }
 
     public func stop() {
@@ -213,7 +269,96 @@ public final class TakePlaybackEngine: TakePlaybackProviding {
             highlightSink?.noteOff(midi, channel: 0)
         }
         lastFrameLitNotes.removeAll()
+        // Slot 2 silence is a no-op in SMF mode (samplers belong to the
+        // caller-supplied graph) but it's safe to issue regardless — the
+        // production engine routes the call to its own slot 2 sampler.
         multiChannel.allNotesOffOnSlot(Self.playbackSlot)
+    }
+
+    // MARK: - SMF mode (T10')
+
+    /// Load Standard MIDI File bytes into the engine's sequencer, routing
+    /// each music track to the matching sampler in `graph`.
+    ///
+    /// This is the Songs Play Along entry point. `MultiTrackSamplerGraph`
+    /// has already been built and pre-banked by the caller (see
+    /// `PlayAlongViewModel.loadArrangementIfPossible`). After this call,
+    /// `currentPositionSec` reflects the SMF timeline; `play()` starts the
+    /// underlying `AVAudioSequencer`; `seek(toSec:)` jumps the clock; and
+    /// `displayPositionSec(forHostTime:)` returns a per-frame display
+    /// position synchronized to the engine output.
+    ///
+    /// `instrumentProgram` is a fallback GM program for any track whose
+    /// sampler slot wasn't pre-banked from a Program Change event in the
+    /// SMF (the common case is `0` = Acoustic Grand). The graph's
+    /// per-sampler bank load is the authoritative routing — this argument
+    /// is only used to log a sensible default when track count exceeds
+    /// `graph.samplers.count`.
+    ///
+    /// Primary-source justification for the per-frame clock pattern:
+    /// `AVAudioSequencer.beats(forHostTime:)` / `seconds(forBeats:)` on
+    /// developer.apple.com. The locked decision (#3) is that this engine
+    /// owns the master clock for Songs Play Along — replacing the prior
+    /// `installArrangementBeatBridge` accumulator that drifted past song
+    /// duration.
+    ///
+    /// - Parameters:
+    ///   - data: SMF byte stream (typically `Song.midiData` or the full
+    ///     rendered Verovio output).
+    ///   - graph: Pre-banked sampler graph that owns the destination
+    ///     `AVAudioUnitSampler` instances. Each sequencer track is routed
+    ///     to `graph.samplers[i].samplerUnit`.
+    ///   - instrumentProgram: Fallback GM program for unconfigured tracks.
+    ///     Defaults to `0` (Acoustic Grand).
+    /// - Throws: Underlying `AVAudioSequencer` errors on malformed MIDI;
+    ///   `PipelineError.engineNotRunning` if the shared engine is stopped.
+    public func loadSMFData(
+        _ data: Data,
+        graph: any MultiTrackSamplerGraphProtocol,
+        instrumentProgram: UInt8 = 0
+    ) throws {
+        guard AudioEngineManager.shared.isRunning else {
+            throw PipelineError.engineNotRunning
+        }
+        // Stop and reset any in-flight take playback before adopting the
+        // sequencer for SMF — the new `load(from:options:)` invalidates the
+        // previous content unconditionally, but stopping first keeps the
+        // visual link from observing torn state mid-swap.
+        sequencer.stop()
+        stopVisualLink()
+        scheduledNotes = []
+        lastFrameLitNotes.removeAll()
+
+        // Build a fresh sequencer over the same engine — `AVAudioSequencer`
+        // does not formally support re-loading after a previous load is in
+        // play, so re-instantiating is the safest path. The new sequencer
+        // shares the engine and therefore the audio output graph.
+        let seq = AVAudioSequencer(audioEngine: engine)
+        try seq.load(from: data, options: [])
+
+        // Route each music track to the corresponding sampler in the
+        // caller-supplied graph. We deliberately do NOT also call
+        // `graph.loadMIDI(_:)` — that would create a second sequencer on the
+        // same engine and split the clock. After T10' the engine's sequencer
+        // is the single authority.
+        let production = (graph as? MultiTrackSamplerGraph)
+        let samplers = production?.samplers ?? []
+        let count = min(seq.tracks.count, samplers.count)
+        for i in 0..<count {
+            seq.tracks[i].destinationAudioUnit = samplers[i].samplerUnit
+        }
+
+        self.sequencer = seq
+        self.mode = .smf
+        MultiChannelLog.shared.log(
+            .info,
+            "==> TakePlaybackEngine.loadSMFData bytes=\(data.count) "
+                + "tracks=\(seq.tracks.count) routed=\(count) program=\(instrumentProgram)"
+        )
+        MultiChannelLog.shared.log(
+            .info,
+            "==> TakePlaybackEngine: SMF mode active, position=\(currentPositionSec)s"
+        )
     }
 
     // MARK: - Visual link

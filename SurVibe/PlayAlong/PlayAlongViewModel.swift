@@ -392,6 +392,15 @@ final class PlayAlongViewModel {
     /// playback path.
     private(set) var arrangementPlayer: ArrangementPlayer?
 
+    /// Single canonical clock for Songs Play Along (T10').
+    ///
+    /// Created in `loadArrangementIfPossible(_:)` once the sampler graph is
+    /// ready and the SMF has been parsed. The engine loads the SMF via
+    /// `loadSMFData(_:graph:)`, becomes the authoritative clock source, and
+    /// `PlaybackCoordinator.currentTime` reads from it via
+    /// `setClockSource(_:)`. Cleared on `cleanup()`.
+    private(set) var playbackEngine: TakePlaybackEngine?
+
     /// Scoring adapter wired alongside `arrangementPlayer`.
     ///
     /// `nil` until `loadArrangement(split:)` succeeds. Each MIDI note-on
@@ -611,6 +620,9 @@ final class PlayAlongViewModel {
         fullSMF: Data? = nil
     ) async throws {
         let player = ArrangementPlayer(graph: graph)
+        // T10' — wire the engine before `load(...)` so the loader knows the
+        // engine already owns the SMF and skips `graph.loadMIDI(_:)`.
+        player.setPlaybackEngine(playbackEngine)
         try await player.load(split, fullSMF: fullSMF)
         player.practiceMode = practiceMode
         player.hearOtherHand = hearOtherHand
@@ -625,7 +637,6 @@ final class PlayAlongViewModel {
         )
         totalMeasures = max(1, split.learner.notes.last?.measureNumber ?? 1)
         hasMultipleStaves = split.learnerStaves.count > 1
-        installArrangementBeatBridge(split: split)
         let noteCount = split.learner.notes.count
         let staveCount = split.learnerStaves.count
         let totalM = totalMeasures
@@ -634,61 +645,6 @@ final class PlayAlongViewModel {
         )
     }
 
-    /// Install the bridge that pumps `ArrangementPlayer` beat ticks
-    /// into `PlaybackCoordinator.currentTime` so the falling-notes
-    /// visualization advances in lockstep with the accompaniment
-    /// sequencer (Wave 5 D3/E1 — last wiring gap).
-    ///
-    /// `PlaybackCoordinator.currentTime` is visualization-only after D3
-    /// — without an external driver it would stay pinned at zero. This
-    /// hook converts the player's musical-time `currentBeat` to
-    /// wall-clock seconds using the loaded learner score's
-    /// `originalBPM` and the active `tempoScale`, then
-    /// pushes the value via `playback.setCurrentTime(_:)`. Negative
-    /// beats during count-in clamp to zero so the visualization stays
-    /// at the start of the song while the user counts in.
-    ///
-    /// - Parameter split: The active part split — its
-    ///   `learner.originalBPM` defines the unscaled beat-to-seconds
-    ///   conversion.
-    private func installArrangementBeatBridge(split: PartSplit) {
-        let originalBPM = max(1.0, split.learner.originalBPM)
-        let secondsPerBeat = 60.0 / originalBPM
-        // Compute total song duration (at original tempo) from the last
-        // learner note's end. We use this to clamp the visualization clock
-        // and to auto-stop when the sequencer overruns the song. Without
-        // the clamp, currentTime grows unbounded after the sequencer ends,
-        // pushing every note out of the renderers' lookahead window — the
-        // notation visibly disappears and the time pill displays e.g.
-        // 3:41 / 2:57 (the bug in the screenshot).
-        let lastNote = split.learner.notes.last
-        let endBeats = (lastNote?.beat ?? 0) + (lastNote?.durationBeats ?? 0)
-        let totalDurationOriginal = max(0.0, endBeats * secondsPerBeat)
-        arrangementPlayer?.onBeatTick = { [weak self] beat in
-            guard let self else { return }
-            let scale = max(0.0001, self.tempoScale)
-            let rawElapsed = max(0.0, beat) * secondsPerBeat / scale
-            let scaledDuration = totalDurationOriginal / scale
-            // Clamp to song end + small fudge for the trailing release tail.
-            let elapsed = scaledDuration > 0
-                ? min(rawElapsed, scaledDuration)
-                : rawElapsed
-            self.playback.setCurrentTime(elapsed)
-            // Auto-stop when the sequencer has clearly overrun the song.
-            // Use a small grace (0.5s) so the last note's release tail can
-            // play out before we transition to .stopped.
-            if scaledDuration > 0,
-               rawElapsed >= scaledDuration + 0.5,
-               self.playback.playbackState == .playing
-            {
-                MultiChannelLog.shared.log(
-                    .info,
-                    "ARRANGEMENT-AUTOSTOP rawElapsed=\(rawElapsed) scaledDuration=\(scaledDuration)"
-                )
-                self.stopAndComplete()
-            }
-        }
-    }
 
     /// Set the tonic Sa MIDI pitch and refresh the active scoring
     /// adapter. Called by tanpura-driven Sa changes.
@@ -908,6 +864,47 @@ final class PlayAlongViewModel {
                 )
             }
             MultiChannelLog.shared.log(.info, "... loadArrangementIfPossible: graph constructed; calling loadArrangement")
+
+            // T10' — adopt TakePlaybackEngine as the single canonical clock
+            // for Songs Play Along (locked decision #3). The engine loads
+            // the SMF into its `AVAudioSequencer`, routes tracks to the
+            // pre-banked graph samplers, and becomes the authoritative
+            // source for `playback.currentTime` via `setClockSource(_:)`.
+            // ArrangementPlayer's `play()/pause()/stop()/seek()` will
+            // forward to this engine instead of `graph.play()` directly,
+            // ensuring we never have two sequencers driving the same audio
+            // graph (which previously caused clock drift via the
+            // installArrangementBeatBridge accumulator).
+            let multiChannel = AudioEngineManager.shared.multiChannel
+            let audioEngine = AudioEngineManager.shared.engine
+            if let multiChannel {
+                let engine = TakePlaybackEngine(
+                    multiChannel: multiChannel,
+                    highlightSink: nil,
+                    engine: audioEngine
+                )
+                let firstProgram: UInt8 = rendered.trackInfo.first?.program ?? 0
+                do {
+                    try engine.loadSMFData(
+                        rendered.data,
+                        graph: graph,
+                        instrumentProgram: firstProgram
+                    )
+                    self.playbackEngine = engine
+                    self.playback.setClockSource { [weak engine] in
+                        engine?.currentPositionSec ?? 0
+                    }
+                    MultiChannelLog.shared.log(
+                        .info,
+                        "... loadArrangementIfPossible: TakePlaybackEngine wired as Songs clock"
+                    )
+                } catch {
+                    MultiChannelLog.shared.log(
+                        .error,
+                        "... loadArrangementIfPossible: TakePlaybackEngine.loadSMFData FAILED \(error.localizedDescription)"
+                    )
+                }
+            }
             try await loadArrangement(split: split, graph: graph, fullSMF: rendered.data)
             // E1.5: seed visualization with the learner notes derived from
             // PartSplit. The legacy Day-0 MIDIParser produces zero events
@@ -1021,6 +1018,10 @@ final class PlayAlongViewModel {
         playback.cleanup()
         arrangementPlayer?.stop()
         arrangementPlayer = nil
+        // T10' — detach engine clock and drop the engine reference.
+        playback.setClockSource(nil)
+        playbackEngine?.stop()
+        playbackEngine = nil
         scoringAdapter = nil
         currentSplit = nil
         // Clear AudioSessionManager callbacks to break the retain cycle

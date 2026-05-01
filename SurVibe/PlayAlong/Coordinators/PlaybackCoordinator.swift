@@ -61,8 +61,27 @@ final class PlaybackCoordinator {
     /// Per-note state for the falling-notes / sheet view, keyed by `NoteEvent.id`.
     var noteStates: [UUID: FallingNotesLayoutEngine.NoteState] = [:]
 
-    /// Current playback position in seconds from song start (driven externally).
-    private(set) var currentTime: TimeInterval = 0
+    /// Stored fallback for `currentTime` used when no `clockSource` is wired
+    /// (legacy / test paths) and as the resting value while paused.
+    private var storedCurrentTime: TimeInterval = 0
+
+    /// External clock source — typically `TakePlaybackEngine.currentPositionSec`
+    /// after Songs Play Along adopts the engine clock (T10'). When non-nil,
+    /// `currentTime` reads from this closure on every access; otherwise falls
+    /// back to `storedCurrentTime`. Set via `setClockSource(_:)`.
+    private var clockSource: (() -> TimeInterval)?
+
+    /// Current playback position in seconds from song start.
+    ///
+    /// **T10':** computed from the registered `clockSource` (the
+    /// `TakePlaybackEngine`'s `currentPositionSec`) when present. This is the
+    /// single canonical clock per locked decision #3 — there is no
+    /// accumulator, no per-tick push from a beat bridge, and no clamp. Pause
+    /// freezes the value naturally because the underlying `AVAudioSequencer`
+    /// holds its position when stopped.
+    var currentTime: TimeInterval {
+        clockSource?() ?? storedCurrentTime
+    }
 
     /// Total duration of the loaded song in seconds.
     private(set) var duration: TimeInterval = 0
@@ -209,7 +228,8 @@ final class PlaybackCoordinator {
         noteEvents = []
         noteStates = [:]
         currentNoteIndex = nil
-        currentTime = 0
+        storedCurrentTime = 0
+        clockSource = nil
         duration = 0
         playbackStartDate = nil
         errorMessage = nil
@@ -221,18 +241,38 @@ final class PlaybackCoordinator {
     /// responsibility (E1: ArrangementPlayer).
     func seek(to progress: Double) {
         guard duration > 0 else { return }
-        currentTime = progress * duration
+        storedCurrentTime = progress * duration
     }
 
     // MARK: - External transport setters (driven by ArrangementPlayer in E1)
 
     /// Push the master clock's current time into the visualization model.
     ///
-    /// Called by the external audio driver (E1: `ArrangementPlayer`) on every
-    /// display tick. Visualization observers (`FallingNotesView`,
-    /// `currentTime`-bound UI) react automatically through `@Observable`.
+    /// **T10' status:** the production Songs Play Along path no longer calls
+    /// this. `currentTime` is computed from `TakePlaybackEngine.currentPositionSec`
+    /// via `setClockSource(_:)`. This setter is preserved as a test seam for
+    /// `PlaybackCoordinatorTests` and for non-arrangement legacy callers
+    /// (notation-only fallback path with no audio driver).
     func setCurrentTime(_ time: TimeInterval) {
-        currentTime = time
+        storedCurrentTime = time
+    }
+
+    /// Register an external clock that drives `currentTime` per-read.
+    ///
+    /// Pass a closure that returns the current playback position in seconds —
+    /// production Songs Play Along passes
+    /// `{ [weak engine] in engine?.currentPositionSec ?? 0 }`. Pass `nil` to
+    /// detach and fall back to `storedCurrentTime` (used by `clearSong()` /
+    /// `cleanup()`).
+    ///
+    /// - Parameter source: Closure returning the current position, or `nil`
+    ///   to detach. Closure is invoked on the main actor on every read of
+    ///   `currentTime`.
+    func setClockSource(_ source: (@MainActor () -> TimeInterval)?) {
+        // The Sendable annotation isn't required here — coordinator + engine
+        // are both @MainActor — but we still close over a weak engine
+        // reference at the call site to avoid a retain cycle.
+        clockSource = source
     }
 
     /// Push a new transport state from the external audio driver.
@@ -356,7 +396,7 @@ final class PlaybackCoordinator {
     func reset() {
         scoring.reset()
         currentNoteIndex = noteEvents.isEmpty ? nil : 0
-        currentTime = 0
+        storedCurrentTime = 0
         errorMessage = nil
         for event in noteEvents {
             noteStates[event.id] = .upcoming

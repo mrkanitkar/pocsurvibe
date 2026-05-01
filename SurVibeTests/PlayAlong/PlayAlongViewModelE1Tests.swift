@@ -349,23 +349,14 @@ struct PlayAlongViewModelE1Tests {
     }
     #endif
 
-    /// Simulating a beat tick after `loadArrangement` advances
-    /// `PlaybackCoordinator.currentTime`. Closes Wave 5's last wiring
-    /// gap: nothing was driving the visualization clock after D3.
-    @Test("ArrangementPlayer tick advances PlaybackCoordinator currentTime")
-    func arrangementPlayerTickAdvancesPlaybackCoordinatorTime() async throws {
-        let vm = makeViewModel()
-        _ = try await loadArrangement(on: vm, measureCount: 8)
-        #expect(vm.playback.currentTime == 0)
-        vm.arrangementPlayer?.start(countInBars: 0)
-        // 4 beats at 120 BPM × 1.0 scale → 2.0 wall-clock seconds.
-        vm.arrangementPlayer?.simulateBeatTick(beatsPerMeasure: 4, currentBeat: 4.0)
-        #expect(vm.playback.currentTime > 0)
-        // Tolerance for floating-point conversion, but tight enough to
-        // prove the conversion ran (4 beats / (120/60) / 1.0 = 2.0 s).
-        #expect(abs(vm.playback.currentTime - 2.0) < 0.01)
-        vm.cleanup()
-    }
+    // T10' — `installArrangementBeatBridge` + `ArrangementPlayer.onBeatTick`
+    // are deleted. The previous "tick advances currentTime" test exercised
+    // that bridge directly; under the new architecture
+    // `PlaybackCoordinator.currentTime` is computed from
+    // `TakePlaybackEngine.currentPositionSec` (an external clock that the
+    // simulateBeatTick seam can't drive). SMF clock behaviour is covered by
+    // `TakePlaybackEngineTests.smfPlayAdvancesPositionMonotonically` and
+    // friends in the SVAudio package.
 
     @Test("cleanup tears down ArrangementPlayer + ScoringAdapter + AudioSession callbacks")
     func cleanupTearsDownE1State() async throws {

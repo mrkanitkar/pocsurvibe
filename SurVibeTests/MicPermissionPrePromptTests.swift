@@ -1,4 +1,5 @@
 import Foundation
+import SwiftUI
 import Testing
 
 @testable import SurVibe
@@ -22,7 +23,7 @@ struct MicPermissionPrePromptTests {
 
     @Test
     func constructsWithEmptyCallback() {
-        let view = MicPermissionPrePrompt(onContinue: {})
+        let view = MicPermissionPrePrompt(isPresented: .constant(true), onContinue: {})
         _ = view
         #expect(true)
     }

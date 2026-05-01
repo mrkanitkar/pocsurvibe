@@ -81,15 +81,6 @@ public final class ArrangementPlayer {
         didSet { applyHandMute() }
     }
 
-    /// Per-tick callback invoked from the display-link driver (and from
-    /// the `simulate*` test seams) with the latest `currentBeat`.
-    ///
-    /// Wave 5 D3/E1 wires this to `PlaybackCoordinator.setCurrentTime`
-    /// from `PlayAlongViewModel` so the falling-notes visualization
-    /// advances in lockstep with the accompaniment sequencer. Optional
-    /// because legacy callers (visualization-only paths) do not need it.
-    public var onBeatTick: ((Double) -> Void)?
-
     /// When `true` (default), both hands sound regardless of
     /// `practiceMode`. When `false`, the staff opposite the
     /// `practiceMode` is muted to let the learner play that part
@@ -110,6 +101,25 @@ public final class ArrangementPlayer {
     ///   passes a real `MultiTrackSamplerGraph` instance.
     public init(graph: MultiTrackSamplerGraphProtocol) {
         self.graph = graph
+    }
+
+    // MARK: - Single-clock adoption (T10')
+
+    /// Optional `TakePlaybackEngine` that owns the song's `AVAudioSequencer`
+    /// after the T10' clock-adoption refactor. When present, transport calls
+    /// (`start/pause/resume/stop`) forward to the engine; per-frame `currentBeat`
+    /// updates read from `engine.currentPositionSec` (converted to beats via
+    /// the loaded learner score's BPM). When `nil`, the legacy `graph`-driven
+    /// path is used (kept for tests + non-MXL callers).
+    private weak var playbackEngine: TakePlaybackEngine?
+
+    /// Wire a `TakePlaybackEngine` as the master clock + transport. Pass
+    /// `nil` to detach (cleanup path).
+    ///
+    /// - Parameter engine: The engine that has already loaded the SMF via
+    ///   `loadSMFData(_:graph:...)`. Held weakly.
+    public func setPlaybackEngine(_ engine: TakePlaybackEngine?) {
+        self.playbackEngine = engine
     }
 
     // MARK: - Loading
@@ -144,8 +154,16 @@ public final class ArrangementPlayer {
             trackInfo: [],
             originalBPM: 120.0
         )
-        try graph.loadMIDI(rendered)
-        graph.setTempoScale(1.0)
+        // T10' — when a `TakePlaybackEngine` has been wired, the engine has
+        // already loaded SMF into its sequencer and routed tracks to this
+        // graph's samplers (via `engine.loadSMFData(_:graph:...)`). Calling
+        // `graph.loadMIDI(_:)` here would create a SECOND sequencer over the
+        // same audio graph, doubling the audio output and splitting the
+        // clock. Skip the graph load when the engine owns the sequencer.
+        if playbackEngine == nil {
+            try graph.loadMIDI(rendered)
+            graph.setTempoScale(1.0)
+        }
         applyHandMute()
         MultiChannelLog.shared.log(
             .info,
@@ -195,6 +213,18 @@ public final class ArrangementPlayer {
         }
         currentBeat = atBeat - Double(beats)
         startHostTime = HostTime.now()
+        // T10' — forward transport to the engine when wired; otherwise fall
+        // back to the legacy `graph.play()` path.
+        if let engine = playbackEngine {
+            engine.play()
+            isPlaying = true
+            startDisplayLink()
+            MultiChannelLog.shared.log(
+                .info,
+                "<<< ARRANGEMENT-START engine.play() success isPlaying=true"
+            )
+            return
+        }
         do {
             try graph.play()
             isPlaying = true
@@ -218,12 +248,22 @@ public final class ArrangementPlayer {
     /// no-ops while `isPlaying == false`, so position observers do not
     /// drift while paused. The link is torn down in `stop()` / `deinit`.
     public func pause() {
-        graph.pause()
+        if let engine = playbackEngine {
+            engine.pause()
+        } else {
+            graph.pause()
+        }
         isPlaying = false
     }
 
     /// Resume playback from the current position.
     public func resume() {
+        if let engine = playbackEngine {
+            engine.play()
+            isPlaying = true
+            startDisplayLink()
+            return
+        }
         do {
             try graph.resume()
             isPlaying = true
@@ -238,7 +278,11 @@ public final class ArrangementPlayer {
 
     /// Stop playback and reset position to the start.
     public func stop() {
-        graph.stop()
+        if let engine = playbackEngine {
+            engine.stop()
+        } else {
+            graph.stop()
+        }
         isPlaying = false
         stopDisplayLink()
     }
@@ -324,9 +368,17 @@ public final class ArrangementPlayer {
     /// `simulateDisplayLinkFire()` test seam.
     private func handleDisplayLinkTick() {
         guard isPlaying else { return }
-        currentBeat = graph.currentPositionInBeats
+        if let engine = playbackEngine, let split {
+            // T10' — engine is the master clock. Convert seconds→beats via
+            // the learner score's BPM. `currentPositionSec` reads from the
+            // engine's `AVAudioSequencer`, which naturally stops at SMF end
+            // (no clamp / accumulator needed).
+            let bpm = max(1.0, split.learner.originalBPM)
+            currentBeat = engine.currentPositionSec * (bpm / 60.0)
+        } else {
+            currentBeat = graph.currentPositionInBeats
+        }
         tick()
-        onBeatTick?(currentBeat)
     }
 
     // Note: no explicit deinit — `displayLinkProxy`'s strong reference
@@ -366,7 +418,6 @@ public final class ArrangementPlayer {
         _ = beatsPerMeasure
         self.currentBeat = newBeat
         tick()
-        onBeatTick?(currentBeat)
     }
 
     // MARK: - Hand isolation (C4)
