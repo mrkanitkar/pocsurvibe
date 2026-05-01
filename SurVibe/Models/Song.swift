@@ -184,18 +184,6 @@ final class Song {
     /// `nil` when the song has no accompaniment metadata.
     var accompanimentInstrumentSummary: String?
 
-    /// Default practice-mode preset for this song.
-    ///
-    /// One of `"both"`, `"rightHand"`, or `"leftHand"`.
-    /// `nil` falls back to the app-wide default (both hands).
-    var defaultPracticeMode: String?
-
-    /// Last tempo scale the user applied to this song.
-    ///
-    /// `1.0` = original tempo; `0.5` = half speed; `2.0` = double.
-    /// `nil` means the song has never been tempo-scaled (use original).
-    var lastUsedTempoScale: Double?
-
     // MARK: - Business Logic
 
     /// Whether this song is available to free-tier users.
