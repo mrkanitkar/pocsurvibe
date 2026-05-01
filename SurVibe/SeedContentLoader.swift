@@ -1,6 +1,7 @@
 import Foundation
 import SwiftData
 import os.log
+import SVAudio
 import SVCore
 
 /// Manages seed content loading into SwiftData with version tracking.
@@ -58,21 +59,105 @@ final class SeedContentLoader {
     ///
     /// - Parameter container: SwiftData ModelContainer for inserts.
     static func loadSeedContentIfNeeded(into container: ModelContainer) {
-        guard storedContentVersion < currentContentVersion else {
-            logger.info("Seed content at version \(storedContentVersion); current is \(currentContentVersion). Skipping.")
+        if storedContentVersion < currentContentVersion {
+            logger.info("Seed content version \(storedContentVersion) < \(currentContentVersion). Importing.")
+            do {
+                let summary = try ContentImportManager.importAllSeedContent(into: container)
+                importBundledMXLs(into: container)
+                UserDefaults.standard.set(currentContentVersion, forKey: seedContentVersionKey)
+                logger.info("Seed content loaded successfully (v\(currentContentVersion)): \(summary.description, privacy: .public)")
+            } catch {
+                logger.error(
+                    "Seed content loading failed: \(error, privacy: .public). App will continue without seed data."
+                )
+            }
+        } else {
+            logger.info("Seed content at version \(storedContentVersion); current is \(currentContentVersion). Skipping seed import.")
+        }
+        // Always run the notation backfill — it is idempotent (no-op when
+        // every Song already has Sargam/Western JSON populated) and runs
+        // *outside* the version gate so MXL imports added after a previous
+        // launch still get notation generated on the next cold start.
+        backfillMissingNotationJSON(into: container)
+    }
+
+    /// One-shot migration that regenerates `sargamNotation` and
+    /// `westernNotation` JSON blobs for any `Song` that has `midiData` but
+    /// is missing one or both notation fields. Required by Drop-style
+    /// notation themes (`ScrollingSheetView`) which read those JSON blobs
+    /// directly. Without the backfill, every MXL-imported song renders an
+    /// empty staff in those themes.
+    ///
+    /// Safe to call repeatedly — only acts on rows with nil notation.
+    private static func backfillMissingNotationJSON(into container: ModelContainer) {
+        let context = ModelContext(container)
+        let descriptor = FetchDescriptor<Song>()
+        let songs: [Song]
+        do {
+            songs = try context.fetch(descriptor)
+        } catch {
+            logger.error("backfillNotation: fetch failed: \(error, privacy: .public)")
             return
         }
-
-        logger.info("Seed content version \(storedContentVersion) < \(currentContentVersion). Importing.")
-
-        do {
-            let summary = try ContentImportManager.importAllSeedContent(into: container)
-            importBundledMXLs(into: container)
-            UserDefaults.standard.set(currentContentVersion, forKey: seedContentVersionKey)
-            logger.info("Seed content loaded successfully (v\(currentContentVersion)): \(summary.description, privacy: .public)")
-        } catch {
-            logger.error(
-                "Seed content loading failed: \(error, privacy: .public). App will continue without seed data."
+        // Debug: dump per-song state on first scan so we can see why the
+        // backfill says "nothing to do" when notation appears blank in UI.
+        for song in songs {
+            let sBytes = song.sargamNotation?.count ?? -1
+            let wBytes = song.westernNotation?.count ?? -1
+            let mBytes = song.midiData?.count ?? -1
+            MultiChannelLog.shared.log(
+                .info,
+                "BACKFILL-SCAN slug=\(song.slugId) midi=\(mBytes)B sargam=\(sBytes)B western=\(wBytes)B"
+            )
+        }
+        var updatedCount = 0
+        for song in songs {
+            guard let midiData = song.midiData, !midiData.isEmpty else { continue }
+            // Treat empty Data the same as nil — both result in `decodedSargamNotes`
+            // returning nil/[]. Either way the renderer has nothing to draw.
+            let needsSargam = (song.sargamNotation?.isEmpty ?? true)
+                || (song.decodedSargamNotes?.isEmpty ?? true)
+            let needsWestern = (song.westernNotation?.isEmpty ?? true)
+                || (song.decodedWesternNotes?.isEmpty ?? true)
+            guard needsSargam || needsWestern else { continue }
+            let blobs = SongNotationGenerator.generateNotationJSON(from: midiData)
+            var changed = false
+            if needsSargam, let sargam = blobs.sargam {
+                song.sargamNotation = sargam
+                changed = true
+            }
+            if needsWestern, let western = blobs.western {
+                song.westernNotation = western
+                changed = true
+            }
+            if changed {
+                updatedCount += 1
+                let sCount = blobs.sargam?.count ?? 0
+                let wCount = blobs.western?.count ?? 0
+                logger.info(
+                    "backfillNotation: regenerated \(song.slugId, privacy: .public) sargam=\(sCount)B western=\(wCount)B"
+                )
+                MultiChannelLog.shared.log(
+                    .info,
+                    "BACKFILL-NOTATION wrote \(song.slugId) sargam=\(sCount)B western=\(wCount)B"
+                )
+            }
+        }
+        if updatedCount > 0 {
+            do {
+                try context.save()
+                logger.info("backfillNotation: saved \(updatedCount) updated songs")
+                MultiChannelLog.shared.log(
+                    .info,
+                    "BACKFILL-NOTATION wrote sargam+western JSON for \(updatedCount) song(s)"
+                )
+            } catch {
+                logger.error("backfillNotation: save failed: \(error, privacy: .public)")
+            }
+        } else {
+            MultiChannelLog.shared.log(
+                .info,
+                "BACKFILL-NOTATION nothing to do (\(songs.count) songs scanned, all complete)"
             )
         }
     }

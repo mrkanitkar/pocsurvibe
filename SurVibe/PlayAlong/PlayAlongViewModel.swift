@@ -22,6 +22,7 @@ import os.log
 /// forwards to one of the coordinators so existing views and tests continue to
 /// call `viewModel.currentPitch`, `viewModel.handleKeyboardTouch(...)`, etc.
 /// unchanged (spec AD-1 facade).
+// swiftlint:disable type_body_length
 @Observable
 @MainActor
 final class PlayAlongViewModel {
@@ -653,11 +654,39 @@ final class PlayAlongViewModel {
     private func installArrangementBeatBridge(split: PartSplit) {
         let originalBPM = max(1.0, split.learner.originalBPM)
         let secondsPerBeat = 60.0 / originalBPM
+        // Compute total song duration (at original tempo) from the last
+        // learner note's end. We use this to clamp the visualization clock
+        // and to auto-stop when the sequencer overruns the song. Without
+        // the clamp, currentTime grows unbounded after the sequencer ends,
+        // pushing every note out of the renderers' lookahead window — the
+        // notation visibly disappears and the time pill displays e.g.
+        // 3:41 / 2:57 (the bug in the screenshot).
+        let lastNote = split.learner.notes.last
+        let endBeats = (lastNote?.beat ?? 0) + (lastNote?.durationBeats ?? 0)
+        let totalDurationOriginal = max(0.0, endBeats * secondsPerBeat)
         arrangementPlayer?.onBeatTick = { [weak self] beat in
             guard let self else { return }
             let scale = max(0.0001, self.tempoScale)
-            let elapsed = max(0.0, beat) * secondsPerBeat / scale
+            let rawElapsed = max(0.0, beat) * secondsPerBeat / scale
+            let scaledDuration = totalDurationOriginal / scale
+            // Clamp to song end + small fudge for the trailing release tail.
+            let elapsed = scaledDuration > 0
+                ? min(rawElapsed, scaledDuration)
+                : rawElapsed
             self.playback.setCurrentTime(elapsed)
+            // Auto-stop when the sequencer has clearly overrun the song.
+            // Use a small grace (0.5s) so the last note's release tail can
+            // play out before we transition to .stopped.
+            if scaledDuration > 0,
+               rawElapsed >= scaledDuration + 0.5,
+               self.playback.playbackState == .playing
+            {
+                MultiChannelLog.shared.log(
+                    .info,
+                    "ARRANGEMENT-AUTOSTOP rawElapsed=\(rawElapsed) scaledDuration=\(scaledDuration)"
+                )
+                self.stopAndComplete()
+            }
         }
     }
 
@@ -816,7 +845,7 @@ final class PlayAlongViewModel {
                 "... loadArrangementIfPossible: building MultiTrackSamplerGraph trackCount=\(trackCount) (fullSMF)"
             )
             let graph = try MultiTrackSamplerGraph(trackCount: trackCount)
-            if let bankURL = MultiTrackSamplerGraph.bundledMuseScoreGeneralSF2URL {
+            if let bankURL = MultiTrackSamplerGraph.activeSoundFontURL() {
                 let presets: [UInt8] = (0..<graph.samplers.count).map { i in
                     if i < rendered.trackInfo.count, let prog = rendered.trackInfo[i].program {
                         return prog
@@ -840,7 +869,7 @@ final class PlayAlongViewModel {
             } else {
                 MultiChannelLog.shared.log(
                     .error,
-                    "... loadArrangementIfPossible: MuseScore_General.sf2 missing from SVAudio bundle"
+                    "... loadArrangementIfPossible: no SoundFont resolved (neither GeneralUser-GS nor MuseScore_General found)"
                 )
             }
             MultiChannelLog.shared.log(.info, "... loadArrangementIfPossible: graph constructed; calling loadArrangement")

@@ -184,13 +184,42 @@ public final class MultiTrackSamplerGraph: MultiTrackSamplerGraphProtocol {
         )
     }
 
-    /// URL of the bundled `MuseScore_General.sf2` SoundFont — the default
-    /// production bank used by Play tab and Profile A/B audition. Exposed
-    /// publicly so the Play Along view-model can wire the same bank into
-    /// its `MultiTrackSamplerGraph` (otherwise samplers play with no
-    /// instrument loaded and the output is unusable).
+    /// URL of the bundled `MuseScore_General.sf2` SoundFont — the
+    /// production bank used historically by Play tab.
     public static var bundledMuseScoreGeneralSF2URL: URL? {
         Bundle.module.url(forResource: "MuseScore_General", withExtension: "sf2")
+    }
+
+    /// URL of the bundled `GeneralUser-GS.sf2` — better timbre for orchestral
+    /// arrangements (James Bond, etc.). The Profile A/B audition typically
+    /// resolves to this bank, so Play Along defaults to it as well to avoid
+    /// the timbre divergence the user reported between the two surfaces.
+    public static var bundledGeneralUserGSSF2URL: URL? {
+        Bundle.main.url(forResource: "GeneralUser-GS", withExtension: "sf2")
+            ?? Bundle.module.url(forResource: "GeneralUser-GS", withExtension: "sf2")
+    }
+
+    /// UserDefaults key for the active SoundFont bank name.
+    /// Values: `"GeneralUser-GS"` (default) or `"MuseScore_General"`.
+    public static let activeSoundFontKey = "com.survibe.activeSoundFontName"
+
+    /// Resolve the SoundFont URL for the active production bank, honouring
+    /// the user preference at `UserDefaults.standard.string(forKey:
+    /// activeSoundFontKey)`. Falls back to GeneralUser-GS, then to
+    /// MuseScore_General if the preferred bank is missing.
+    public static func activeSoundFontURL() -> URL? {
+        let preferred = UserDefaults.standard.string(forKey: activeSoundFontKey)
+            ?? "GeneralUser-GS"
+        let primary: URL?
+        let fallback: URL?
+        if preferred == "MuseScore_General" {
+            primary = bundledMuseScoreGeneralSF2URL
+            fallback = bundledGeneralUserGSSF2URL
+        } else {
+            primary = bundledGeneralUserGSSF2URL
+            fallback = bundledMuseScoreGeneralSF2URL
+        }
+        return primary ?? fallback
     }
 
     /// Sequentially load `bankURL` into each sampler with the matching
