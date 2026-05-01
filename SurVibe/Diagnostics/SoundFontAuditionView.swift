@@ -20,8 +20,10 @@ import SwiftUI
 ///
 /// 1. Slot A auto-loads with the production bank `MuseScore_General.sf2`
 ///    (SVAudio package resource).
-/// 2. Slot B is user-pickable — drop any `.sf2` into the Files app
-///    (iCloud Drive or "On My iPad") and tap "Pick Bank B".
+/// 2. Slot B auto-loads with the diagnostics-only `GeneralUser-GS.sf2`
+///    (DEBUG-bundled in `Diagnostics/AuditionAssets/`). Either slot can
+///    be overridden by tapping the slot row to pick any `.sf2` from
+///    the Files app.
 /// 3. Toggle A ↔ B to compare timbres through the multi-channel pipeline.
 struct SoundFontAuditionView: View {
 
@@ -129,16 +131,23 @@ struct SoundFontAuditionView: View {
 
     // MARK: - File Loading
 
-    /// Auto-load the bundled production bank into slot A.
+    /// Auto-load the two bundled audition banks into the A/B slots.
     ///
-    /// Production ships a single bank — `MuseScore_General.sf2` from the
-    /// SVAudio package resources (`Bundle.module`). Slot B stays empty
-    /// for the user to pick an arbitrary `.sf2` from the Files app for
-    /// ad-hoc comparison. DEBUG-only.
+    /// Slot A receives the production bank `MuseScore_General.sf2` from
+    /// the SVAudio package (`Bundle.module`). Slot B receives the
+    /// diagnostics-only `GeneralUser-GS.sf2` from the main app bundle —
+    /// shipped in DEBUG builds only via `Diagnostics/AuditionAssets/`,
+    /// excluded from Release. Slot B is the historical reference bank
+    /// for A/B comparison; production playback never resolves to it.
+    /// Manual file picks (slot row buttons) override these defaults.
     private func autoLoadBundledBanksIfPresent() {
         if fileNameA == nil,
            let url = MultiTrackSamplerGraph.bundledMuseScoreGeneralSF2URL {
             loadSoundFont(at: url, into: .a)
+        }
+        if fileNameB == nil,
+           let url = MultiTrackSamplerGraph.bundledGeneralUserGSSF2URL {
+            loadSoundFont(at: url, into: .b)
         }
     }
 

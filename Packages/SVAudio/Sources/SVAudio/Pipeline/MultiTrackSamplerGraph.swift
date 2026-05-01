@@ -246,6 +246,18 @@ public final class MultiTrackSamplerGraph: MultiTrackSamplerGraphProtocol {
         Bundle.module.url(forResource: "MuseScore_General", withExtension: "sf2")
     }
 
+    /// URL of the bundled `GeneralUser-GS.sf2` — diagnostics-only.
+    ///
+    /// Production never resolves to this bank (`activeSoundFontURL` returns
+    /// `MuseScore_General.sf2` exclusively). Kept exposed solely so the
+    /// DEBUG-only audition view can preload it into slot B for A/B
+    /// comparison against the production bank. Lives in `Bundle.main`
+    /// (the diagnostics asset folder); excluded from Release builds via
+    /// target membership.
+    public static var bundledGeneralUserGSSF2URL: URL? {
+        Bundle.main.url(forResource: "GeneralUser-GS", withExtension: "sf2")
+    }
+
     /// Resolve the SoundFont URL for the active production bank.
     ///
     /// Production ships a single canonical bank: `MuseScore_General.sf2`
