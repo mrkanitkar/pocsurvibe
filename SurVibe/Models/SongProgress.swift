@@ -22,6 +22,42 @@ final class SongProgress {
     /// (grid × cents factor); decomposition happens in `TanpuraController`.
     var preferredSaHz: Double? = nil
 
+    // MARK: - Per-Song Learner Preferences
+
+    /// Which hands the learner practices: "both", "right", or "left".
+    var preferredHands: String = "both"
+
+    /// Playback speed as a multiplier of the song's BPM (e.g. 0.75 = 75 %).
+    /// Clamping to a valid range is enforced by the ViewModel, not the model.
+    var preferredTempoScale: Double = 1.0
+
+    /// Index into the song's learner-track array for the preferred track.
+    var preferredLearnerTrackIndex: Int = 0
+
+    /// Whether wait-mode is active: playback pauses until the learner plays
+    /// the correct note before advancing.
+    var waitModeEnabled: Bool = false
+
+    /// Whether the metronome click track is audible during play-along.
+    var clickTrackEnabled: Bool = false
+
+    /// Mix level for the click track: "soft", "normal", or "loud".
+    var clickTrackLevel: String = "normal"
+
+    /// Whether the tanpura drone is active during play-along.
+    var tanpuraEnabled: Bool = false
+
+    /// Raga name used to configure the tanpura drone; empty string means
+    /// the session default is used.
+    var tanpuraRaga: String = ""
+
+    /// First beat (0-based) of the loop region, or nil when no loop is set.
+    var loopRegionStart: Int?
+
+    /// Last beat (inclusive, 0-based) of the loop region, or nil when no loop
+    /// is set. Always >= `loopRegionStart` when both are non-nil.
+    var loopRegionEnd: Int?
+
     init(
         songId: String = "",
         songTitle: String = ""
