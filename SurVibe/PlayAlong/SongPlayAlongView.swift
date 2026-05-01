@@ -158,7 +158,10 @@ struct SongPlayAlongView: View {
     // MARK: - Body
 
     var body: some View {
-        let _ = MultiChannelLog.shared.log(.info, "BODY-EVAL SongPlayAlongView body recomputed (song=\(song.title))")
+        // BODY-EVAL log moved to .debug — was filling audio_log.txt at
+        // ~4 lines/sec and drowning out real events. .debug stays in
+        // os.Logger only, never written to disk.
+        let _ = MultiChannelLog.shared.log(.debug, "BODY-EVAL SongPlayAlongView body recomputed (song=\(song.title))")
         // PlayTab-style linear layout — simple VStack so each child owns its
         // own observation scope. Heavy ticking subviews (toolbar, content,
         // piano) read viewModel directly; the parent body only re-renders

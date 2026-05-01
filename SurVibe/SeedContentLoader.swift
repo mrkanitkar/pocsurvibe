@@ -35,7 +35,19 @@ final class SeedContentLoader {
     ///       (Sukhkarta_Dukhharta, james-bond-theme) as Songs so the
     ///       Learn-a-Song play-along path has populated `midiData` +
     ///       `learnerTrackIndices` on first launch.
-    private static let currentContentVersion = 10
+    /// - v10: (no behavior change recorded)
+    /// - v11: Force-reimport bundled MXLs so cached `midiData` /
+    ///        `sargamNotation` / `westernNotation` from earlier pipeline
+    ///        revisions get regenerated against the current Verovio +
+    ///        PartSplitter output.
+    /// - v12: Format unification — wipe ALL `Song` rows and re-seed only
+    ///        the bundled MXL imports. The legacy JSON-seeded songs
+    ///        (Jana Gana Mana et al.) ship `sargamNotation`/`westernNotation`
+    ///        but no `midiData`, so they cannot use the MultiTrackSamplerGraph
+    ///        audio pipeline that powers the MXL imports. Standardizing on
+    ///        a single MXL → midiData → graph path means every song renders
+    ///        through the same Verovio + PartSplitter + SF2 stack.
+    private static let currentContentVersion = 12
 
     /// Resource basenames (no extension) of the bundled MXL audition
     /// assets that should be imported as `Song` rows on first launch.
@@ -60,25 +72,58 @@ final class SeedContentLoader {
     /// - Parameter container: SwiftData ModelContainer for inserts.
     static func loadSeedContentIfNeeded(into container: ModelContainer) {
         if storedContentVersion < currentContentVersion {
-            logger.info("Seed content version \(storedContentVersion) < \(currentContentVersion). Importing.")
-            do {
-                let summary = try ContentImportManager.importAllSeedContent(into: container)
-                importBundledMXLs(into: container)
-                UserDefaults.standard.set(currentContentVersion, forKey: seedContentVersionKey)
-                logger.info("Seed content loaded successfully (v\(currentContentVersion)): \(summary.description, privacy: .public)")
-            } catch {
-                logger.error(
-                    "Seed content loading failed: \(error, privacy: .public). App will continue without seed data."
-                )
-            }
+            logger.info("Seed content version \(storedContentVersion) < \(currentContentVersion). Migrating.")
+            // v12: format unification — wipe every existing seeded Song
+            // before re-seeding only the bundled MXLs. User-imported songs
+            // (`source == "user"`) are preserved.
+            wipeSeededSongs(in: container)
+            importBundledMXLs(into: container)
+            UserDefaults.standard.set(currentContentVersion, forKey: seedContentVersionKey)
+            logger.info("Seed content migrated to v\(currentContentVersion) — bundled MXL only")
+            MultiChannelLog.shared.log(
+                .info,
+                "SEED-MIGRATION-v12 wiped legacy seeds; re-imported bundled MXLs"
+            )
         } else {
-            logger.info("Seed content at version \(storedContentVersion); current is \(currentContentVersion). Skipping seed import.")
+            logger.info("Seed content at version \(storedContentVersion); current is \(currentContentVersion). Skipping seed migration.")
         }
         // Always run the notation backfill — it is idempotent (no-op when
         // every Song already has Sargam/Western JSON populated) and runs
         // *outside* the version gate so MXL imports added after a previous
         // launch still get notation generated on the next cold start.
         backfillMissingNotationJSON(into: container)
+    }
+
+    /// Delete every Song with `source != "user"`. Run on v12 migration to
+    /// remove the 17 legacy JSON-seeded rows so the library standardizes
+    /// on MXL-imported songs only.
+    private static func wipeSeededSongs(in container: ModelContainer) {
+        let context = ModelContext(container)
+        let descriptor = FetchDescriptor<Song>()
+        let songs: [Song]
+        do {
+            songs = try context.fetch(descriptor)
+        } catch {
+            logger.error("v12 wipe: fetch failed: \(error, privacy: .public)")
+            return
+        }
+        var deleted = 0
+        for song in songs where song.source != "user" {
+            logger.info("v12 wipe: deleting seed song slug=\(song.slugId, privacy: .public) source=\(song.source, privacy: .public)")
+            context.delete(song)
+            deleted += 1
+        }
+        if deleted > 0 {
+            do {
+                try context.save()
+                MultiChannelLog.shared.log(
+                    .info,
+                    "SEED-MIGRATION-v12 wiped \(deleted) legacy seed song(s)"
+                )
+            } catch {
+                logger.error("v12 wipe: save failed: \(error, privacy: .public)")
+            }
+        }
     }
 
     /// One-shot migration that regenerates `sargamNotation` and
@@ -177,16 +222,14 @@ final class SeedContentLoader {
         for entry in bundledMXLImports {
             do {
                 if let existing = try existingSong(slug: entry.slug, in: context) {
-                    // Upgrade-in-place: ensure existing rows have isFree=true
-                    // (older seeds shipped before isFree was set).
-                    if !existing.isFree {
-                        existing.isFree = true
-                        try context.save()
-                        logger.info("Bundled MXL '\(entry.resource, privacy: .public)': flipped isFree=true")
-                    } else {
-                        logger.info("Bundled MXL '\(entry.resource, privacy: .public)' already imported; skipping")
-                    }
-                    continue
+                    // v11 force-reimport: delete the existing row so the
+                    // import below regenerates midiData/sargam/western
+                    // against the current Verovio + PartSplitter pipeline.
+                    // Earlier rows may have stale midiData baked from a
+                    // pre-WIRED-tracks renderer revision.
+                    logger.info("Bundled MXL '\(entry.resource, privacy: .public)': deleting stale row for force-reimport")
+                    context.delete(existing)
+                    try context.save()
                 }
                 guard let url = Bundle.main.url(forResource: entry.resource, withExtension: "mxl") else {
                     logger.warning(
