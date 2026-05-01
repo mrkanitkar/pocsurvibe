@@ -127,10 +127,18 @@ public final class ArrangementPlayer {
     ///   `PartSplitter`.
     /// - Throws: Underlying `PipelineError` from
     ///   `MultiTrackSamplerGraph.loadMIDI(_:)`.
-    public func load(_ split: PartSplit) async throws {
+    public func load(_ split: PartSplit, fullSMF: Data? = nil) async throws {
         self.split = split
+        // Prefer the full rendered SMF when available so all parts (with
+        // their original Program Change events) feed the multi-sampler
+        // graph — yields the proper Bollywood-arrangement sound for songs
+        // like Sukhkarta. Falls back to split.accompaniment for callers
+        // that haven't been updated. Hand isolation is handled at playback
+        // time via `applyHandMute()` (track-level muting).
+        let smfData = fullSMF ?? split.accompaniment
+        let usingFull = (fullSMF != nil)
         let rendered = RenderedMIDI(
-            data: split.accompaniment,
+            data: smfData,
             trackCount: 0,
             channels: [],
             trackInfo: [],
@@ -139,8 +147,12 @@ public final class ArrangementPlayer {
         try graph.loadMIDI(rendered)
         graph.setTempoScale(1.0)
         applyHandMute()
+        MultiChannelLog.shared.log(
+            .info,
+            "ARRANGEMENT-LOAD smfBytes=\(smfData.count) usingFullMIDI=\(usingFull)"
+        )
         arrangementPlayerLogger.info(
-            "load: accompaniment bytes=\(split.accompaniment.count, privacy: .public)"
+            "load: smfBytes=\(smfData.count, privacy: .public) full=\(usingFull, privacy: .public)"
         )
     }
 
