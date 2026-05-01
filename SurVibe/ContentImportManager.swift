@@ -250,6 +250,11 @@ final class ContentImportManager {
         )
         song.midiData = rendered.data
         song.source = "user"
+        // User-uploaded content is always free — the user supplied the file
+        // themselves so the premium / Sign-in-with-Apple gate doesn't apply.
+        // Without this the default `isFree=false` would route imported songs
+        // through `SongLibraryViewModel.isPremiumLocked` → sign-in prompt.
+        song.isFree = true
         return song
     }
 
