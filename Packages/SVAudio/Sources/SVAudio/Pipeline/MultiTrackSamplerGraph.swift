@@ -184,6 +184,15 @@ public final class MultiTrackSamplerGraph: MultiTrackSamplerGraphProtocol {
         )
     }
 
+    /// URL of the bundled `MuseScore_General.sf2` SoundFont — the default
+    /// production bank used by Play tab and Profile A/B audition. Exposed
+    /// publicly so the Play Along view-model can wire the same bank into
+    /// its `MultiTrackSamplerGraph` (otherwise samplers play with no
+    /// instrument loaded and the output is unusable).
+    public static var bundledMuseScoreGeneralSF2URL: URL? {
+        Bundle.module.url(forResource: "MuseScore_General", withExtension: "sf2")
+    }
+
     /// Sequentially load `bankURL` into each sampler with the matching
     /// preset from `presets`. Pauses the engine, loads, restarts. Mode 2
     /// reload — single bank resident at a time, swap latency ~N × 300 ms.

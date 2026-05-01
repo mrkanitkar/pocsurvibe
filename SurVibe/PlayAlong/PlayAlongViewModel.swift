@@ -1,3 +1,4 @@
+// swiftlint:disable file_length
 import AVFoundation
 import Foundation
 import SVAudio
@@ -801,6 +802,38 @@ final class PlayAlongViewModel {
             }
             MultiChannelLog.shared.log(.info, "... loadArrangementIfPossible: building MultiTrackSamplerGraph trackCount=\(rendered.trackCount)")
             let graph = try MultiTrackSamplerGraph(trackCount: rendered.trackCount)
+            // Load the bundled MuseScore_General SF2 with per-track GM
+            // presets BEFORE handing the graph to ArrangementPlayer. Without
+            // this the samplers render through default/empty presets and the
+            // output is the "horrible sound" the user reported. Mirrors the
+            // bank load done by AuditionPipelineSection.loadSong.
+            if let bankURL = MultiTrackSamplerGraph.bundledMuseScoreGeneralSF2URL {
+                let presets: [UInt8] = (0..<graph.samplers.count).map { i in
+                    if i < rendered.trackInfo.count, let prog = rendered.trackInfo[i].program {
+                        return prog
+                    }
+                    return 0  // fallback: GM 0 = Acoustic Grand Piano
+                }
+                let presetList = presets.map { String($0) }.joined(separator: ",")
+                MultiChannelLog.shared.log(
+                    .info,
+                    "... loadArrangementIfPossible: loadBank \(bankURL.lastPathComponent) presets=[\(presetList)]"
+                )
+                do {
+                    try graph.loadBank(at: bankURL, presets: presets)
+                    MultiChannelLog.shared.log(.info, "... loadArrangementIfPossible: loadBank OK")
+                } catch {
+                    MultiChannelLog.shared.log(
+                        .error,
+                        "... loadArrangementIfPossible: loadBank FAILED \(error.localizedDescription)"
+                    )
+                }
+            } else {
+                MultiChannelLog.shared.log(
+                    .error,
+                    "... loadArrangementIfPossible: MuseScore_General.sf2 missing from SVAudio bundle"
+                )
+            }
             MultiChannelLog.shared.log(.info, "... loadArrangementIfPossible: graph constructed; calling loadArrangement")
             try await loadArrangement(split: split, graph: graph)
             // E1.5: seed visualization with the learner notes derived from
