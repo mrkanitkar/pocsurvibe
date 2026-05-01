@@ -35,9 +35,11 @@ public enum SongCategory: String, Codable, Sendable, CaseIterable {
 
 /// A single note in Sargam (Indian classical) notation.
 ///
-/// **T11'-pending:** retained as a transient struct used by legacy renderers
-/// during the migration window. Once renderers consume `[NoteEvent]` directly
-/// (T11'), this type can be deleted along with `WesternNote`.
+/// Used by `NotationContainerView` renderers (`SargamRenderer`, `StaffNotationRenderer`).
+/// These renderers currently receive an empty array as a placeholder until the full
+/// VerovioBridge → PartSplitter → NoteEvent pipeline is wired into the notation
+/// container. The struct is retained so renderers compile; remove it when the
+/// pipeline is live and renderers switch to `[NoteEvent]` directly.
 public struct SargamNote: Codable, Equatable, Sendable {
     /// Swara note name: Sa, Re, Ga, Ma, Pa, Dha, Ni.
     public let note: String
@@ -61,7 +63,9 @@ public struct SargamNote: Codable, Equatable, Sendable {
 
 /// A single note in Western notation.
 ///
-/// **T11'-pending:** retained for the migration window — see `SargamNote` note.
+/// Retained alongside `SargamNote` for use by `WesternRenderer` and
+/// `StaffNotationRenderer` in `NotationContainerView`. Remove when those
+/// renderers migrate to `[NoteEvent]` directly.
 public struct WesternNote: Codable, Equatable, Sendable {
     /// Note name with octave: C4, D4, E4, ..., B4, C5.
     public let note: String

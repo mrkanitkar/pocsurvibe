@@ -233,9 +233,9 @@ public struct ImportPipeline: ImportPipelineProtocol {
         configuration: ImportConfiguration
     ) -> ImportedSongDTO {
         let durationSeconds = normalizer.estimateDurationSeconds(normalised, tempo: normalised.tempo)
-        let sargamData: Data? = normalised.format == .sargam ? encodeSargamNotes(normalised.notes) : nil
-        let westernData: Data? = normalised.format != .sargam ? encodeWesternNotes(normalised.notes) : nil
-
+        // T5' removed the JSON-blob sargam/western notation fields from
+        // Song @Model. The canonical representation is now midiData only;
+        // both notation data slots are always nil.
         return ImportedSongDTO(
             title: configuration.title.trimmingCharacters(in: .whitespacesAndNewlines),
             artist: configuration.artist.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -244,8 +244,8 @@ public struct ImportPipeline: ImportPipelineProtocol {
             category: configuration.category,
             tempo: normalised.tempo,
             durationSeconds: durationSeconds,
-            sargamNotationData: sargamData,
-            westernNotationData: westernData,
+            sargamNotationData: nil,
+            westernNotationData: nil,
             midiData: midiData,
             keySignature: normalised.keySignature,
             timeSignature: normalised.timeSignature,
@@ -270,82 +270,4 @@ public struct ImportPipeline: ImportPipelineProtocol {
         }
     }
 
-    // MARK: - JSON Encoding
-
-    /// Encodes parsed sargam notes into the `[SargamNote]` JSON format. T11'-pending: consumer (`Song.sargamNotation` JSON blob) was dropped in T5'; output of this method is no longer persisted onto the @Model. Kept for DTO compatibility.
-    ///
-    /// Uses exact field names matching `SargamNote.CodingKeys`: `"note"`, `"octave"`, `"duration"`, `"modifier"`.
-    private func encodeSargamNotes(_ notes: [ParsedNotation.Note]) -> Data? {
-        let dicts = notes.map { note -> [String: Any] in
-            var dict: [String: Any] = [
-                "note": note.name,
-                "octave": note.octave ?? 4,
-                "duration": note.durationBeats ?? 1.0,
-            ]
-            if let modifier = note.modifier { dict["modifier"] = modifier }
-            return dict
-        }
-        do {
-            return try JSONSerialization.data(withJSONObject: dicts)
-        } catch {
-            pipelineLogger.error("Failed to encode sargam notes: \(error.localizedDescription)")
-            return nil
-        }
-    }
-
-    /// Encodes parsed western notes into the `[WesternNote]` JSON format. T11'-pending: see `encodeSargamNotes` note — Song @Model no longer persists this blob.
-    ///
-    /// Uses exact field names matching `WesternNote.CodingKeys`: `"note"`, `"duration"`, `"midiNumber"`.
-    /// The MIDI number is derived from the note name (e.g. "C4" -> 60).
-    private func encodeWesternNotes(_ notes: [ParsedNotation.Note]) -> Data? {
-        let dicts = notes.map { note -> [String: Any] in
-            [
-                "note": note.name,
-                "duration": note.durationBeats ?? 1.0,
-                "midiNumber": Self.midiNumber(for: note.name, octave: note.octave),
-            ] as [String: Any]
-        }
-        do {
-            return try JSONSerialization.data(withJSONObject: dicts)
-        } catch {
-            pipelineLogger.error("Failed to encode western notes: \(error.localizedDescription)")
-            return nil
-        }
-    }
-
-    /// Derives a MIDI note number from a western note name and optional octave.
-    ///
-    /// Handles note names with embedded octave (e.g. "C4", "D#3", "Eb5") and
-    /// standalone names combined with a separate octave parameter.
-    /// Returns 60 (middle C) as a safe fallback for unparseable names.
-    private static func midiNumber(for name: String, octave: Int?) -> Int {
-        // Semitone offsets from C for each note letter
-        let semitones: [Character: Int] = [
-            "C": 0, "D": 2, "E": 4, "F": 5, "G": 7, "A": 9, "B": 11,
-        ]
-
-        var chars = name.uppercased()
-
-        // Extract letter
-        guard let first = chars.first, let base = semitones[first] else { return 60 }
-        chars = String(chars.dropFirst())
-
-        // Extract accidental
-        var offset = 0
-        if chars.hasPrefix("#") { offset = 1; chars = String(chars.dropFirst()) } else if chars.hasPrefix("B") {
-            offset = -1; chars = String(chars.dropFirst())
-        }
-
-        // Extract octave from the remaining string, or use the parameter
-        let oct: Int
-        if let numStr = chars.first.flatMap({ $0.isNumber ? String($0) : nil }),
-           let num = Int(numStr) {
-            oct = num
-        } else {
-            oct = octave ?? 4
-        }
-
-        // MIDI = (octave + 1) * 12 + semitone
-        return (oct + 1) * 12 + base + offset
-    }
 }

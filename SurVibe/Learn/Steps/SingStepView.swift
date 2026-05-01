@@ -393,11 +393,11 @@ struct SingStepView: View {
     private func setupAndListen() async {
         guard let song else { return }
 
-        // T11'-pending: was `song.decodedSargamNotes`. JSON blob dropped in
-        // T5'; T11' will source `expectedNotes` from `Song.midiData` /
-        // `[NoteEvent]`. Until then, sing-step accuracy tracking is a no-op
-        // and the user falls back to the manual "Done Singing" button
-        // (which sends accuracy=1.0 — see `actionButtons`).
+        // Post-T5', notation is stored as MIDI binary in `Song.midiData`.
+        // Deriving sargam notes requires an async VerovioBridge pipeline;
+        // that wiring is deferred to a future iteration. Sing-step accuracy
+        // tracking is intentionally a no-op here — the user completes the
+        // step via the manual "Done Singing" button (accuracy = 1.0).
         _ = song
         expectedNotes = []
         totalNotes = 0

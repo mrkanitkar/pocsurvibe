@@ -146,12 +146,10 @@ final class SongImportViewModel {
         difficulty = song.difficulty
         category = song.category
 
-        // T11'-pending: the notation-tab pre-fill used `song.decodedSargamNotes`
-        // / `decodedWesternNotes` (JSON blob source dropped in T5'). T11' /
-        // T8' will rebuild edit-mode pre-fill from `Song.musicXMLData` or
-        // `Song.midiData` directly. Until then, edit mode opens with empty
-        // notation tabs — the user can paste fresh notation if they want to
-        // overwrite the song's content.
+        // Edit mode always opens the MusicXML tab as the source of truth
+        // (T5' removed the sargam/western JSON blob fields from Song; the
+        // canonical content is now in Song.midiData / musicXML). The user
+        // can paste a fresh MusicXML payload to overwrite the song's content.
         selectedTab = .musicXML
     }
 
@@ -281,8 +279,7 @@ final class SongImportViewModel {
             AnalyticsManager.shared.track(.songImportCompleted, properties: [
                 "format": format.rawValue,
                 // T5': legacy JSON-blob byte counts dropped from analytics.
-                "note_count": (dto.sargamNotationData?.count
-                    ?? dto.westernNotationData?.count ?? 0),
+                "note_count": dto.midiData?.count ?? 0,
                 "has_midi": dto.midiData != nil,
             ])
 

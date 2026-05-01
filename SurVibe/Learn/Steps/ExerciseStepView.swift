@@ -114,10 +114,11 @@ struct ExerciseStepView: View {
 
     /// Decoded sargam notes from the song's notation data.
     ///
-    /// T11'-pending: was `song?.decodedSargamNotes`. T5' dropped the JSON
-    /// blob. T11' rewires this to derive notes from `Song.midiData` /
-    /// `[NoteEvent]`. Until then, exercise drills fall back to the manual
-    /// "Mark as Complete" button.
+    /// Post-T5', notation is stored as MIDI binary in `Song.midiData`.
+    /// A dedicated async pipeline (VerovioBridge → PartSplitter → NoteEvent)
+    /// is required to derive sargam notes for drill use; that wiring is
+    /// deferred to a future iteration. Until then, exercise drills fall back
+    /// to the manual "Mark as Complete" button.
     private var sargamNotes: [SargamNote]? {
         nil
     }
