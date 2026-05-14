@@ -52,16 +52,16 @@ final class SongPlayAlongViewModel {
     private(set) var errorMessage: String?
 
     /// `1.0` = original tempo. Clamped on assignment to `[0.5, 1.5]`.
-    /// Note: lean MVP keeps the property + UI control but doesn't yet
-    /// wire it to the audio engine — `TakePlaybackEngine` exposes no
-    /// public tempo-rate setter on this branch. Future task: add
-    /// `setTempoScale(_:)` to the engine and forward here.
+    /// Forwards to `MultiTrackSamplerGraph.setTempoScale(_:)` which
+    /// sets `AVAudioSequencer.rate` — the same path used by Play tab.
     var tempoScale: Double = 1.0 {
         didSet {
             let clamped = min(1.5, max(0.5, tempoScale))
             if clamped != tempoScale {
                 tempoScale = clamped
+                return
             }
+            samplerGraph?.setTempoScale(Float(clamped))
         }
     }
 
