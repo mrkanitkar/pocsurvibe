@@ -52,8 +52,11 @@ final class SongPlayAlongViewModel {
     private(set) var errorMessage: String?
 
     /// `1.0` = original tempo. Clamped on assignment to `[0.5, 1.5]`.
-    /// Forwards to `MultiTrackSamplerGraph.setTempoScale(_:)` which
-    /// sets `AVAudioSequencer.rate` — the same path used by Play tab.
+    /// Forwards to `TakePlaybackEngine.setTempoScale(_:)` which sets the
+    /// internal `AVAudioSequencer.rate`. The engine owns its own
+    /// sequencer (separate from the graph's), so setting `graph.rate`
+    /// alone has no audible effect — the engine's sequencer is the
+    /// one actually playing.
     var tempoScale: Double = 1.0 {
         didSet {
             let clamped = min(1.5, max(0.5, tempoScale))
@@ -61,7 +64,7 @@ final class SongPlayAlongViewModel {
                 tempoScale = clamped
                 return
             }
-            samplerGraph?.setTempoScale(Float(clamped))
+            playbackEngine?.setTempoScale(Float(clamped))
         }
     }
 
