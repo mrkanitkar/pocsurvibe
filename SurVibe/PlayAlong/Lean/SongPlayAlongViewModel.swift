@@ -263,10 +263,10 @@ final class SongPlayAlongViewModel {
     /// Install a `CADisplayLink` on the main runloop. Idempotent.
     private func startDisplayLink() {
         guard displayLink == nil else { return }
-        let proxy = DisplayLinkProxy { [weak self] in
-            self?.handleVisualTick()
+        let proxy = DisplayLinkProxy { [weak self] link in
+            self?.handleVisualTick(targetTimestamp: link.targetTimestamp)
         }
-        let link = CADisplayLink(target: proxy, selector: #selector(DisplayLinkProxy.tick))
+        let link = CADisplayLink(target: proxy, selector: #selector(DisplayLinkProxy.tick(_:)))
         link.preferredFrameRateRange = CAFrameRateRange(minimum: 60, maximum: 120, preferred: 60)
         link.add(to: .main, forMode: .common)
         displayLink = link
@@ -368,14 +368,51 @@ final class SongPlayAlongViewModel {
 
     // MARK: - Private — visual tick (the core fix)
 
-    /// Visual-tick handler installed on `TakePlaybackEngine.onVisualTick`.
-    /// Reads the wall clock, advances `tickState`, detects natural
-    /// completion. Writes only to `tickState` — never to any property
-    /// the parent body reads.
-    private func handleVisualTick() {
+    /// Visual-tick handler installed on the VM-owned `CADisplayLink`.
+    ///
+    /// Reads the **engine's predicted display position** at the next
+    /// frame's host time. This is Apple's documented pattern for
+    /// `AVAudioSequencer` — gives a sample-accurate position that
+    /// honors `sequencer.rate` (tempo) and stays in lock-step with
+    /// audible output. Writes only to `tickState` — never to any
+    /// property the parent body reads.
+    ///
+    /// Falls back to the wall-clock only if no engine is wired (tests).
+    private func handleVisualTick(targetTimestamp: CFTimeInterval) {
         guard playbackState == .playing else { return }
-        let t = wallClockSec
+        let t: TimeInterval
+        if let engine = playbackEngine {
+            let hostTime = machHostTime(fromCFTime: targetTimestamp)
+            t = engine.displayPositionSec(forHostTime: hostTime)
+        } else {
+            t = wallClockSec
+        }
         advanceFor(time: t)
+    }
+
+    // MARK: - Private — mach time conversion
+
+    private static let machTimebase: mach_timebase_info_data_t = {
+        var t = mach_timebase_info_data_t()
+        mach_timebase_info(&t)
+        return t
+    }()
+
+    /// Convert a `CFTimeInterval` (seconds since boot, same domain as
+    /// `CACurrentMediaTime`) into a mach `UInt64` host time suitable
+    /// for `AVAudioSequencer.beats(forHostTime:)`.
+    private func machHostTime(fromCFTime cfTime: CFTimeInterval) -> UInt64 {
+        let nowMach = mach_absolute_time()
+        let nowCF = CACurrentMediaTime()
+        let deltaNs = (cfTime - nowCF) * 1_000_000_000.0
+        let timebase = Self.machTimebase
+        let denom = timebase.denom == 0 ? UInt32(1) : timebase.denom
+        let numer = timebase.numer == 0 ? UInt32(1) : timebase.numer
+        let deltaMach = deltaNs * Double(denom) / Double(numer)
+        if deltaMach >= 0 {
+            return nowMach &+ UInt64(deltaMach)
+        }
+        return nowMach &- UInt64(-deltaMach)
     }
 
     #if DEBUG
@@ -457,20 +494,20 @@ final class SongPlayAlongViewModel {
 }
 // swiftlint:enable file_length
 
-/// `CADisplayLink` requires an `NSObject` target. This proxy holds a weak
-/// reference back to the VM so an in-flight tick after `invalidate()` becomes
-/// a no-op instead of a use-after-free.
+/// `CADisplayLink` requires an `NSObject` target. This proxy receives the
+/// link itself so callers can read `targetTimestamp` (next-frame host time)
+/// and use Apple's `AVAudioSequencer.beats(forHostTime:)` pattern.
 private final class DisplayLinkProxy: NSObject {
-    private let callback: @MainActor () -> Void
+    private let callback: @MainActor (CADisplayLink) -> Void
 
-    init(callback: @escaping @MainActor () -> Void) {
+    init(callback: @escaping @MainActor (CADisplayLink) -> Void) {
         self.callback = callback
     }
 
     @MainActor
     @objc
-    func tick() {
-        callback()
+    func tick(_ link: CADisplayLink) {
+        callback(link)
     }
 }
 
