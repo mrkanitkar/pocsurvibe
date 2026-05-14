@@ -34,7 +34,8 @@ struct LeanSongPlayAlongView: View {
             SheetSection(
                 song: song,
                 noteEvents: viewModel.noteEvents,
-                tickState: viewModel.tickState
+                tickState: viewModel.tickState,
+                isPlaying: viewModel.playbackState == .playing
             )
             .frame(maxWidth: .infinity, maxHeight: .infinity)
             scoreSection
@@ -200,98 +201,42 @@ struct TimeDisplay: View {
     }
 }
 
-/// Leaf reader of `tickState.currentTime`. Renders a traditional grand
-/// staff with round noteheads — TWO `StaffNotationRenderer` instances
-/// (treble for right hand, bass for left hand). Each staff highlights
-/// its own currently-sustaining note (the "cursor"); the auto-scroll
-/// in `StaffNotationRenderer` keeps that note in view.
+/// Leaf reader of `tickState.currentTime`. Renders the **Play tab's
+/// `TimelineGrandStaffView`** — the same grand-staff component the user
+/// already knows from Play. Treble + bass clefs share a single time
+/// axis, notes line up vertically across hands, and a vivid vertical
+/// playhead bar moves through them. Auto-scrolls to keep the playhead
+/// centered while playing.
 ///
-/// Splits `noteEvents` by `NoteEvent.hand` so chords on the LH stay on
-/// the bass clef and melody on the RH stays on the treble clef.
+/// Converts `[NoteEvent]` → `[RecordedNote]` so the existing renderer
+/// works unchanged. Hand assignment in `TimelineGrandStaffView` uses
+/// `midi < 60 ? bass : treble`, which matches the song's authored
+/// LH/RH split for piano repertoire.
 @MainActor
 struct SheetSection: View {
     let song: Song
     let noteEvents: [NoteEvent]
     let tickState: SongPlayAlongTickState
+    let isPlaying: Bool
 
     var body: some View {
-        VStack(spacing: 8) {
-            StaffRow(
-                song: song,
-                events: rhEvents,
-                clef: .treble,
-                currentTime: tickState.currentTime
-            )
-            StaffRow(
-                song: song,
-                events: lhEvents,
-                clef: .bass,
-                currentTime: tickState.currentTime
-            )
-        }
+        TimelineGrandStaffView(
+            notes: recordedNotes,
+            positionSec: tickState.currentTime,
+            isPlaying: isPlaying
+        )
     }
 
-    private var rhEvents: [NoteEvent] {
-        noteEvents.filter { $0.hand == .right }
-    }
-
-    private var lhEvents: [NoteEvent] {
-        noteEvents.filter { $0.hand == .left }
-    }
-}
-
-/// One staff (treble or bass) drawing notes for a single hand. Computes
-/// its own active-note index from `currentTime` against its filtered
-/// events, so the highlight "cursor" tracks the playhead independently
-/// per staff.
-@MainActor
-struct StaffRow: View {
-    let song: Song
-    let events: [NoteEvent]
-    let clef: StaffClef
-    let currentTime: TimeInterval
-
-    var body: some View {
-        if events.isEmpty {
-            Color.clear
-        } else {
-            StaffNotationRenderer(
-                notes: westernNotes,
-                currentNoteIndex: currentIndex,
-                keySignature: song.keySignatureEnum,
-                timeSignature: song.timeSignatureEnum,
-                zoomScale: 1.0,
-                clef: clef
+    private var recordedNotes: [RecordedNote] {
+        noteEvents.map { ev in
+            RecordedNote(
+                id: ev.id,
+                midi: ev.midiNote,
+                velocity: ev.velocity,
+                onTimeSec: ev.timestamp,
+                offTimeSec: ev.timestamp + ev.duration
             )
         }
-    }
-
-    private var westernNotes: [WesternNote] {
-        let beatsPerSecond = max(1.0, Double(song.tempo)) / 60.0
-        return events.map { event in
-            WesternNote(
-                note: event.westernName,
-                duration: event.duration * beatsPerSecond,
-                midiNumber: Int(event.midiNote)
-            )
-        }
-    }
-
-    /// Index of the most recently-started note in `events` that's still
-    /// sustaining (or the last-started one if all have ended). `nil`
-    /// before any note has started.
-    private var currentIndex: Int? {
-        let t = currentTime
-        var lastStarted: Int?
-        for (i, ev) in events.enumerated() {
-            if ev.timestamp <= t {
-                lastStarted = i
-                if t < ev.timestamp + ev.duration { return i }
-            } else {
-                break
-            }
-        }
-        return lastStarted
     }
 }
 
