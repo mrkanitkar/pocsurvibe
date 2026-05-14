@@ -199,23 +199,29 @@ struct TimeDisplay: View {
     }
 }
 
-/// Leaf reader of `tickState.currentNoteIndex`. Only the sheet renderer
-/// invalidates on cursor advance — never `SongPlayAlongView.body`.
+/// Leaf reader of `tickState.currentTime`. Renders the grand-staff
+/// (treble + bass) with a vertical playhead and hand-coloured bars.
+/// Uses the existing `BarsOnStaffView` — the only legacy renderer that
+/// honours `NoteEvent.hand` and shows a real cursor playhead.
 @MainActor
 struct SheetSection: View {
     let song: Song
     let noteEvents: [NoteEvent]
     let tickState: SongPlayAlongTickState
 
+    @Environment(\.colorScheme) private var colorScheme
+
     var body: some View {
-        ScrollingSheetView(
-            song: song,
+        BarsOnStaffView(
             noteEvents: noteEvents,
             currentTime: tickState.currentTime,
-            currentNoteIndex: tickState.currentNoteIndex,
-            notationMode: .sheetMusic,
-            currentPitch: nil,
-            highlightState: nil
+            rhColor: .blue,
+            lhColor: .red,
+            chordColor: .purple,
+            notationLineColor: colorScheme == .dark ? .white.opacity(0.85) : .black.opacity(0.85),
+            notationSecondaryColor: colorScheme == .dark ? .white.opacity(0.4) : .black.opacity(0.4),
+            showTrebleClef: true,
+            showBassClef: true
         )
     }
 }
