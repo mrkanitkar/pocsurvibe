@@ -305,7 +305,10 @@ struct KeyboardSection: View {
             onNoteOn: onNoteOn,
             onNoteOff: onNoteOff,
             notationMode: .dual,
-            manageSoundFont: false
+            manageSoundFont: false,
+            // Snap highlights instantly so the keyboard stays frame-locked
+            // to the staff cursor — the default spring lagged ~80 ms.
+            highlightAnimation: nil
         )
     }
 }
