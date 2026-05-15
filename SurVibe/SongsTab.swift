@@ -43,7 +43,7 @@ struct SongsTab: View {
             .navigationDestination(for: AppDestination.self) { destination in
                 switch destination {
                 case .playAlong(let song):
-                    LeanSongPlayAlongView(song: song)
+                    SongPlayAlongView(song: song)
                 default:
                     EmptyView()
                 }

@@ -20,7 +20,7 @@ import SwiftUI
 /// `tickState` as a `let` parameter. The body itself never reads
 /// `tickState.*` — so display-link writes don't invalidate the body.
 @MainActor
-struct LeanSongPlayAlongView: View {
+struct SongPlayAlongView: View {
 
     let song: Song
 
