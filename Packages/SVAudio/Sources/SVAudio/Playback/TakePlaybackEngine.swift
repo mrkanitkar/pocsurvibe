@@ -258,6 +258,18 @@ public final class TakePlaybackEngine: TakePlaybackProviding {
         seek(to: sec)
     }
 
+    /// Set the playback rate of the underlying `AVAudioSequencer`.
+    ///
+    /// `1.0` is the original tempo, `0.5` half-speed, `1.5` 1.5x. Affects
+    /// audible playback and `currentPositionSec` together so visualization
+    /// stays sample-accurate. Used by Songs Play Along's tempo slider.
+    ///
+    /// - Parameter rate: Playback rate. Clamped to a small positive
+    ///   epsilon to avoid stalling the sequencer.
+    public func setTempoScale(_ rate: Float) {
+        sequencer.rate = max(0.01, rate)
+    }
+
     public func stop() {
         sequencer.stop()
         sequencer.currentPositionInSeconds = 0

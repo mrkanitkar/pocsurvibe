@@ -114,7 +114,7 @@ struct SongLibraryView: View {
         }
         .sheet(item: $detailSong) { song in
             NavigationStack {
-                PlayAlongSceneHost(song: song)
+                SongPlayAlongView(song: song)
             }
         }
         .sheet(isPresented: $showImportSheet) {

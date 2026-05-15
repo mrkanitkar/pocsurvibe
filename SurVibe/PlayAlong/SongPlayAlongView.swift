@@ -1,734 +1,314 @@
-// swiftlint:disable type_body_length
+// SurVibe/PlayAlong/Lean/SongPlayAlongView.swift
 import SVAudio
 import SVCore
 import SVLearning
 import SwiftData
 import SwiftUI
-import os.log
 
-/// Main container view for the song play-along experience.
+/// Lean play-along view for a single song. Replaces the 800-line
+/// `SongPlayAlongView` + four extension files with one composed VStack.
 ///
-/// Composes all play-along sub-views into a unified interface:
-/// - **Toolbar** at top with transport controls (play/pause/stop, tempo, modes).
-/// - **Content area** switches between falling notes and scrolling sheet views.
-/// - **Piano keyboard** at bottom for touch input, with key positions reported
-///   upward via `KeyPositionPreference` for falling-note alignment.
-/// - **Scoring HUD** floating over the content area.
-/// - **Results overlay** presented as a full-screen cover when the session completes.
+/// Layout mirrors the user's screenshot:
+///   1. Toolbar — back, play/pause, restart, time, tempo
+///   2. Sheet — `ScrollingSheetView` (grand staff)
+///   3. Score row — accuracy %, hits / total
+///   4. Pitch feedback — Detected / Cents / Confidence
+///   5. Keyboard — `InteractivePianoView` with RH/LH coloring
 ///
-/// ## State Management
-/// All mutable state lives in `PlayAlongViewModel`, which is created once
-/// per navigation push and disposed on disappear via `cleanup()`.
-///
-/// ## Keyboard–Note Alignment
-/// `InteractivePianoView` reports its key center-X positions through
-/// `KeyPositionPreference`. These positions are collected via
-/// `onPreferenceChange` and passed to `FallingNotesView` so falling notes
-/// align precisely with the corresponding keys.
+/// Every per-frame observable (`currentNoteIndex`, `activeMidiNotes`,
+/// `detectedPitch`) is read inside a leaf subview that takes the
+/// `tickState` as a `let` parameter. The body itself never reads
+/// `tickState.*` — so display-link writes don't invalidate the body.
+@MainActor
 struct SongPlayAlongView: View {
-    // MARK: - Properties
 
-    /// The song to play along with.
     let song: Song
 
-    /// View model received from `PlayAlongSceneHost`; do not own here.
-    ///
-    /// `@Bindable` gives SwiftUI two-way access to published properties without
-    /// taking ownership. Ownership lives in `PlayAlongSceneHost` so the VM
-    /// survives rotation and size-class changes without restarting the audio engine.
-    @Bindable
-    var viewModel: PlayAlongViewModel
-
-    /// Owns tanpura drone state and debounces retune against the engine.
-    /// `internal` so helpers in `SongPlayAlongView+Tanpura.swift` can read it.
-    @State
-    var tanpura = TanpuraController()
-
-    /// Whether the tanpura settings sheet is presented.
-    /// `internal` so helpers in `SongPlayAlongView+Tanpura.swift` can set it.
-    @State
-    var showTanpuraSheet = false
-
-    /// Pending persistence write for `preferredSaHz`. Canceled on rapid changes.
-    @State
-    private var persistDebounceTask: Task<Void, Never>?
-
-    /// Set to true after the initial `tanpura.seed(...)` call in `.task`.
-    /// Gates the `effectiveSaHz` persistence observer so the initial seed
-    /// doesn't spuriously write a SongProgress row on every song open.
-    @State
-    private var didInitialSeed = false
-
-    /// Set to true by `resetPreferredSaHz()` so the next `effectiveSaHz`
-    /// change (which comes from the internal re-seed to the song default,
-    /// not from the user) is ignored by the persistence observer. Cleared
-    /// automatically by the observer itself.
-    /// `internal` so `resetPreferredSaHz()` in the +Tanpura extension can set it.
-    @State
-    var suppressNextPersistenceTick = false
-
-    /// Cached "SongProgress.preferredSaHz is non-nil" flag, updated at
-    /// task-time and on every persist/reset. Replaces a per-render
-    /// SwiftData fetch that previously fired on every sheet open.
-    /// `internal` so the +Tanpura extension can read and flip it.
-    @State
-    var hasStoredOverride: Bool = false
-
-    /// Whether the settings sheet is presented.
-    @State
-    private var showSettingsSheet = false
-
-    /// Whether the custom tempo sheet is presented.
-    @State
-    private var showTempoCustomSheet = false
-
-    /// Cached SongProgress for the current song. Hydrated in `.task`.
-    @State
-    private var progress: SongProgress?
-
-    /// Whether the results overlay is presented.
-    @State
-    private var showResults = false
-
-    /// Whether the theme picker sheet is presented (from the toolbar's Mode button).
-    @State
-    private var showAppearanceSheet = false
-
-    /// Whether the correctness flash overlay is visible (brief green/red flash).
-    @State
-    var showCorrectnessBanner = false
-
-    /// Color of the current correctness flash (green for correct, red for wrong).
-    @State
-    var correctnessBannerColor: Color = .green
-
-    // MARK: - AppStorage (persisted preferences)
-
-    @AppStorage("playAlongWaitMode")
-    private var storedWaitMode: Bool = false
-
-    // MARK: - Environment
-
-    @Environment(AppThemeManager.self)
-    var themeManager  // internal so the +Subviews extension (separate file) can read it
-    // internal so the +Tanpura extension (separate file) can fetch/save SongProgress
-    @Environment(\.modelContext)
-    var modelContext
-    @Environment(\.dismiss)
-    private var dismiss
-    @Environment(\.accessibilityReduceMotion)
-    var reduceMotion
-    // MARK: - Transport actions
-
-    /// Actions published to `TransportCommands` via `.focusedSceneValue`.
-    ///
-    /// The closures capture `self` by value (View is a struct) which is safe —
-    /// each SwiftUI render produces a fresh struct; the closures are short-lived.
-    /// Seek uses `playbackDuration` to convert a 5-second offset into the
-    /// normalised progress fraction that `seek(to:)` expects.
-    private var transportActions: TransportActions {
-        TransportActions(
-            playPause: { handlePlayPause() },
-            seekBackward: {
-                let duration = viewModel.playbackDuration
-                guard duration > 0 else { return }
-                let newProgress = max(0, viewModel.playbackProgress - 5 / duration)
-                viewModel.seek(to: newProgress)
-            },
-            seekForward: {
-                let duration = viewModel.playbackDuration
-                guard duration > 0 else { return }
-                let newProgress = min(1, viewModel.playbackProgress + 5 / duration)
-                viewModel.seek(to: newProgress)
-            },
-            stop: { handleStop() }
-        )
-    }
-
-    // MARK: - Body
+    @State private var viewModel = SongPlayAlongViewModel()
+    @Environment(\.modelContext) private var modelContext
+    @Environment(\.dismiss) private var dismiss
 
     var body: some View {
-        // BODY-EVAL log moved to .debug — was filling audio_log.txt at
-        // ~4 lines/sec and drowning out real events. .debug stays in
-        // os.Logger only, never written to disk.
-        let _ = MultiChannelLog.shared.log(.debug, "BODY-EVAL SongPlayAlongView body recomputed (song=\(song.title))")
-        // PlayTab-style linear layout — simple VStack so each child owns its
-        // own observation scope. Heavy ticking subviews (toolbar, content,
-        // piano) read viewModel directly; the parent body only re-renders
-        // on a small set of properties (chromeVisibility, playbackState).
         VStack(spacing: 0) {
-            // 1. Top toolbar — full width.
-            playAlongToolbarSection
-
-            // 2. Content area (notation / falling notes / staff) — flexible.
-            contentArea
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-                .contentShape(Rectangle())
-                .onTapGesture {
-                    viewModel.summonChrome()
-                }
-                .gesture(
-                    DragGesture(minimumDistance: 30)
-                        .onEnded { value in
-                            if value.translation.height > 30
-                                && abs(value.translation.width) < 50
-                            {
-                                viewModel.summonChrome()
-                            }
-                        }
-                )
-
-            // Lyric strip
-            if shouldShowLyricStrip && !viewModel.noteEvents.isEmpty {
-                LyricsStrip(
-                    words: sargamLyricWords,
-                    devanagariLine: nil,
-                    currentTime: viewModel.currentTime,
-                    backgroundColor: viewModel.karaokeBackgroundColor
-                )
-                .padding(.horizontal, 16)
-                .padding(.bottom, 4)
-            }
-
-            // Scoring HUD — visible during playback or when notes have been scored
-            CompactScoringHUD(
-                accuracy: viewModel.accuracy,
-                streak: viewModel.streak,
-                notesHit: viewModel.notesHit,
-                totalNotes: viewModel.noteEvents.count,
-                isVisible: viewModel.playbackState == .playing
-                    || viewModel.playbackState == .paused
-                    || (viewModel.playbackState == .idle && viewModel.notesHit > 0)
+            toolbar
+            SheetSection(
+                song: song,
+                noteEvents: viewModel.noteEvents,
+                tickState: viewModel.tickState,
+                isPlaying: viewModel.playbackState == .playing
             )
-
-            // Pitch proximity feedback
-            if let pitch = viewModel.currentPitch {
-                pitchFeedbackBar(pitch: pitch)
-                    .padding(.horizontal)
-                    .padding(.bottom, 4)
-            }
-
-            // 3. Piano keyboard — hidden when external MIDI is connected.
-            if !viewModel.isMIDIConnected {
-                keyboardContent
-                    .frame(height: 280)
-            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+            scoreSection
+            PitchFeedbackSection(tickState: viewModel.tickState)
+            KeyboardSection(
+                tickState: viewModel.tickState,
+                onNoteOn: { viewModel.handleKeyboardNoteOn($0) },
+                onNoteOff: { viewModel.handleKeyboardNoteOff($0) }
+            )
+            .frame(height: 280)
         }
-        .animation(reduceMotion ? .none : .easeInOut(duration: 0.25), value: viewModel.isMIDIConnected)
         .background(
             LinearGradient(
-                colors: themeManager.resolved.backgroundGradient,
-                startPoint: .topLeading,
-                endPoint: .bottomTrailing
+                colors: [Color(.systemBackground), Color(.secondarySystemBackground)],
+                startPoint: .top,
+                endPoint: .bottom
             )
             .ignoresSafeArea()
         )
-        .overlay(alignment: .topLeading) { tanpuraRagaPill.padding(16) }
-        .overlay(alignment: .topTrailing) {
-            micSourcePill.padding(16).allowsHitTesting(false)
-        }
-        .overlay { FirstTimeCoachMark() }
-        .onAppear {
-            MultiChannelLog.shared.log(.info, "ZSTACK SongPlayAlongView onAppear fired")
-        }
-        .overlay(alignment: .top) {
-            // Correctness flash banner — shows briefly on each note attempt
-            if showCorrectnessBanner {
-                correctnessBanner
-                    .transition(.move(edge: .top).combined(with: .opacity))
-                    .padding(.top, 8)
-                    .animation(reduceMotion ? nil : .spring(response: 0.3), value: showCorrectnessBanner)
-            }
-        }
-        .overlay(alignment: .center) {
-            // Stuck hint overlay — shown when user hasn't played in a while
-            if viewModel.isStuck, let expectedNote = viewModel.expectedMidiNote {
-                stuckHintOverlay(expectedMidiNote: expectedNote)
-                    .transition(.scale.combined(with: .opacity))
-                    .animation(reduceMotion ? nil : .spring(response: 0.4), value: viewModel.isStuck)
-            }
-        }
         .navigationTitle(song.title)
         .navigationBarTitleDisplayMode(.inline)
-        .sensoryFeedback(.selection, trigger: viewModel.scoring.notesHit)
-        // Pre-prompt sheet removed: with permission requested lazily by
-        // `noteRouter.startInputDetection()` (28c396e), the system iOS
-        // permission alert is the only ask. The in-app rationale was firing
-        // either redundantly (after the system alert had already resolved)
-        // or pointlessly (when no system alert would ever fire on song
-        // open) — both producing a "Continue does nothing" perception.
-        // Reintroduce later in a more contextual surface (e.g., near the
-        // mic indicator on the toolbar) if HIG rationale is desired.
         .task {
-            MultiChannelLog.shared.log(.info, ">>> SongPlayAlongView.task ENTERED song=\(song.title) cancelled=\(Task.isCancelled)")
-            defer {
-                MultiChannelLog.shared.log(.info, "<<< SongPlayAlongView.task EXITING song=\(song.title) cancelled=\(Task.isCancelled)")
-            }
             viewModel.modelContext = modelContext
-            // Derive view mode and notation from the active theme preset
-            viewModel.viewMode = themeManager.currentPreset.viewMode
-            viewModel.notationMode = themeManager.currentPreset.notationMode
-            viewModel.chrome.updateTheme(themeManager)
-            viewModel.isWaitModeEnabled = storedWaitMode
-            let slug = song.slugId
-            let existingProgress = try? modelContext.fetch(
-                FetchDescriptor<SongProgress>(
-                    predicate: #Predicate { $0.songId == slug }
-                )
-            ).first
-            tanpura.seed(
-                preferredSaHz: existingProgress?.preferredSaHz,
-                songDefaultHz: song.defaultSaFrequencyHz
-            )
-            tanpura.setSoundEnabled(viewModel.isSoundEnabled)
-            hasStoredOverride = (existingProgress?.preferredSaHz != nil)
-            didInitialSeed = true
-            MultiChannelLog.shared.log(.info, "... SongPlayAlongView.task: about to await viewModel.loadSong")
             await viewModel.loadSong(song)
-            // Hydrate per-song preferences from SongProgress
-            if let ep = existingProgress {
-                self.progress = ep
-                await viewModel.loadPersistedSettings(from: ep)
-            } else {
-                let newProgress = SongProgress(songId: song.slugId, songTitle: song.title)
-                modelContext.insert(newProgress)
-                self.progress = newProgress
-                await viewModel.loadPersistedSettings(from: newProgress, seedFromVM: true)
-            }
-            // Auto-start moved into `PlayAlongViewModel.loadSong` so it lives
-            // on the model (engine owner), not the view lifecycle. Avoids
-            // SwiftUI `.task` cancellation risks and the split-brain between
-            // pre-prompt path and post-prompt path.
-        }
-        .onChange(of: progress?.preferredHands) { _, newValue in
-            // Settings sheet binds to progress.preferredHands directly. Mirror
-            // changes into the VM so the runtime arrangement honours the new
-            // hands selection without waiting for a relaunch.
-            if let value = newValue {
-                viewModel.practiceMode = PlayAlongViewModel.practiceMode(from: value)
-            }
-        }
-        .onChange(of: progress?.waitModeEnabled) { _, newValue in
-            if let value = newValue { viewModel.isWaitModeEnabled = value }
-        }
-        .onChange(of: progress?.clickTrackEnabled) { _, newValue in
-            if let value = newValue {
-                viewModel.backingMode = value ? .click : .on
-            }
-        }
-        .onChange(of: progress?.clickTrackLevel) { _, newValue in
-            if let raw = newValue, let level = PlayAlongViewModel.ClickLevel(rawValue: raw) {
-                viewModel.clickLevel = level
-            }
-        }
-        .onChange(of: themeManager.currentPreset) { _, newPreset in
-            // Live-switch when user changes theme via quick-switch sheet
-            viewModel.viewMode = newPreset.viewMode
-            viewModel.notationMode = newPreset.notationMode
-            viewModel.chrome.updateTheme(themeManager)
-            AnalyticsManager.shared.track(
-                .playAlongViewModeChanged,
-                properties: ["view_mode": newPreset.viewMode.rawValue, "song_title": song.title]
-            )
-            AnalyticsManager.shared.track(
-                .playAlongNotationToggled,
-                properties: ["notation_mode": newPreset.notationMode.rawValue, "song_title": song.title]
-            )
-            AnalyticsManager.shared.track(
-                .themeChanged,
-                properties: [
-                    "preset": newPreset.rawValue,
-                    "song_title": song.title,
-                    "source": "play_along_mode_button",
-                ]
-            )
+            viewModel.startPitchDetection()
         }
         .onDisappear {
-            persistDebounceTask?.cancel()
-            tanpura.stop()
             viewModel.cleanup()
         }
-        .onChange(of: viewModel.playbackState) { _, newState in
-            handlePlaybackStateChange(newState)
-        }
-        .onChange(of: viewModel.guidedPlayState) { _, newState in
-            handleGuidedPlayStateChange(newState)
-        }
-        .onChange(of: viewModel.currentNoteIndex) { _, newIndex in
-            // AUD-VO: Announce current note to VoiceOver users.
-            // Only announces when VoiceOver is running to avoid unnecessary overhead.
-            guard UIAccessibility.isVoiceOverRunning,
-                let index = newIndex,
-                index < viewModel.noteEvents.count
-            else { return }
-            let event = viewModel.noteEvents[index]
-            // Post queued announcement so it doesn't cut off prior speech.
-            UIAccessibility.post(
-                notification: .announcement,
-                argument: NSAttributedString(
-                    string: event.swarName,
-                    attributes: [.accessibilitySpeechQueueAnnouncement: true]
-                )
-            )
-        }
-        .fullScreenCover(isPresented: $showResults) {
-            PlayAlongResultsOverlay(
-                songTitle: song.title,
-                accuracy: viewModel.accuracy,
-                notesCorrectPercent: viewModel.notesCorrectPercent,
-                timingAccuracyPercent: viewModel.timingAccuracyPercent,
-                notesHit: viewModel.notesHit,
-                totalNotes: viewModel.noteEvents.count,
-                streak: viewModel.longestStreak,
-                starRating: viewModel.starRating,
-                xpEarned: viewModel.xpEarned,
-                onReplay: {
-                    showResults = false
-                    AnalyticsManager.shared.track(
-                        .playAlongRestarted,
-                        properties: ["song_title": song.title]
-                    )
-                    Task {
-                        await viewModel.startSession()
-                    }
-                },
-                onDone: {
-                    showResults = false
-                    dismiss()
-                }
-            )
-        }
-        .sheet(isPresented: $showTanpuraSheet) {
-            tanpuraSettingsSheetContent
-        }
-        .sheet(isPresented: $viewModel.showLoopBuilder) {
-            LoopBuilderView(
-                totalMeasures: viewModel.totalMeasures,
-                initialStart: viewModel.loopRegion?.startMeasure ?? 1,
-                initialEnd: viewModel.loopRegion?.endMeasure
-            ) { region in
-                viewModel.loopRegion = region
-            }
-        }
-        .sheet(isPresented: $showAppearanceSheet) {
-            NavigationStack {
-                ThemeCarouselPicker()
-            }
-            .presentationDetents([.large])
-            .presentationDragIndicator(.visible)
-        }
-        .sheet(isPresented: $showSettingsSheet) {
-            if let p = progress {
-                PlayAlongSettingsSheet(
-                    viewModel: viewModel,
-                    tanpura: tanpura,
-                    song: song,
-                    progress: p
-                )
-                .presentationDetents([.medium, .large])
-                .presentationDragIndicator(.visible)
-                .presentationBackgroundInteraction(.enabled(upThrough: .medium))
-                .onAppear {
-                    MultiChannelLog.shared.log(.info, "SETTINGS-SHEET appeared progressNonNil=true")
-                }
-                .onDisappear {
-                    MultiChannelLog.shared.log(.info, "SETTINGS-SHEET dismissed")
-                }
-            } else {
-                let _ = MultiChannelLog.shared.log(
-                    .warning,
-                    "SETTINGS-SHEET attempted present but progress is nil — sheet body empty"
-                )
-                EmptyView()
-            }
-        }
-        .sheet(isPresented: $showTempoCustomSheet) {
-            TempoCustomSheet(viewModel: viewModel)
-                .onAppear {
-                    MultiChannelLog.shared.log(.info, "TEMPO-CUSTOM-SHEET appeared")
-                }
-        }
-        .onChange(of: showSettingsSheet) { _, newValue in
-            MultiChannelLog.shared.log(
-                .info,
-                "STATE showSettingsSheet=\(newValue) progressNonNil=\(progress != nil)"
-            )
-        }
-        .onChange(of: tanpura.effectiveSaHz) { _, newHz in
-            guard didInitialSeed else { return }
-            if suppressNextPersistenceTick {
-                suppressNextPersistenceTick = false
-                return
-            }
-            persistDebounceTask?.cancel()
-            persistDebounceTask = Task { @MainActor in
-                try? await Task.sleep(for: .seconds(1))
-                if Task.isCancelled { return }
-                persistPreferredSaHz(newHz)
-                AnalyticsManager.shared.track(
-                    .tanpuraSaChanged,
-                    properties: [
-                        "grid_hz": tanpura.saGridHz,
-                        "cents_offset": tanpura.saCentsOffset,
-                        "effective_hz": newHz,
-                        "song_title": song.title,
-                    ]
+        .overlay {
+            if viewModel.playbackState == .stopped, let scoring = viewModel.scoring {
+                SongPlayAlongResults(
+                    songTitle: song.title,
+                    accuracyPercent: scoring.accuracyPercent,
+                    notesHit: scoring.notesHit,
+                    totalNotes: scoring.totalNotes,
+                    onReplay: { Task { await viewModel.restart() } },
+                    onDone: { dismiss() }
                 )
             }
         }
-        .accessibilityElement(children: .contain)
         .accessibilityLabel("Play along with \(song.title)")
-        .focusedSceneValue(\.transportActions, transportActions)
     }
 
-    // MARK: - Layout
+    // MARK: - Toolbar
 
-    /// Top toolbar wrapper — minimal single-strip toolbar with transport,
-    /// title, time, and tempo controls.
     @ViewBuilder
-    private var playAlongToolbarSection: some View {
-        PlayAlongMinimalToolbar(
-            viewModel: viewModel,
-            onPlayPause: handlePlayPause,
-            onRestart: { Task { await viewModel.restart() } },
-            onSettingsTap: { showSettingsSheet = true },
-            onTempoCustomTap: { showTempoCustomSheet = true },
-            showSettingsSheet: showSettingsSheet,
-            songTitle: song.title,
-            songArtist: song.artist.isEmpty ? "Aaroha" : song.artist,
-            baseBPM: song.tempo
-        )
-        .frame(maxWidth: .infinity)
-        .padding(.horizontal, 16)
-        .padding(.top, 60)  // leave room for tanpura/mic pills overlay
-    }
+    private var toolbar: some View {
+        HStack(spacing: 12) {
+            Button(action: handlePlayPause) {
+                Image(systemName: playPauseIcon).font(.title2)
+            }
+            .accessibilityLabel(viewModel.playbackState == .playing ? "Pause" : "Play")
 
-    // bottomTransportBar and notationAndChrome removed in Wave 5 T5.4.
-    // Transport controls live in PlayAlongMinimalToolbar; notation chrome,
-    // lyrics, scoring HUD, and pitch feedback are inlined into body.
+            Button(action: { Task { await viewModel.restart() } }) {
+                Image(systemName: "arrow.counterclockwise").font(.title3)
+            }
+            .accessibilityLabel("Restart")
 
-    /// The piano keyboard, with key-position preference reporting.
-    ///
-    /// `highlightState` is passed directly so CADisplayLink ticks (60–120 Hz)
-    /// that update MIDI key highlights only re-render `InteractivePianoView` —
-    /// NOT the entire `SongPlayAlongView` hierarchy. This eliminates the
-    /// `@MainActor` saturation that caused 300–530ms MIDI scoring lag.
-    @ViewBuilder
-    private var keyboardContent: some View {
-        InteractivePianoView(
-            activeMidiNotes: viewModel.effectiveMidiNotes,
-            highlightState: viewModel.highlightState,
-            activeCentsOffset: viewModel.currentPitch?.centsOffset ?? 0,
-            expectedMidiNote: viewModel.expectedMidiNote,
-            onNoteOn: { midiNote in
-                viewModel.handleKeyboardNoteOn(midiNote: midiNote)
-            },
-            onNoteOff: { midiNote in
-                viewModel.handleKeyboardNoteOff(midiNote: midiNote)
-            },
-            notationMode: viewModel.notationMode,
-            manageSoundFont: false,
-            // Two-hand highlight colors resolved once upstream from the
-            // active theme (see `.task` / `.onChange(of: themeManager.currentPreset)`
-            // above). Passed as `let` so the CADisplayLink-driven
-            // `highlightState` mutations only re-render this view —
-            // not `SongPlayAlongView.body`. InteractivePianoView reads
-            // the per-note RH/LH/chord sets from `highlightState`
-            // internally, preserving the latency contract.
-            rhColor: viewModel.rhColor,
-            lhColor: viewModel.lhColor,
-            chordColor: viewModel.chordColor
-        )
-    }
+            Spacer()
 
-    // MARK: - Lyric Strip Helpers
-
-    /// Lyric-strip words derived from the current song's note events.
-    ///
-    /// Each note becomes a syllable card showing its Sargam name, timed
-    /// to the note's start + duration window so `LyricsStrip`'s karaoke
-    /// highlight follows the playback clock.
-    private var sargamLyricWords: [LyricsStrip.LyricWord] {
-        viewModel.noteEvents.map { event in
-            LyricsStrip.LyricWord(
-                text: event.swarName,
-                startTime: event.timestamp,
-                endTime: event.timestamp + event.duration
+            TimeDisplay(
+                duration: viewModel.duration,
+                tickState: viewModel.tickState
             )
+
+            Spacer()
+
+            tempoControl
         }
+        .padding(.horizontal, 20)
+        .padding(.top, 8)
+        .padding(.bottom, 12)
     }
 
-    /// True when the active theme's primary notation is Sargam, which
-    /// is also when showing a dedicated Sargam lyric strip adds value.
-    /// Western/Pop/Night themes already render note labels on the staff.
-    private var shouldShowLyricStrip: Bool {
-        switch themeManager.currentPreset {
-        case .sargamGlass, .sargamGlassBars, .neonRhythm:
-            return true
-        default:
-            return false
-        }
-    }
-
-    // MARK: - Content Area
-
-    /// The main visual content area — dispatches to the right notation renderer
-    /// based on the active theme preset. Colors arrive to renderers as `let`
-    /// parameters (via `viewModel`) so none of them read the `AppThemeManager`
-    /// environment — preserving the audio-latency contract.
     @ViewBuilder
-    private var contentArea: some View {
-        if viewModel.playbackState == .loading {
-            ProgressView("Loading song…")
-                .frame(maxWidth: .infinity, maxHeight: .infinity)
-        } else {
-            switch themeManager.currentPreset {
-            // Sargam Glass · Bars (v2) — dual-row Sargam with horizontal bars
-            case .sargamGlassBars:
-                SargamDualRowView(
-                    noteEvents: viewModel.noteEvents,
-                    currentTime: viewModel.currentTime,
-                    rhColor: viewModel.rhColor,
-                    lhColor: viewModel.lhColor,
-                    chordColor: viewModel.chordColor,
-                    cardBackgroundColor: viewModel.cardBackgroundColor
-                )
-                .accessibilityLabel("Sargam dual-row notation")
-
-            // Bars-style grand staff with horizontal colored bars (Yousician-like).
-            // Used by Immersive Bars (#6), Midnight Bars (#7), Pop Era (#9).
-            case .immersiveBars, .midnightBars, .popEra:
-                BarsOnStaffView(
-                    noteEvents: viewModel.noteEvents,
-                    currentTime: viewModel.currentTime,
-                    rhColor: viewModel.rhColor,
-                    lhColor: viewModel.lhColor,
-                    chordColor: viewModel.chordColor,
-                    notationLineColor: viewModel.notationLineColor,
-                    notationSecondaryColor: viewModel.notationSecondaryColor,
-                    showTrebleClef: true,
-                    showBassClef: true
-                )
-                .accessibilityLabel("Horizontal-bar grand-staff notation")
-
-            // Drop variants — classical scrolling sheet with round notes.
-            // Per spec §5.1:
-            //   #1 Immersive · Drop  → grand staff, round notes (sheetMusic)
-            //   #3 Sargam Glass · Drop → Devanagari ribbon + round mini-staff (sargamPlusSheet)
-            //   #4 Midnight · Drop  → OLED grand staff, amber round notes (sheetMusic)
-            case .immersive, .midnight, .sargamGlass:
-                ScrollingSheetView(
-                    song: song,
-                    noteEvents: viewModel.noteEvents,
-                    currentTime: viewModel.currentTime,
-                    currentNoteIndex: viewModel.currentNoteIndex,
-                    notationMode: viewModel.notationMode,
-                    currentPitch: viewModel.currentPitch,
-                    highlightState: viewModel.highlightState
-                )
-                .accessibilityLabel("Scrolling sheet notation, grand staff with round notes")
-
-            // Falling-notes lanes (vertical drop) — Synthesia/Neon-style.
-            case .neonRhythm, .synthesia:
-                SplitLaneView(
-                    noteEvents: viewModel.noteEvents,
-                    currentTime: viewModel.currentTime,
-                    rhColor: viewModel.rhColor,
-                    lhColor: viewModel.lhColor,
-                    chordColor: viewModel.chordColor,
-                    tempoBPM: Double(song.tempo)
-                )
-                .accessibilityLabel("Vertical split-lane falling notes")
-            }
+    private var tempoControl: some View {
+        HStack(spacing: 8) {
+            Text("\(Int(viewModel.tempoScale * 100))%")
+                .font(.caption.monospacedDigit())
+                .frame(width: 44, alignment: .trailing)
+            Slider(
+                value: Binding(
+                    get: { viewModel.tempoScale },
+                    set: { viewModel.tempoScale = $0 }
+                ),
+                in: 0.5...1.5,
+                step: 0.05
+            )
+            .frame(width: 140)
+            .accessibilityLabel("Tempo")
         }
     }
 
-    // MARK: - Persistent chrome pills
-
-    /// Top-right pill showing the active input source (mic vs MIDI).
-    @ViewBuilder
-    private var micSourcePill: some View {
-        let source: MicSourcePill.Source =
-            viewModel.isMIDIConnected
-            ? .midi(deviceName: viewModel.midiDeviceName)
-            : .mic
-        MicSourcePill(
-            source: source,
-            backgroundColor: viewModel.cardBackgroundColor,
-            foregroundColor: themeManager.resolved.primaryTextColor
-        )
+    private var playPauseIcon: String {
+        switch viewModel.playbackState {
+        case .playing: return "pause.fill"
+        case .paused, .idle, .stopped: return "play.fill"
+        case .loading: return "hourglass"
+        case .error: return "exclamationmark.triangle.fill"
+        }
     }
 
-    // MARK: - Actions
-
-    /// Handle the play/pause button tap based on current playback state.
     private func handlePlayPause() {
-        let state = viewModel.playbackState
-        MultiChannelLog.shared.log(.info, "==> handlePlayPause TAP state=\(state) arrangementWired=\(viewModel.arrangementPlayer != nil)")
-        switch state {
+        switch viewModel.playbackState {
         case .idle, .stopped:
-            Task {
-                MultiChannelLog.shared.log(.info, "... handlePlayPause: calling startSession")
-                await viewModel.startSession()
-                MultiChannelLog.shared.log(.info, "... handlePlayPause: startSession returned, newState=\(viewModel.playbackState)")
-            }
+            Task { await viewModel.play() }
         case .playing:
-            viewModel.pauseSession()
+            viewModel.pause()
         case .paused:
-            viewModel.resumeSession()
+            viewModel.resume()
         case .loading, .error:
-            MultiChannelLog.shared.log(.warning, "... handlePlayPause: ignored — state=\(state)")
-        }
-    }
-
-    /// Handle the stop button tap.
-    ///
-    /// If notes have been scored, completes the session to show results.
-    /// Otherwise just cleans up and resets to idle.
-    private func handleStop() {
-        if viewModel.notesHit > 0 {
-            viewModel.stopAndComplete()
-        } else {
-            viewModel.cleanup()
-        }
-    }
-
-    /// Respond to playback state transitions.
-    ///
-    /// Shows the results overlay when the session completes (transitions to `.stopped`).
-    /// Keyboard highlighting is driven directly by `viewModel.effectiveMidiNotes` —
-    /// no explicit state update needed here.
-    private func handlePlaybackStateChange(_ newState: PlaybackState) {
-        switch newState {
-        case .stopped:
-            // Show results when session completes naturally
-            if viewModel.notesHit > 0 {
-                showResults = true
-            }
-        default:
             break
         }
     }
 
-}
+    // MARK: - Score
 
-// MARK: - Preview
-
-#Preview("Play Along — Idle") {
-    NavigationStack {
-        PlayAlongSceneHost(song: Song(title: "Raag Yaman", difficulty: 2, tempo: 120))
+    @ViewBuilder
+    private var scoreSection: some View {
+        if let scoring = viewModel.scoring {
+            HStack(spacing: 16) {
+                Text("\(scoring.accuracyPercent)%")
+                    .font(.title3.monospacedDigit().bold())
+                    .accessibilityLabel("Accuracy \(scoring.accuracyPercent) percent")
+                Image(systemName: "trophy.fill")
+                    .foregroundStyle(.yellow)
+                    .accessibilityHidden(true)
+                Text("\(scoring.notesHit) / \(scoring.totalNotes)")
+                    .font(.callout.monospacedDigit())
+                    .foregroundStyle(.secondary)
+                    .accessibilityLabel("\(scoring.notesHit) of \(scoring.totalNotes) notes hit")
+                Spacer()
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 6)
+        }
     }
-    .environment(AppThemeManager())
 }
 
-#Preview("Play Along — With Song") {
-    NavigationStack {
-        PlayAlongSceneHost(
-            song: {
-                let song = Song(title: "Twinkle Twinkle", difficulty: 1, tempo: 100)
-                return song
-            }()
+// MARK: - Leaf subviews (each owns its tickState read)
+
+/// Leaf reader of `tickState.currentTime`. Shown in the toolbar so the
+/// per-tick clock advance invalidates only this small Text, not the
+/// entire toolbar.
+@MainActor
+struct TimeDisplay: View {
+    let duration: TimeInterval
+    let tickState: SongPlayAlongTickState
+
+    var body: some View {
+        Text("\(timeString(tickState.currentTime)) / \(timeString(duration))")
+            .font(.callout.monospacedDigit())
+            .foregroundStyle(.secondary)
+            .accessibilityLabel(
+                "Time \(timeString(tickState.currentTime)) of \(timeString(duration))"
+            )
+    }
+
+    private func timeString(_ seconds: TimeInterval) -> String {
+        let s = max(0, Int(seconds))
+        return String(format: "%d:%02d", s / 60, s % 60)
+    }
+}
+
+/// Leaf reader of `tickState.currentTime`. Renders the **Play tab's
+/// `TimelineGrandStaffView`** — the same grand-staff component the user
+/// already knows from Play. Treble + bass clefs share a single time
+/// axis, notes line up vertically across hands, and a vivid vertical
+/// playhead bar moves through them. Auto-scrolls to keep the playhead
+/// centered while playing.
+///
+/// Converts `[NoteEvent]` → `[RecordedNote]` so the existing renderer
+/// works unchanged. Hand assignment in `TimelineGrandStaffView` uses
+/// `midi < 60 ? bass : treble`, which matches the song's authored
+/// LH/RH split for piano repertoire.
+@MainActor
+struct SheetSection: View {
+    let song: Song
+    let noteEvents: [NoteEvent]
+    let tickState: SongPlayAlongTickState
+    let isPlaying: Bool
+
+    var body: some View {
+        TimelineGrandStaffView(
+            notes: recordedNotes,
+            positionSec: tickState.currentTime,
+            isPlaying: isPlaying
         )
     }
-    .environment(AppThemeManager())
+
+    private var recordedNotes: [RecordedNote] {
+        noteEvents.map { ev in
+            RecordedNote(
+                id: ev.id,
+                midi: ev.midiNote,
+                velocity: ev.velocity,
+                onTimeSec: ev.timestamp,
+                offTimeSec: ev.timestamp + ev.duration
+            )
+        }
+    }
+}
+
+/// Leaf reader of `tickState.detectedPitch`. Shows the Detected / Cents /
+/// Confidence row from the user's screenshot. Renders an empty placeholder
+/// when no pitch is detected so the layout doesn't jump.
+@MainActor
+struct PitchFeedbackSection: View {
+    let tickState: SongPlayAlongTickState
+
+    var body: some View {
+        if let pitch = tickState.detectedPitch {
+            HStack(spacing: 12) {
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Detected").font(.caption2).foregroundStyle(.secondary)
+                    Text(pitch.noteName).font(.headline.bold())
+                }
+                VStack(alignment: .leading, spacing: 2) {
+                    Text("Cents").font(.caption2).foregroundStyle(.secondary)
+                    Text(String(format: "%+.0f", pitch.centsOffset))
+                        .font(.callout.monospacedDigit())
+                }
+                PitchProximityMeter(
+                    centsOffset: pitch.centsOffset,
+                    trackColor: Color(.systemGray4),
+                    centerLineColor: .green
+                )
+                .frame(width: 24, height: 40)
+                .accessibilityHidden(true)
+                Spacer()
+                VStack(alignment: .trailing, spacing: 2) {
+                    Text("Confidence").font(.caption2).foregroundStyle(.secondary)
+                    Text("\(Int(pitch.confidence * 100))%")
+                        .font(.callout.monospacedDigit())
+                }
+            }
+            .padding(.horizontal, 20)
+            .padding(.vertical, 6)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(
+                "Detected \(pitch.noteName), \(Int(pitch.centsOffset)) cents, "
+                    + "confidence \(Int(pitch.confidence * 100)) percent"
+            )
+        } else {
+            // Maintain layout height when no pitch is detected.
+            Color.clear.frame(height: 40)
+        }
+    }
+}
+
+/// Leaf reader of `tickState.activeMidiNotes` + `userPressedNotes`. The
+/// only subview that re-renders on display-link writes to the
+/// sequenced-notes set — `SongPlayAlongView.body` never sees it.
+@MainActor
+struct KeyboardSection: View {
+    let tickState: SongPlayAlongTickState
+    let onNoteOn: (Int) -> Void
+    let onNoteOff: (Int) -> Void
+
+    var body: some View {
+        InteractivePianoView(
+            activeMidiNotes: tickState.activeMidiNotes.union(tickState.userPressedNotes),
+            highlightState: nil,
+            activeCentsOffset: tickState.detectedPitch?.centsOffset ?? 0,
+            expectedMidiNote: nil,
+            onNoteOn: onNoteOn,
+            onNoteOff: onNoteOff,
+            notationMode: .dual,
+            manageSoundFont: false,
+            // Snap highlights instantly so the keyboard stays frame-locked
+            // to the staff cursor — the default spring lagged ~80 ms.
+            highlightAnimation: nil
+        )
+    }
 }

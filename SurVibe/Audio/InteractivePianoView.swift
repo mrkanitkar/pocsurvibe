@@ -91,6 +91,15 @@ struct InteractivePianoView: View {
     /// Defaults to the Rang both-hands semantic token (P1-5).
     var chordColor: Color = Color.rangBothHands
 
+    /// Animation applied to a key's highlight scale transition.
+    ///
+    /// Defaults to a snappy spring — good for live touch input on the
+    /// Play / Practice tabs where a tactile bounce confirms a keypress.
+    /// Song play-along passes `nil` so sequencer-driven highlights snap
+    /// instantly and stay frame-locked to the staff cursor (the spring's
+    /// ~80 ms settle made the keyboard visibly lag the cursor).
+    var highlightAnimation: Animation? = .spring(response: 0.08, dampingFraction: 0.85)
+
     // MARK: - Internal State
 
     /// MIDI notes currently held by touch (internal tracking for dual highlighting).
@@ -270,7 +279,7 @@ struct InteractivePianoView: View {
         }
         .scaleEffect(hasHighlight && !reduceMotion ? (isNatural ? 1.04 : 1.06) : 1.0)
         .animation(
-            reduceMotion ? nil : .spring(response: 0.08, dampingFraction: 0.85),
+            reduceMotion ? nil : highlightAnimation,
             value: hasHighlight
         )
         .accessibilityLabel(keyAccessibilityLabel(midi: midi, noteIndex: noteIndex))
