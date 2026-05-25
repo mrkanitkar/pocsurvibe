@@ -1,9 +1,7 @@
 {
   "permissions": {
     "allow": [
-      "mcp__XcodeBuildMCP__*",
-      "mcp__xcode__*",
-      "mcp__apple-docs__*",
+      "mcp__cupertino__*",
       "Read",
       "Glob",
       "Grep",
