@@ -51,6 +51,13 @@ SurVibeApp (top-level, imports all 7)
 ### Deployment Target: iOS 26.2
 - No `#available` or `if #available` checks — everything targets iOS 26+ unconditionally (see Banned Patterns).
 - Use Apple Foundation Models framework directly (no version check needed).
+- Always prefer the NEWEST API available for iOS 26.2. If an API predates this target, a newer replacement probably exists — flag it instead of using the old one.
+
+### API Verification (Cupertino MCP) — MANDATORY
+- Before writing code that uses ANY Apple framework API (SwiftUI, SwiftData, AVFoundation, CoreMIDI, StoreKit, CloudKit, CoreML, Foundation Models, …), query the `cupertino` MCP to confirm the symbol exists, its exact signature, and its availability on iOS 26.2.
+- Do NOT write framework code from memory — model knowledge drifts toward deprecated UIKit / `ObservableObject` / StoreKit 1 / completion-handler patterns.
+- If `cupertino` returns no result, say so and ask rather than guessing.
+- When `cupertino` and the live SDK (Xcode build) disagree, trust the SDK — it matches what actually compiles here.
 
 ### SwiftUI
 - Use `@Environment(\.modelContext)` for SwiftData access in views.
