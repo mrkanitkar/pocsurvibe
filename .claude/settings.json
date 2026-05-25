@@ -2,6 +2,7 @@
   "permissions": {
     "allow": [
       "mcp__cupertino__*",
+      "mcp__plugin_xclaude-plugin_*",
       "Read",
       "Glob",
       "Grep",
