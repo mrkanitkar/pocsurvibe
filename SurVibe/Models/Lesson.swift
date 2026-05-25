@@ -4,7 +4,7 @@ import SVCore
 import SwiftData
 
 /// Module-level logger for Lesson model decode diagnostics.
-private let lessonLogger = Logger.survibe(category: "LessonModel")
+private nonisolated let lessonLogger = Logger.survibe(category: "LessonModel")
 
 // MARK: - Supporting Types
 

@@ -20,6 +20,7 @@ import XCTest
 /// the follow-up sub-project.
 ///
 /// - SeeAlso: https://developer.apple.com/documentation/accessibility/performing-accessibility-audits-for-your-app
+@MainActor
 final class AccessibilityAuditTests: XCTestCase {
 
     private var app: XCUIApplication!
@@ -57,7 +58,7 @@ final class AccessibilityAuditTests: XCTestCase {
         + "Remove this XCTSkip when the dedicated accessibility-iteration "
         + "sub-project fixes this screen's audit issues."
 
-    override func setUpWithError() throws {
+    override func setUp() async throws {
         continueAfterFailure = false
         app = XCUIApplication()
         app.launch()

@@ -48,7 +48,7 @@ SurVibeApp (top-level, imports all 7)
 
 ## SWIFT RULES (MANDATORY)
 
-### Deployment Target: iOS 26.0
+### Deployment Target: iOS 26.2
 - No `#available` or `if #available` checks — everything targets iOS 26+ unconditionally (see Banned Patterns).
 - Use Apple Foundation Models framework directly (no version check needed).
 

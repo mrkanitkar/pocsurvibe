@@ -3,7 +3,7 @@ import os
 import SVCore
 import SwiftData
 
-private let lpLogger = Logger.survibe(category: "LessonProgressModel")
+private nonisolated let lpLogger = Logger.survibe(category: "LessonProgressModel")
 
 /// Tracks lesson completion progress. One-way flag: once completed, stays completed.
 ///

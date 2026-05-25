@@ -15,6 +15,7 @@ final class SurVibeUITests: XCTestCase {
     // MARK: - Helpers
 
     /// Launch the app with onboarding bypassed.
+    @MainActor
     private func launchApp() -> XCUIApplication {
         let app = XCUIApplication()
         app.launchEnvironment["UITEST_SKIP_ONBOARDING"] = "1"
@@ -23,6 +24,7 @@ final class SurVibeUITests: XCTestCase {
     }
 
     /// Wait for the tab bar to appear (gives the app time to settle after launch).
+    @MainActor
     private func waitForTabBar(in app: XCUIApplication) -> Bool {
         app.tabBars.firstMatch.waitForExistence(timeout: 5)
     }
