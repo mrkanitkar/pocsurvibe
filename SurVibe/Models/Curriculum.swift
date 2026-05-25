@@ -4,7 +4,7 @@ import SVCore
 import SwiftData
 
 /// Module-level logger for Curriculum model decode diagnostics.
-private nonisolated let curriculumLogger = Logger.survibe(category: "CurriculumModel")
+nonisolated private let curriculumLogger = Logger.survibe(category: "CurriculumModel")
 
 /// A structured learning curriculum (ordered sequence of lessons).
 ///

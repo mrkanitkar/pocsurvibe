@@ -3,7 +3,7 @@ import os
 import SVCore
 import SwiftData
 
-private nonisolated let songLogger = Logger.survibe(category: "Song")
+nonisolated private let songLogger = Logger.survibe(category: "Song")
 
 // MARK: - Supporting Types
 

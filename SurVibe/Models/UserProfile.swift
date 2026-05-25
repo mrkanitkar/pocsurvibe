@@ -4,7 +4,7 @@ import SVCore
 import SwiftData
 
 /// Module-level logger for UserProfile model mutations.
-private nonisolated let profileLogger = Logger.survibe(category: "UserProfileModel")
+nonisolated private let profileLogger = Logger.survibe(category: "UserProfileModel")
 
 /// User profile model for CloudKit sync.
 /// All fields have defaults or are optional per CloudKit requirements.

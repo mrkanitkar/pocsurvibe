@@ -4,7 +4,7 @@ import SVCore
 import SwiftData
 
 /// Module-level logger for SongProgress model mutations.
-private nonisolated let songProgressLogger = Logger.survibe(category: "SongProgressModel")
+nonisolated private let songProgressLogger = Logger.survibe(category: "SongProgressModel")
 
 // MARK: - Conflict Resolution
 //
