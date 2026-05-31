@@ -53,13 +53,13 @@ xcrun simctl delete unavailable
 ### 5. Clean up stale git worktrees
 
 ```bash
-git -C /Users/maheshwar/Developer/SurVibe worktree list
-git -C /Users/maheshwar/Developer/SurVibe worktree prune -v
+git -C /Users/maheshwar/Developer/pocsurvibe worktree list
+git -C /Users/maheshwar/Developer/pocsurvibe worktree prune -v
 ```
 
 If `worktree list` shows worktrees in `/private/tmp/` or under `.worktrees/` that you no longer need, remove explicitly:
 ```bash
-git -C /Users/maheshwar/Developer/SurVibe worktree remove <path> --force
+git -C /Users/maheshwar/Developer/pocsurvibe worktree remove <path> --force
 ```
 
 ### 6. Optional — SPM cache (only if very low on disk)

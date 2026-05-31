@@ -1,4 +1,9 @@
-# SurVibe — Claude Code Rules
+# SurVibe (POC) — Claude Code Rules
+
+> ⚠️ **Archived proof-of-concept.** This repo/folder is `pocsurvibe` (renamed 2026-05-31), the first
+> SurVibe build, kept for reference; the fresh SurVibe rebuild lives elsewhere. Internal identifiers are
+> intentionally unchanged — the Xcode project, `SurVibe` scheme/module, targets, and bundle ID
+> `com.survibe.SurVibe` all still read "SurVibe", so every build/test command below works as written.
 
 > AI-powered piano learning app for Indian users. iOS 26+ only. SwiftUI + SwiftData + AudioKit.
 > This file governs ALL code generation, reviews, and refactoring in this project.
